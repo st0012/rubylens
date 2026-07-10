@@ -4,6 +4,7 @@
 require "json"
 require "optparse"
 require_relative "../lib/rubylens"
+require_relative "../lib/rubylens/mcp_probe"
 
 options = {}
 parser = OptionParser.new do |arguments|

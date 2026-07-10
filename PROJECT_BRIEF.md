@@ -4,7 +4,7 @@
 
 RubyLens is a CLI-first Ruby tool that turns a Ruby codebase into a beautiful, interactive semantic map and a compact set of useful project statistics. Its first output will be an offline browser report that can be explored and inspected locally. A hosted product may follow later if there is real demand and its cost and privacy model make sense.
 
-The initial visual exploration is an ordered **Lineage Spine** with provenance lanes and an evidence dossier. The dependency iceberg remains a later overview candidate, sized by workspace semantic contact rather than a gem's own indexed volume. See [the exploration report](docs/RUBYDEX_EXPLORATION.md) for the evidence and tradeoffs.
+The selected visual direction is a whole-codebase **Galaxy**: core, tests, and dependencies form one data-bearing stellar artwork intended to be appreciated at system scale rather than inspected node by node. Dependency packages become compact satellite systems. See [the exploration report](docs/RUBYDEX_EXPLORATION.md) for the semantic evidence and [the stellar design research](docs/STELLAR_DESIGN_RESEARCH.md) for the visual grammar.
 
 ## Why RubyDex
 
@@ -20,7 +20,9 @@ Accuracy note: this brief uses the preferred narrative spelling **RubyDex**. The
 - Do not use Figma or a subscription design tool. Review the appearance first in a no-dependency, self-contained HTML visual design sheet showing representative default and selected states, without production interactions. Turn the approved direction into an interactive HTML/JS spike afterward.
 - Build a presentation-led vertical slice, because the visual determines the data contract and the available data constrains the visual. Do not build the presentation or extractor to completion in isolation.
 - During visual prototyping, optimize for iteration speed: preserve basic dataset provenance, count truth, and privacy, but defer exhaustive semantic classification and validation until a direction is selected.
-- Lead with exact Ruby lookup order and visible prepend-before-self semantics; embed dependency provenance as a side rail. Keep the iceberg overview as a later, evidence-sized view.
+- Treat core code, tests, and dependencies as the three primary visual categories. Keep the scene artistic at whole-codebase scale, without a per-node inspection workflow.
+- Keep the RubyDex signal weights interactive and independent for core, tests, and dependencies so users can decide how ancestry, descendants, members, references, definition sites, and reopenings affect the artwork.
+- Keep Galaxy A as the selected direction. City Blocks is paused until the stellar direction and gem pipeline are mature.
 - Keep 3D coordinates and layout simulation renderer-owned rather than embedding positions in `model.v1`.
 
 ## Confirmed RubyDex reality
@@ -43,15 +45,14 @@ The upstream [API reference](https://shopify.github.io/rubydex/) should remain t
 - Whether the production report remains a single HTML file or becomes a fully local report directory; either form must stay offline at runtime.
 - Whether a hosted product is worth building, and what explicit redaction and upload controls it would require.
 
-## Recommended first vertical slice
+## Current vertical slice
 
-1. Review the no-dependency Lineage Spine, provenance-lane, and evidence-dossier design sheet and select the first production direction.
-2. Build the safe-manifest adapter required for private repositories; keep bare `index_workspace` as an upstream-behavior research mode.
-3. Freeze `model.v1` from the approved visual and the existing RDoc/Rails analysis artifacts.
-4. Build the first interactive lineage slice with exact ancestry order, prepend prefixes, origin boundaries, filters, folds, and transitive-reach evidence.
-5. Explore the dependency iceberg and broader performance work later, using semantic contact rather than indexed gem volume and measuring model size, load time, interaction smoothness, and legibility.
+1. An explicit Git-selected manifest is the only file list passed to `Graph#index_all`; exact locked gem files are containment-audited and RubyLens's tool-only dependency closure is removed.
+2. The Rubydex adapter emits only the numeric signals needed by the art model. Declaration names, source, comments, and absolute paths do not cross into the report payload.
+3. `RubyLens.generate` and `rubylens build` write one owner-only, self-contained HTML report with separate signal controls for core, tests, and dependencies.
+4. The lightweight gem renderer implements the approved galaxy morphology without requiring Node. The Three.js prototype remains the design lab for HDR bloom, point-spread shaders, dust attenuation, and higher-scale rendering.
 
-This sequence gives presentation and extraction one shared feedback loop while keeping either side replaceable.
+The next production slice is to move the selected Three.js renderer behind the same anonymous `rubylens.art.v1` contract, without changing the indexing or privacy boundary.
 
 ## Privacy guardrails
 
@@ -72,5 +73,5 @@ The current bare `index_workspace` research mode and upstream MCP indexer can in
 
 - [Ruby 4.0.5](https://www.ruby-lang.org/en/news/2026/05/20/ruby-4-0-5-released/) is installed, pinned in `.ruby-version` as `ruby-4.0.5`, and verified through chruby.
 - Verified interpreter: `ruby 4.0.5 (2026-05-20 revision 64336ffd0e) +PRISM [arm64-darwin24]` through chruby.
-- The project is an unborn local Git repository on `main`, with no commits or remote.
-- A Ruby research harness, fixture tests, sanitized snapshots, MCP probes, dependency overlays, and post-processing analyzer now exist. The production renderer and safe-manifest adapter do not.
+- The project is a local Git repository on `main`; the initial Rubydex research and visual prototype are committed separately from the gem implementation.
+- A Ruby research harness, sanitized snapshots, MCP probes, dependency overlays, post-processing analyzer, installable gem, private manifest, anonymous model adapter, CLI, and local report writer now exist.

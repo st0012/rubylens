@@ -3,6 +3,7 @@
 
 require "optparse"
 require_relative "../lib/rubylens"
+require_relative "../lib/rubylens/comparison"
 
 options = {}
 parser = OptionParser.new do |arguments|

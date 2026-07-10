@@ -1,6 +1,14 @@
+PATH
+  remote: .
+  specs:
+    rubylens (0.1.0)
+      base64 (>= 0.2)
+      rubydex (= 0.2.9)
+
 GEM
   remote: https://rubygems.org/
   specs:
+    base64 (0.3.0)
     drb (2.2.3)
     minitest (6.0.6)
       drb (~> 2.0)
@@ -23,9 +31,10 @@ PLATFORMS
 DEPENDENCIES
   minitest (~> 6.0)
   rake (~> 13.3)
-  rubydex (= 0.2.9)
+  rubylens!
 
 CHECKSUMS
+  base64 (0.3.0) sha256=27337aeabad6ffae05c265c450490628ef3ebd4b67be58257393227588f5a97b
   drb (2.2.3) sha256=0b00d6fdb50995fe4a45dea13663493c841112e4068656854646f418fda13373
   minitest (6.0.6) sha256=153ea36d1d987a62942382b61075745042a2b3123b1cd48f4c3675af9cc7d6f1
   prism (1.9.0) sha256=7b530c6a9f92c24300014919c9dcbc055bf4cdf51ec30aed099b06cd6674ef85
@@ -35,6 +44,7 @@ CHECKSUMS
   rubydex (0.2.9-arm64-darwin) sha256=1c014e3c244102739914d528202b1d0f54bdc3d1f85667b81b65ea22aabfa560
   rubydex (0.2.9-x86_64-darwin) sha256=000df1723b090d9176dbceb8e291b72f93931cc3c7782f32287e0db6c20c1dd7
   rubydex (0.2.9-x86_64-linux) sha256=f500e843d285def8fc799e0f9a989b9ba2b01b9372bde6ab0a6831738b3f6956
+  rubylens (0.1.0)
 
 BUNDLED WITH
   4.0.10

@@ -3,6 +3,7 @@
 
 require "optparse"
 require_relative "../lib/rubylens"
+require_relative "../lib/rubylens/extractor"
 
 options = { mode: "control" }
 parser = OptionParser.new do |arguments|

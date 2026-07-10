@@ -6,6 +6,9 @@ require "set"
 require "time"
 require "zlib"
 
+require_relative "dependency_analyzer"
+require_relative "extractor"
+
 module RubyLens
   class Analyzer
     NAMESPACE_DEFINITION_KINDS = %w[class_definition module_definition].freeze

@@ -6,6 +6,8 @@ require "pathname"
 require "rubydex/mcp_server"
 require "time"
 
+require_relative "extractor"
+
 module RubyLens
   class MCPProbe
     PROFILES = {

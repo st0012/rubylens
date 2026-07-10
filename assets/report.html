@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'">
+  <title>RubyLens · Ruby project</title>
+  <style>
+    :root { color-scheme: dark; font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #03040a; color: #f6f2ff; }
+    body::before { content: ""; position: fixed; inset: 0; pointer-events: none; background: radial-gradient(circle at 42% 45%, rgba(78, 36, 112, .14), transparent 34%), radial-gradient(circle at 68% 22%, rgba(29, 91, 114, .08), transparent 28%); }
+    canvas { position: fixed; inset: 0; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+    canvas:active { cursor: grabbing; }
+    .masthead { position: fixed; top: 28px; left: 32px; z-index: 2; pointer-events: none; max-width: 680px; }
+    .eyebrow { margin: 0 0 10px; color: #b6a9c9; font-size: 11px; font-weight: 750; letter-spacing: .18em; text-transform: uppercase; }
+    h1 { margin: 0; font: 500 clamp(28px, 4vw, 54px)/.95 ui-serif, Georgia, serif; letter-spacing: -.045em; }
+    .summary { margin: 14px 0 0; color: #aaa2b7; font-size: 13px; }
+    .status { display: inline-block; margin: 10px 0 0; border: 1px solid rgba(255, 198, 105, .22); border-radius: 999px; padding: 5px 8px; background: rgba(255, 184, 77, .07); color: #c9a96f; font-size: 10px; }
+    .status[hidden] { display: none; }
+    .panel { position: fixed; z-index: 3; top: 20px; right: 20px; width: min(348px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow: auto; border: 1px solid rgba(255,255,255,.1); border-radius: 18px; background: rgba(9, 9, 18, .78); box-shadow: 0 24px 80px rgba(0,0,0,.4); backdrop-filter: blur(18px); }
+    .panel-header { position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; gap: 16px; align-items: start; padding: 18px 18px 14px; border-bottom: 1px solid rgba(255,255,255,.08); background: rgba(9, 9, 18, .92); }
+    .panel h2 { margin: 0; font-size: 14px; letter-spacing: -.01em; }
+    .panel-header p { margin: 4px 0 0; color: #8d8798; font-size: 11px; line-height: 1.4; }
+    button { border: 1px solid rgba(255,255,255,.12); border-radius: 9px; padding: 7px 10px; background: rgba(255,255,255,.06); color: #eeeaf4; font: inherit; font-size: 11px; cursor: pointer; }
+    button:hover { background: rgba(255,255,255,.1); }
+    details { border-bottom: 1px solid rgba(255,255,255,.07); }
+    summary { display: flex; align-items: center; gap: 9px; padding: 14px 18px; cursor: pointer; list-style: none; font-size: 12px; font-weight: 700; }
+    summary::-webkit-details-marker { display: none; }
+    .swatch { width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 14px currentColor; }
+    .swatch.core { color: #f15f87; background: currentColor; }
+    .swatch.tests { color: #69d7ff; background: currentColor; }
+    .swatch.dependencies { color: #ffc86a; background: currentColor; }
+    .sliders { padding: 0 18px 15px; }
+    label { display: grid; grid-template-columns: 1fr 96px 34px; align-items: center; gap: 9px; min-height: 30px; color: #aaa4b3; font-size: 11px; }
+    input[type="range"] { width: 100%; accent-color: #d8c8ff; }
+    output { color: #f0eafa; text-align: right; font-variant-numeric: tabular-nums; }
+    .foot { padding: 15px 18px 17px; color: #7d7788; font-size: 10px; line-height: 1.55; }
+    .toolbar { position: fixed; z-index: 2; left: 32px; bottom: 28px; display: flex; gap: 8px; }
+    .hint { position: fixed; right: 28px; bottom: 24px; z-index: 2; color: #777181; font-size: 10px; pointer-events: none; }
+    @media (max-width: 1080px) and (min-width: 761px) {
+      .masthead { max-width: calc(100vw - 420px); }
+      h1 { font-size: clamp(28px, 4vw, 42px); }
+    }
+    @media (max-width: 760px) {
+      .masthead { top: 22px; left: 20px; max-width: calc(100vw - 40px); }
+      .panel { top: auto; bottom: 14px; right: 14px; left: 14px; width: auto; max-height: 46vh; }
+      .toolbar { display: none; }
+      .hint { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="cosmos" aria-label="Interactive three-dimensional stellar artwork generated from anonymous Ruby codebase signals"></canvas>
+  <header class="masthead">
+    <p class="eyebrow">RubyLens · local report</p>
+    <h1>Ruby project</h1>
+    <p class="summary" id="summary"></p>
+    <p class="status" id="status" hidden></p>
+  </header>
+  <aside class="panel" aria-label="RubyDex signal weights">
+    <div class="panel-header">
+      <div><h2>Stellar weights</h2><p>Choose how RubyDex attributes shape luminosity and scale.</p></div>
+      <button type="button" id="reset">Reset</button>
+    </div>
+    <div id="controls"></div>
+    <div class="foot">Every rendered star is derived from the local RubyDex index. Names, source, comments, and absolute paths are excluded. Structural data may still be sensitive.</div>
+  </aside>
+  <div class="toolbar"><button type="button" id="motion" aria-pressed="false">Pause drift</button><button type="button" id="view">Reset view</button></div>
+  <div class="hint">Drag to rotate · scroll to zoom</div>
+  <script>
+    "use strict";
+    const model = JSON.parse(atob("{{MODEL_BASE64}}"));
+    const canvas = document.getElementById("cosmos");
+    const context = canvas.getContext("2d", { alpha: false });
+    const fields = ["ancestorDepth", "definitionSites", "reopenings", "descendants", "references", "members"];
+    const labels = { ancestorDepth: "Ancestors", definitionSites: "Definition sites", reopenings: "Reopenings", descendants: "Descendants", references: "References", members: "Members" };
+    const defaults = {
+      core: { ancestorDepth: .28, definitionSites: .2, reopenings: .18, descendants: .72, references: .82, members: .7 },
+      tests: { ancestorDepth: .18, definitionSites: .25, reopenings: .18, descendants: .42, references: .85, members: .55 },
+      dependencies: { ancestorDepth: .12, definitionSites: .35, reopenings: .2, descendants: .32, references: .48, members: .4 },
+    };
+    let weights = structuredClone(defaults);
+    let width = 0, height = 0, dpr = 1, yaw = -.36, pitch = .34, zoom = 1, dragging = false, lastX = 0, lastY = 0, animationFrame = 0;
+    let drifting = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const colours = { core: [244, 82, 132], tests: [87, 204, 255], dependencies: [255, 184, 77] };
+
+    const hash = (seed, channel = 0) => {
+      let value = (seed ^ (channel * 0x9e3779b9)) >>> 0;
+      value = Math.imul(value ^ value >>> 16, 0x21f0aaad);
+      value = Math.imul(value ^ value >>> 15, 0x735a2d97);
+      return (value ^ value >>> 15) >>> 0;
+    };
+    const unit = (seed, channel) => hash(seed, channel) / 4294967296;
+    const normal = (seed, channel) => Math.sqrt(-2 * Math.log(Math.max(unit(seed, channel), 1e-7))) * Math.cos(6.283185 * unit(seed, channel + 1));
+    const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+
+    function normalizedSignals(values) {
+      return fields.map((field, index) => Math.log1p(values[index] || 0) / Math.log1p(model.domains[field] || 1));
+    }
+
+    function weightedSignal(normalized, category) {
+      return fields.reduce((total, field, index) => total + weights[category][field] * normalized[index], .12);
+    }
+
+    function corePosition(seed) {
+      const bulge = unit(seed, 2) < .24;
+      const radial = bulge ? 17 * Math.pow(unit(seed, 3), 1.75) : Math.min(42, -10 * Math.log(Math.max(1e-5, 1 - unit(seed, 3))));
+      const theta = unit(seed, 4) * Math.PI * 2 + radial * .04;
+      const vertical = normal(seed, 5) * (bulge ? 5.8 : 1.4 + radial * .025);
+      return [Math.cos(theta) * radial, vertical, Math.sin(theta) * radial];
+    }
+
+    function testPosition(seed) {
+      const radial = 17 + Math.min(45, -14 * Math.log(Math.max(1e-5, 1 - unit(seed, 7))));
+      const arm = Math.floor(unit(seed, 8) * 3);
+      const inArm = unit(seed, 9) < .38;
+      const theta = inArm
+        ? arm * (Math.PI * 2 / 3) + radial * .105 + normal(seed, 10) * .22
+        : unit(seed, 10) * Math.PI * 2;
+      const vertical = normal(seed, 11) * (1.4 + radial * .035);
+      return [Math.cos(theta) * radial, vertical, Math.sin(theta) * radial];
+    }
+
+    const packageAnchors = model.packages.map((row, index) => {
+      const seed = row[0], radius = 70 + 72 * Math.pow(unit(seed, 14), .72);
+      const theta = unit(seed, 15) * Math.PI * 2;
+      const vertical = normal(seed, 16) * 24;
+      return [Math.cos(theta) * radius, vertical, Math.sin(theta) * radius, 1.6 + Math.min(9, Math.sqrt(row[3]) * .055), index];
+    });
+
+    function dependencyPosition(seed, packageIndex) {
+      const anchor = packageAnchors[packageIndex] || [0, 0, 0, 2];
+      const radius = Math.min(anchor[3], -anchor[3] * .34 * Math.log(Math.max(1e-5, 1 - unit(seed, 18))));
+      const theta = unit(seed, 19) * Math.PI * 2;
+      const lift = normal(seed, 20) * anchor[3] * .17;
+      const tilt = (unit(model.packages[packageIndex]?.[0] || seed, 21) - .5) * .75;
+      return [
+        anchor[0] + Math.cos(theta) * radius,
+        anchor[1] + lift + Math.sin(theta) * radius * tilt,
+        anchor[2] + Math.sin(theta) * radius * Math.cos(tilt),
+      ];
+    }
+
+    function buildPoints() {
+      const points = [];
+      for (const row of model.namespaces) {
+        const category = row[3] === 1 ? "tests" : "core";
+        points.push({ category, seed: row[0], position: category === "tests" ? testPosition(row[0]) : corePosition(row[0]), normalized: normalizedSignals(row.slice(4, 10)), base: category === "core" ? .82 : .68 });
+      }
+      const groups = Array.from({ length: model.packages.length }, () => []);
+      for (const row of model.dependencyDeclarations) {
+        if (groups[row[1]]) groups[row[1]].push(row);
+      }
+      const target = Math.min(18000, model.dependencyDeclarations.length);
+      for (const group of groups) {
+        const quota = group.length === 0 ? 0 : Math.max(1, Math.floor(group.length * target / Math.max(1, model.dependencyDeclarations.length)));
+        for (let index = 0; index < Math.min(group.length, quota); index += 1) {
+          const row = group[index];
+          points.push({ category: "dependencies", seed: row[0], position: dependencyPosition(row[0], row[1]), normalized: normalizedSignals(row.slice(3, 9)), base: .45, declaration: true });
+        }
+      }
+      packageAnchors.forEach((anchor, index) => {
+        const packageRow = model.packages[index];
+        points.push({ category: "dependencies", seed: packageRow[0], position: anchor.slice(0, 3), normalized: normalizedSignals([0, packageRow[3], 0, 0, 0, 0]), base: 1.8, hub: true });
+      });
+      return points;
+    }
+    const points = buildPoints();
+    const renderedDependencyDeclarations = points.filter(point => point.declaration).length;
+
+    function updateSignals(category) {
+      for (const point of points) {
+        if (!category || point.category === category) point.signal = weightedSignal(point.normalized, point.category);
+      }
+    }
+
+    function createControls() {
+      const container = document.getElementById("controls");
+      container.textContent = "";
+      for (const category of ["core", "tests", "dependencies"]) {
+        const details = document.createElement("details");
+        details.open = category === "core";
+        const summary = document.createElement("summary");
+        summary.innerHTML = `<span class="swatch ${category}"></span>${category[0].toUpperCase() + category.slice(1)}`;
+        const sliders = document.createElement("div");
+        sliders.className = "sliders";
+        for (const field of fields) {
+          const label = document.createElement("label");
+          const name = document.createElement("span");
+          name.textContent = labels[field];
+          const input = document.createElement("input");
+          input.type = "range"; input.min = "0"; input.max = "1.5"; input.step = ".05"; input.value = weights[category][field];
+          const output = document.createElement("output");
+          output.value = Number(input.value).toFixed(2);
+          input.addEventListener("input", () => { weights[category][field] = Number(input.value); output.value = Number(input.value).toFixed(2); updateSignals(category); requestRender(); });
+          label.append(name, input, output); sliders.append(label);
+        }
+        details.append(summary, sliders); container.append(details);
+      }
+    }
+
+    function resize() {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      width = window.innerWidth; height = window.innerHeight;
+      canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
+      context.setTransform(dpr, 0, 0, dpr, 0, 0);
+      requestRender();
+    }
+
+    function project(position, matrix) {
+      const [cy, sy, cp, sp] = matrix;
+      const x1 = position[0] * cy - position[2] * sy;
+      const z1 = position[0] * sy + position[2] * cy;
+      const y2 = position[1] * cp - z1 * sp;
+      const z2 = position[1] * sp + z1 * cp;
+      const depth = 270 - z2;
+      if (depth <= 35) return null;
+      const perspective = 440 / depth * zoom;
+      return [width * .46 + x1 * perspective, height * .52 + y2 * perspective, perspective];
+    }
+
+    function render() {
+      animationFrame = 0;
+      context.globalCompositeOperation = "source-over";
+      context.fillStyle = "#03040a";
+      context.fillRect(0, 0, width, height);
+      const vignette = context.createRadialGradient(width * .46, height * .5, 0, width * .46, height * .5, Math.max(width, height) * .72);
+      vignette.addColorStop(0, "rgba(30,16,45,.18)"); vignette.addColorStop(1, "rgba(0,0,0,.6)");
+      context.fillStyle = vignette; context.fillRect(0, 0, width, height);
+      context.globalCompositeOperation = "lighter";
+      const matrix = [Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch)];
+      for (const point of points) {
+        const projected = project(point.position, matrix);
+        if (!projected) continue;
+        const [x, y, perspective] = projected;
+        if (x < -20 || x > width + 20 || y < -20 || y > height + 20) continue;
+        const signal = point.signal;
+        const size = clamp(point.base * (.62 + signal * .46) * perspective, .35, point.hub ? 5.2 : 3.2);
+        const alpha = clamp(.14 + signal * .105, .12, point.hub ? .86 : .7);
+        const colour = colours[point.category];
+        if (size > 1.35) {
+          context.beginPath(); context.arc(x, y, size * 3.4, 0, Math.PI * 2);
+          context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${alpha * .055})`; context.fill();
+        }
+        context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${alpha})`;
+        if (size < .85) context.fillRect(x, y, 1, 1);
+        else { context.beginPath(); context.arc(x, y, size, 0, Math.PI * 2); context.fill(); }
+        if (size > 1.1) {
+          context.beginPath(); context.arc(x, y, Math.max(.45, size * .24), 0, Math.PI * 2);
+          context.fillStyle = `rgba(255,248,244,${Math.min(.9, alpha * 1.25)})`; context.fill();
+        }
+      }
+      context.globalCompositeOperation = "source-over";
+      if (drifting && !dragging) { yaw += .00055; requestRender(); }
+    }
+
+    function requestRender() {
+      if (!animationFrame) animationFrame = requestAnimationFrame(render);
+    }
+
+    canvas.addEventListener("pointerdown", event => { dragging = true; lastX = event.clientX; lastY = event.clientY; canvas.setPointerCapture(event.pointerId); });
+    canvas.addEventListener("pointermove", event => { if (!dragging) return; yaw += (event.clientX - lastX) * .006; pitch = clamp(pitch + (event.clientY - lastY) * .004, -.95, .95); lastX = event.clientX; lastY = event.clientY; requestRender(); });
+    canvas.addEventListener("pointerup", () => { dragging = false; requestRender(); });
+    canvas.addEventListener("pointercancel", () => { dragging = false; requestRender(); });
+    canvas.addEventListener("wheel", event => { event.preventDefault(); zoom = clamp(zoom * Math.exp(-event.deltaY * .0008), .55, 2.4); requestRender(); }, { passive: false });
+    window.addEventListener("resize", resize);
+    document.getElementById("reset").addEventListener("click", () => { weights = structuredClone(defaults); updateSignals(); createControls(); requestRender(); });
+    document.getElementById("motion").addEventListener("click", event => { drifting = !drifting; event.currentTarget.textContent = drifting ? "Pause drift" : "Resume drift"; event.currentTarget.setAttribute("aria-pressed", String(!drifting)); requestRender(); });
+    document.getElementById("view").addEventListener("click", () => { yaw = -.36; pitch = .34; zoom = 1; requestRender(); });
+
+    const totals = model.totals;
+    const dependencyCopy = totals.dependencyDeclarations === renderedDependencyDeclarations
+      ? `${totals.dependencyDeclarations.toLocaleString()} dependency declarations`
+      : `${totals.dependencyDeclarations.toLocaleString()} dependency declarations indexed · ${renderedDependencyDeclarations.toLocaleString()} rendered`;
+    document.getElementById("summary").textContent = `${totals.namespaces.toLocaleString()} core/test namespaces · ${totals.packages.toLocaleString()} packages · ${dependencyCopy}`;
+    const warningTotal = Object.values(model.warningCounts).reduce((sum, count) => sum + count, 0);
+    if (warningTotal > 0) { const status = document.getElementById("status"); status.hidden = false; status.textContent = `${warningTotal.toLocaleString()} partial-index warning${warningTotal === 1 ? "" : "s"}`; }
+    const motion = document.getElementById("motion");
+    motion.textContent = drifting ? "Pause drift" : "Resume drift";
+    motion.setAttribute("aria-pressed", String(!drifting));
+    updateSignals(); createControls(); resize();
+  </script>
+</body>
+</html>
