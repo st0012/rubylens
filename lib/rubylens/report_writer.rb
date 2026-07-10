@@ -27,6 +27,12 @@ module RubyLens
       output
     end
 
+    def rubylens_report?(path)
+      File.file?(path) && File.open(path, "rb") { |file| file.read(2048).include?('<meta name="generator" content="RubyLens">') }
+    rescue Errno::ENOENT, Errno::EACCES
+      false
+    end
+
     private
 
     def protect_default_directory(directory)

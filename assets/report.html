@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="generator" content="RubyLens">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'">
   <title>RubyLens · Ruby project</title>
   <style>
@@ -108,10 +109,10 @@
       <div class="panel-header-actions"><button type="button" id="panel-toggle" aria-expanded="true" aria-controls="panel-body">Hide</button></div>
     </div>
     <div id="panel-body"><div id="controls"></div>
-    <div class="foot">This owner-only report embeds declaration and gem names for hover details. Source, comments, and paths are excluded. Do not share the HTML unless you intend to disclose codebase structure.</div></div>
+    <div class="foot">Double-click a gem cloud, press Enter or F on a selected gem star, or tap that star again to spread its plotted declarations. Escape or Reset view exits. This owner-only report embeds declaration and gem names for hover details. Source, comments, and paths are excluded. Do not share the HTML unless you intend to disclose codebase structure.</div></div>
   </aside>
   <div class="toolbar"><button type="button" id="motion" aria-pressed="false">Pause drift</button><button type="button" id="pan-mode" aria-label="Pan mode" aria-keyshortcuts="P" aria-pressed="false">Pan</button><button type="button" id="zoom-out" aria-label="Zoom out">−</button><output class="zoom-level" id="zoom-level" aria-label="Zoom level">100%</output><button type="button" id="zoom-in" aria-label="Zoom in">+</button><button type="button" id="view">Reset view</button></div>
-  <div class="hint">Hover for RubyDex data · drag to orbit · Shift-drag or Pan to move · scroll at cursor to zoom</div>
+  <div class="hint">Double-click gem clouds · drag to orbit · Shift-drag/Pan to move · scroll at cursor to zoom</div>
   <aside class="tooltip" id="tooltip" role="status" hidden><p class="tooltip-category" id="tooltip-category"></p><p class="tooltip-name" id="tooltip-name"></p><p class="tooltip-context" id="tooltip-context"></p><dl class="tooltip-metrics" id="tooltip-metrics"></dl></aside>
   <script>
     "use strict";
@@ -132,8 +133,8 @@
       tests: { ancestorDepth: .18, definitionSites: .25, reopenings: .18, descendants: .42, references: .85, members: .55 },
       dependencies: { ancestorDepth: .12, definitionSites: .35, reopenings: .2, descendants: .32, references: .48, members: .4 },
     };
-    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, activeFactButton = null, navigationMode = "orbit";
-    const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7;
+    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit";
+    const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35;
     const pointers = new Map();
     const visibleCategories = { core: true, tests: true, dependencies: true };
     const visibilityInputs = {};
@@ -208,12 +209,12 @@
       });
       model.dependencyDeclarations.forEach((row, index) => {
         const values = row.slice(3, 9);
-        points.push({ category: "dependencies", name: model.dependencyDeclarationNames[index], packageName: model.packageNames[row[1]], kind: row[2] === 0 ? "Class" : row[2] === 1 ? "Module" : "Member", seed: row[0], position: dependencyPosition(row[0], row[1]), values, normalized: normalizedSignals(values), base: .45, declaration: true });
+        points.push({ category: "dependencies", packageIndex: row[1], name: model.dependencyDeclarationNames[index], packageName: model.packageNames[row[1]], kind: row[2] === 0 ? "Class" : row[2] === 1 ? "Module" : "Member", seed: row[0], position: dependencyPosition(row[0], row[1]), values, normalized: normalizedSignals(values), base: .45, declaration: true });
       });
       packageAnchors.forEach((anchor, index) => {
         const packageRow = model.packages[index];
         const values = [0, packageRow[3], 0, 0, 0, 0];
-        points.push({ category: "dependencies", name: model.packageNames[index], packageRole: packageRow[1] === 0 ? "Direct dependency" : "Transitive dependency", packageLocation: packageRow[2] === 0 ? "Workspace package" : "External gem", indexedDeclarations: packageRow[3], seed: packageRow[0], position: anchor.slice(0, 3), values, normalized: normalizedSignals(values), base: 1.8, hub: true });
+        points.push({ category: "dependencies", packageIndex: index, name: model.packageNames[index], packageRole: packageRow[1] === 0 ? "Direct dependency" : "Transitive dependency", packageLocation: packageRow[2] === 0 ? "Workspace package" : "External gem", indexedDeclarations: packageRow[3], seed: packageRow[0], position: anchor.slice(0, 3), values, normalized: normalizedSignals(values), base: 1.8, hub: true });
       });
       return points;
     }
@@ -247,11 +248,13 @@
       tooltipCategory.textContent = point.hub ? "Gem" : point.category === "dependencies" ? "Gem declaration" : `${point.scope} namespace`;
       tooltipName.textContent = point.name || "Unnamed declaration";
       if (point.hub) {
-        tooltipContext.textContent = `${point.packageRole} · ${point.packageLocation}`;
+        const expanded = expandedPackageIndex === point.packageIndex ? " · Expanded plotted declarations · Escape to exit" : "";
+        tooltipContext.textContent = `${point.packageRole} · ${point.packageLocation}${expanded}`;
         addTooltipMetric("Indexed declarations", point.indexedDeclarations);
         return;
       }
-      tooltipContext.textContent = point.packageName ? `${point.kind} · ${point.packageName}` : point.kind;
+      const expanded = expandedPackageIndex === point.packageIndex ? " · Expanded gem system" : "";
+      tooltipContext.textContent = point.packageName ? `${point.kind} · ${point.packageName}${expanded}` : point.kind;
       addTooltipMetric("Ancestors", point.values[0]);
       addTooltipMetric("Definition sites", point.values[1]);
       addTooltipMetric("Reopenings", point.values[2]);
@@ -293,6 +296,7 @@
       for (const point of points) {
         if (!point.screen) continue;
         if (focusedCategory && point.category !== focusedCategory) continue;
+        if (expandedPackageIndex !== null && (point.category !== "dependencies" || point.packageIndex !== expandedPackageIndex)) continue;
         const dx = point.screen[0] - x;
         const dy = point.screen[1] - y;
         const distance = Math.hypot(dx, dy);
@@ -303,6 +307,25 @@
         }
       }
       return nearest;
+    }
+
+    function dependencyPackageAt(x, y) {
+      const exact = hitTest(x, y);
+      if (exact) return exact.category === "dependencies" ? exact : null;
+
+      let nearestHub = null;
+      let nearestRatio = Infinity;
+      for (const point of points) {
+        if (!point.hub || !point.screen || !point.cloudScreenRadius) continue;
+        if (expandedPackageIndex !== null && point.packageIndex !== expandedPackageIndex) continue;
+        const distance = Math.hypot(point.screen[0] - x, point.screen[1] - y);
+        const ratio = distance / point.cloudScreenRadius;
+        if (ratio <= 1 && ratio < nearestRatio) {
+          nearestHub = point;
+          nearestRatio = ratio;
+        }
+      }
+      return nearestHub;
     }
 
     function queueHover(x, y) {
@@ -377,9 +400,14 @@
       focusedCategory = null;
     }
 
+    function clearExpandedPackage() {
+      expandedPackageIndex = null;
+    }
+
     function clearExplorationFocus() {
       clearActiveFact();
       clearCategoryFocus();
+      clearExpandedPackage();
       selectPoint(null);
     }
 
@@ -397,6 +425,7 @@
       }
       setCategoryVisible(category, true);
       clearActiveFact();
+      clearExpandedPackage();
       selectPoint(null);
       clearCategoryFocus();
       focusedCategory = category;
@@ -418,6 +447,7 @@
       }
       setCategoryVisible(point.category, true);
       clearActiveFact();
+      clearExpandedPackage();
       activeFactButton = button;
       activeFactButton.setAttribute("aria-pressed", "true");
       clearCategoryFocus();
@@ -431,6 +461,27 @@
       selectedPoint = null;
       selectionLocked = false;
       selectPoint(point, true);
+    }
+
+    function focusDependencyPackage(packageIndex) {
+      const hub = points.find(point => point.hub && point.packageIndex === packageIndex);
+      if (!hub) return false;
+
+      setCategoryVisible("dependencies", true);
+      clearActiveFact();
+      clearCategoryFocus();
+      expandedPackageIndex = packageIndex;
+      setDrifting(false);
+      panX = 0;
+      panY = 0;
+      const [x, y, z] = hub.position;
+      yaw = Math.atan2(x, z);
+      pitch = clamp(Math.atan2(y, Math.hypot(x, z)), -.95, .95);
+      zoom = 4;
+      selectedPoint = null;
+      selectionLocked = false;
+      selectPoint(hub, true);
+      return true;
     }
 
     function createExplorer() {
@@ -563,12 +614,19 @@
       canvas.classList.toggle("is-pan", panning);
     }
 
-    function project(position, matrix) {
+    function project(point, matrix) {
+      const position = point.position;
+      const anchor = expandedPackageIndex !== null && point.packageIndex === expandedPackageIndex
+        ? packageAnchors[expandedPackageIndex]
+        : null;
+      const positionX = anchor ? anchor[0] + (position[0] - anchor[0]) * DEPENDENCY_EXPANSION : position[0];
+      const positionY = anchor ? anchor[1] + (position[1] - anchor[1]) * DEPENDENCY_EXPANSION : position[1];
+      const positionZ = anchor ? anchor[2] + (position[2] - anchor[2]) * DEPENDENCY_EXPANSION : position[2];
       const [cy, sy, cp, sp] = matrix;
-      const x1 = position[0] * cy - position[2] * sy;
-      const z1 = position[0] * sy + position[2] * cy;
-      const y2 = position[1] * cp - z1 * sp;
-      const z2 = position[1] * sp + z1 * cp;
+      const x1 = positionX * cy - positionZ * sy;
+      const z1 = positionX * sy + positionZ * cy;
+      const y2 = positionY * cp - z1 * sp;
+      const z2 = positionY * sp + z1 * cp;
       const depth = 270 - z2;
       if (depth <= 35) return null;
       const perspective = 440 / depth * zoom;
@@ -586,10 +644,12 @@
       context.fillStyle = vignette; context.fillRect(0, 0, width, height);
       context.globalCompositeOperation = "lighter";
       const matrix = [Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch)];
+      const deepDetail = clamp(Math.log2(Math.max(1, zoom)) / 5, 0, 1);
       for (const point of points) {
         point.screen = null;
+        if (point.hub) point.cloudScreenRadius = null;
         if (!visibleCategories[point.category]) continue;
-        const projected = project(point.position, matrix);
+        const projected = project(point, matrix);
         if (!projected) continue;
         const [x, y, perspective] = projected;
         const cullMargin = point === selectedPoint ? 0 : 20;
@@ -597,19 +657,28 @@
         const signal = point.signal;
         const size = clamp(point.base * (.62 + signal * .46) * perspective, .35, point.hub ? 5.2 : 3.2);
         const alpha = clamp(.14 + signal * .105, .12, point.hub ? .86 : .7);
-        const emphasis = selectedPoint ? (point === selectedPoint ? 1 : .12) : focusedCategory && point.category !== focusedCategory ? .16 : 1;
-        const visibleAlpha = alpha * emphasis;
+        const focusedPackagePoint = expandedPackageIndex !== null && point.category === "dependencies" && point.packageIndex === expandedPackageIndex;
+        const emphasis = expandedPackageIndex !== null
+          ? (focusedPackagePoint ? 1 : .06)
+          : selectedPoint ? (point === selectedPoint ? 1 : .12) : focusedCategory && point.category !== focusedCategory ? .16 : 1;
+        const visibleAlpha = focusedPackagePoint ? Math.max(.34, alpha) : alpha * emphasis;
         const colour = colours[point.category];
         point.screen = [x, y, size];
-        if (size > 1.35) {
-          context.beginPath(); context.arc(x, y, size * 3.4, 0, Math.PI * 2);
-          context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${visibleAlpha * .055})`; context.fill();
+        if (point.hub) {
+          const expansion = expandedPackageIndex === point.packageIndex ? DEPENDENCY_EXPANSION : 1;
+          point.cloudScreenRadius = Math.max(12, packageAnchors[point.packageIndex][3] * perspective * expansion * 1.2);
+        }
+        const detailedPoint = emphasis >= .1;
+        if (size > 1.35 && detailedPoint) {
+          const glowScale = focusedPackagePoint ? 2.2 - deepDetail * .8 : 3.4 - deepDetail * 1.3;
+          context.beginPath(); context.arc(x, y, size * glowScale, 0, Math.PI * 2);
+          context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${visibleAlpha * (focusedPackagePoint ? .045 : .055)})`; context.fill();
         }
         context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${visibleAlpha})`;
-        if (size < .85) context.fillRect(x, y, 1, 1);
+        if (!detailedPoint || size < .85) context.fillRect(x, y, 1, 1);
         else { context.beginPath(); context.arc(x, y, size, 0, Math.PI * 2); context.fill(); }
-        if (size > 1.1) {
-          context.beginPath(); context.arc(x, y, Math.max(.45, size * .24), 0, Math.PI * 2);
+        if (size > 1.1 && detailedPoint) {
+          context.beginPath(); context.arc(x, y, Math.max(.45 + deepDetail * .25, size * (.24 + deepDetail * .06)), 0, Math.PI * 2);
           context.fillStyle = `rgba(255,248,244,${Math.min(.9, visibleAlpha * 1.25)})`; context.fill();
         }
         if (point === selectedPoint) {
@@ -710,7 +779,8 @@
         const point = hitTest(event.clientX, event.clientY);
         clearActiveFact();
         clearCategoryFocus();
-        if (point) selectPoint(point, true);
+        if (point?.category === "dependencies" && selectionLocked && selectedPoint === point) focusDependencyPackage(point.packageIndex);
+        else if (point) selectPoint(point, true);
         else clearExplorationFocus();
       }
       requestRender();
@@ -730,15 +800,22 @@
     }, { passive: false });
     canvas.addEventListener("dblclick", event => {
       if (pointers.size > 0) return;
+      const dependency = dependencyPackageAt(event.clientX, event.clientY);
+      if (dependency) {
+        focusDependencyPackage(dependency.packageIndex);
+        return;
+      }
       zoomBetween(zoom * 2, event.clientX, event.clientY);
       requestRender();
     });
     canvas.addEventListener("keydown", event => {
       if (pointers.size > 0) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.key === "+" || event.key === "=") zoomBetween(zoom * ZOOM_STEP, sceneCenterX, sceneCenterY);
       else if (event.key === "-") zoomBetween(zoom / ZOOM_STEP, sceneCenterX, sceneCenterY);
       else if (event.key === "0") resetCamera();
       else if (event.key.toLowerCase() === "p") setNavigationMode(navigationMode === "pan" ? "orbit" : "pan");
+      else if ((event.key === "Enter" || event.key.toLowerCase() === "f") && selectedPoint?.category === "dependencies") focusDependencyPackage(selectedPoint.packageIndex);
       else if (event.key.startsWith("Arrow")) {
         const distance = event.shiftKey ? 96 : 32;
         if (event.key === "ArrowLeft") panBy(-distance, 0);
@@ -784,7 +861,7 @@
     setNavigationMode(navigationMode);
     document.querySelector("h1").textContent = model.projectName;
     document.title = `RubyLens · ${model.projectName}`;
-    canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover or tap stars for RubyDex declaration details. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, and use arrow keys to pan.`);
+    canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover or tap stars for RubyDex declaration details. Double-click a gem cloud, press Enter or F on a selected gem star, or tap that star again to expand its plotted declarations. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, and use arrow keys to pan. Escape exits a focused gem system.`);
     updateSignals(); createExplorer(); setPanelCollapsed(window.matchMedia("(max-width: 760px)").matches); resize();
   </script>
 </body>

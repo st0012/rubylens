@@ -31,7 +31,7 @@ module RubyLens
       options = {}
       parser = OptionParser.new do |option|
         option.banner = "Usage: rubylens build [TARGET] [--output FILE] [--lockfile FILE]"
-        option.on("-o", "--output FILE", "Local report (default: TARGET/.rubylens/report.html)") do |value|
+        option.on("-o", "--output FILE", "Local report (default: TARGET/rubylens-report.html)") do |value|
           options[:output] = value
         end
         option.on("--lockfile FILE", "Gemfile.lock used to select exact dependency versions") do |value|

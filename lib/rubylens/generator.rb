@@ -4,6 +4,8 @@ module RubyLens
   Result = Data.define(:output_path, :counts, :warnings)
 
   class Generator
+    DEFAULT_REPORT_NAME = "rubylens-report.html"
+
     def initialize(
       manifest_builder: Index::Manifest,
       adapter: Index::RubydexAdapter.new,
@@ -18,7 +20,13 @@ module RubyLens
 
     def call(path: Dir.pwd, output: nil, lockfile: nil)
       root = File.realpath(path)
-      output ||= File.join(root, ".rubylens", "report.html")
+      if output.nil?
+        output = File.join(root, DEFAULT_REPORT_NAME)
+        if File.exist?(output) && !@report_writer.rubylens_report?(output)
+          raise Error, "default report path already exists and is not a RubyLens report"
+        end
+        GitRepository.new(root).exclude_local(output)
+      end
       manifest = @manifest_builder.build(root: root, lockfile: lockfile)
       snapshot = @adapter.index(manifest)
       model = @model_builder.build(snapshot)

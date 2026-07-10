@@ -2,6 +2,7 @@
 
 require "open3"
 require "pathname"
+require "fileutils"
 
 module RubyLens
   class GitRepository
@@ -54,7 +55,47 @@ module RubyLens
       end.sort
     end
 
+    def exclude_local(path)
+      path = Pathname(path).expand_path
+      path = path.dirname.realpath.join(path.basename)
+      raise ExtractionError, "local exclude path is outside the Git repository" unless Paths.inside?(path, @git_root)
+
+      exclude_output, status = capture("rev-parse", "--git-path", "info/exclude")
+      raise ExtractionError, "failed to locate Git's local exclude file" unless status.success?
+
+      exclude_path = Pathname(exclude_output.strip)
+      exclude_path = @git_root.join(exclude_path) unless exclude_path.absolute?
+      FileUtils.mkdir_p(exclude_path.dirname)
+      relative = path.relative_path_from(@git_root).to_s
+      _tracked_output, tracked_status = capture("ls-files", "--error-unmatch", "--", relative)
+      raise ExtractionError, "default report path is already tracked by Git" if tracked_status.success?
+
+      directory = File.dirname(relative)
+      basename = File.basename(relative)
+      escaped_report = escape_ignore_path(relative)
+      escaped_temporary = ".#{escape_ignore_path(basename)}.*.tmp"
+      escaped_temporary = "#{escape_ignore_path(directory)}/#{escaped_temporary}" unless directory == "."
+      entries = ["/#{escaped_report}", "/#{escaped_temporary}"]
+      File.open(exclude_path, File::RDWR | File::CREAT, 0o600) do |file|
+        file.flock(File::LOCK_EX)
+        file.rewind
+        contents = file.read
+        existing = contents.each_line.map(&:chomp)
+        missing = entries - existing
+        return false if missing.empty?
+
+        file.seek(0, IO::SEEK_END)
+        file.write("\n") if !contents.empty? && !contents.end_with?("\n")
+        file.write("#{missing.join("\n")}\n")
+      end
+      true
+    end
+
     private
+
+    def escape_ignore_path(path)
+      path.gsub(/([\\*?\[\]])/, '\\\\\1')
+    end
 
     def capture(*arguments)
       directory = @git_root || @target_root

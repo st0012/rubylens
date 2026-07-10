@@ -23,6 +23,7 @@ Accuracy note: this brief uses the preferred narrative spelling **RubyDex**. The
 - Treat core code, tests, and dependencies as the three primary visual categories. Keep the scene artistic at whole-codebase scale, without a per-node inspection workflow.
 - Present the RubyDex model as a guided explorer for general Ruby users: separate core, test-only, and gem counts; let users show or focus each system; and turn ancestry, descendants, members, and references into clickable standout facts that highlight declarations.
 - Make deep inspection spatially navigable: zoom toward the cursor or pinch midpoint, preserve orbit controls, and support explicit mouse, touch, and keyboard panning through dense clouds.
+- Treat dependency focus as a lightweight level-of-detail state: double-click one existing gem system to pause drift, expand its current points, and sharpen its stars without duplicating dependency models in memory.
 - Keep Galaxy A as the selected direction. City Blocks is paused until the stellar direction and gem pipeline are mature.
 - Keep 3D coordinates and layout simulation renderer-owned rather than embedding positions in `model.v1`.
 

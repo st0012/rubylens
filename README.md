@@ -12,18 +12,20 @@ Add RubyLens to the bundle of the project you want to visualize, then run:
 bundle exec rubylens build .
 ```
 
-The default report is `.rubylens/report.html`. It contains declaration and gem names for local hover details, but no source text, comments, or paths. RubyLens creates `.rubylens/.gitignore` and writes the report with owner-only permissions. The model reveals private codebase structure, so keep it local unless you intend to share it.
+The default report is `rubylens-report.html` in the project root. It contains declaration and gem names for local hover details, but no source text, comments, or paths. RubyLens adds that exact default path to Git's local exclude file and writes the report with owner-only permissions, so it stays out of commits without changing the project's `.gitignore`. The model reveals private codebase structure, so keep it local unless you intend to share it.
 
 Ruby API:
 
 ```ruby
-result = RubyLens.generate(path: ".", output: ".rubylens/report.html")
+result = RubyLens.generate(path: ".")
 puts result.output_path
 puts result.counts
 puts result.warnings
 ```
 
-The report is fully local: it makes no network requests and needs neither Node nor a server to open. Drag to orbit, zoom toward the cursor, Shift-drag or use Pan mode to traverse dense clouds, show or focus core code, tests, and gems independently, and jump from RubyDex-powered standout facts to highlighted declarations in the galaxy.
+Passing `output:` selects a custom path. Custom paths are written exactly where requested and are not added to Git's local excludes, so the caller is responsible for keeping them private.
+
+The report is fully local: it makes no network requests and needs neither Node nor a server to open. Drag to orbit, zoom toward the cursor, Shift-drag or use Pan mode to traverse dense clouds, show or focus core code, tests, and gems independently, and jump from RubyDex-powered standout facts to highlighted declarations in the galaxy. Double-clicking a gem cloud pauses drift and expands that one existing system for a sharper, more separated view without loading another model.
 
 ## Development
 
