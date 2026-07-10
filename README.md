@@ -12,7 +12,7 @@ Add RubyLens to the bundle of the project you want to visualize, then run:
 bundle exec rubylens build .
 ```
 
-The default report is `.rubylens/report.html`. It contains no declaration names, source text, comments, or absolute paths. RubyLens creates `.rubylens/.gitignore` and writes the report with owner-only permissions. The structural model can still reveal facts about a private codebase, so keep it local unless you intend to share it.
+The default report is `.rubylens/report.html`. It contains declaration and gem names for local hover details, but no source text, comments, or paths. RubyLens creates `.rubylens/.gitignore` and writes the report with owner-only permissions. The model reveals private codebase structure, so keep it local unless you intend to share it.
 
 Ruby API:
 
@@ -23,7 +23,7 @@ puts result.counts
 puts result.warnings
 ```
 
-The report is fully local: it makes no network requests and needs neither Node nor a server to open. Drag to rotate, scroll to zoom, and adjust the six Rubydex signal weights independently for core, tests, and dependencies.
+The report is fully local: it makes no network requests and needs neither Node nor a server to open. Drag to orbit, zoom toward the cursor, Shift-drag or use Pan mode to traverse dense clouds, show or focus core code, tests, and gems independently, and jump from RubyDex-powered standout facts to highlighted declarations in the galaxy.
 
 ## Development
 

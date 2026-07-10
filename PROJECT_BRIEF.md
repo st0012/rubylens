@@ -21,7 +21,8 @@ Accuracy note: this brief uses the preferred narrative spelling **RubyDex**. The
 - Build a presentation-led vertical slice, because the visual determines the data contract and the available data constrains the visual. Do not build the presentation or extractor to completion in isolation.
 - During visual prototyping, optimize for iteration speed: preserve basic dataset provenance, count truth, and privacy, but defer exhaustive semantic classification and validation until a direction is selected.
 - Treat core code, tests, and dependencies as the three primary visual categories. Keep the scene artistic at whole-codebase scale, without a per-node inspection workflow.
-- Keep the RubyDex signal weights interactive and independent for core, tests, and dependencies so users can decide how ancestry, descendants, members, references, definition sites, and reopenings affect the artwork.
+- Present the RubyDex model as a guided explorer for general Ruby users: separate core, test-only, and gem counts; let users show or focus each system; and turn ancestry, descendants, members, and references into clickable standout facts that highlight declarations.
+- Make deep inspection spatially navigable: zoom toward the cursor or pinch midpoint, preserve orbit controls, and support explicit mouse, touch, and keyboard panning through dense clouds.
 - Keep Galaxy A as the selected direction. City Blocks is paused until the stellar direction and gem pipeline are mature.
 - Keep 3D coordinates and layout simulation renderer-owned rather than embedding positions in `model.v1`.
 
@@ -48,11 +49,11 @@ The upstream [API reference](https://shopify.github.io/rubydex/) should remain t
 ## Current vertical slice
 
 1. An explicit Git-selected manifest is the only file list passed to `Graph#index_all`; exact locked gem files are containment-audited and RubyLens's tool-only dependency closure is removed.
-2. The Rubydex adapter emits only the numeric signals needed by the art model. Declaration names, source, comments, and absolute paths do not cross into the report payload.
-3. `RubyLens.generate` and `rubylens build` write one owner-only, self-contained HTML report with separate signal controls for core, tests, and dependencies.
+2. The Rubydex adapter emits the signals and declaration/package names needed for local hover proof. Source text, comments, and paths do not cross into the report payload.
+3. `RubyLens.generate` and `rubylens build` write one owner-only, self-contained HTML report with guided core, tests, and gems exploration plus RubyDex-powered clickable facts.
 4. The lightweight gem renderer implements the approved galaxy morphology without requiring Node. The Three.js prototype remains the design lab for HDR bloom, point-spread shaders, dust attenuation, and higher-scale rendering.
 
-The next production slice is to move the selected Three.js renderer behind the same anonymous `rubylens.art.v1` contract, without changing the indexing or privacy boundary.
+The next production slice is to move the selected Three.js renderer behind the same bounded `rubylens.art.v2` contract, without changing the indexing or local-only privacy boundary.
 
 ## Privacy guardrails
 
@@ -74,4 +75,4 @@ The current bare `index_workspace` research mode and upstream MCP indexer can in
 - [Ruby 4.0.5](https://www.ruby-lang.org/en/news/2026/05/20/ruby-4-0-5-released/) is installed, pinned in `.ruby-version` as `ruby-4.0.5`, and verified through chruby.
 - Verified interpreter: `ruby 4.0.5 (2026-05-20 revision 64336ffd0e) +PRISM [arm64-darwin24]` through chruby.
 - The project is a local Git repository on `main`; the initial Rubydex research and visual prototype are committed separately from the gem implementation.
-- A Ruby research harness, sanitized snapshots, MCP probes, dependency overlays, post-processing analyzer, installable gem, private manifest, anonymous model adapter, CLI, and local report writer now exist.
+- A Ruby research harness, sanitized snapshots, MCP probes, dependency overlays, post-processing analyzer, installable gem, private manifest, bounded local model adapter, CLI, and local report writer now exist.

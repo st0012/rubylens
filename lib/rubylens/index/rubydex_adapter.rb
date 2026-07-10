@@ -24,7 +24,9 @@ module RubyLens
 
         {
           "schema" => "rubylens.snapshot.v1",
+          "project_name" => project_name(manifest),
           "components" => workspace.fetch(:component_counts),
+          "namespace_names" => workspace.fetch(:records).map { |declaration, _definitions| declaration.name },
           "namespaces" => build_workspace_rows(workspace, inbound_references, manifest),
           "packages" => build_package_rows(declarations, manifest),
           "warning_counts" => {
@@ -94,19 +96,23 @@ module RubyLens
           next unless package_index
 
           sites = definitions.map { |definition| site_key(definition.location) }.uniq.length
-          declaration_rows.fetch(package_index) << [
-            namespace_kind(declaration),
-            namespace?(declaration) ? [declaration.ancestors.count - 1, 0].max : 0,
-            sites,
-            [sites - 1, 0].max,
-            namespace?(declaration) ? [declaration.descendants.count - 1, 0].max : 0,
-            safe_length(declaration, :references),
-            namespace?(declaration) ? safe_length(declaration, :members) : 0,
-          ]
+          declaration_rows.fetch(package_index) << {
+            "name" => declaration.name,
+            "signals" => [
+              namespace_kind(declaration),
+              namespace?(declaration) ? [declaration.ancestors.count - 1, 0].max : 0,
+              sites,
+              [sites - 1, 0].max,
+              namespace?(declaration) ? [declaration.descendants.count - 1, 0].max : 0,
+              safe_length(declaration, :references),
+              namespace?(declaration) ? safe_length(declaration, :members) : 0,
+            ],
+          }
         end
 
         manifest.packages.each_with_index.map do |package, index|
           {
+            "name" => package.name,
             "role" => package.role == "direct" ? 0 : 1,
             "location" => package.location == "workspace" ? 0 : 1,
             "declarations" => declaration_rows.fetch(index),
@@ -201,6 +207,14 @@ module RubyLens
         object.public_send(method).count
       rescue StandardError
         0
+      end
+
+      def project_name(manifest)
+        basename = manifest.root.basename.to_s
+        return "IRB" if basename.casecmp("irb").zero?
+        return "RDoc" if basename.casecmp("rdoc").zero?
+
+        basename.split(/[-_]+/).map(&:capitalize).join(" ")
       end
     end
   end

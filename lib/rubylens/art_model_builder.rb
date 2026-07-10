@@ -10,9 +10,12 @@ module RubyLens
 
     def build(snapshot)
       random = Random.new(@seed)
-      namespaces = snapshot.fetch("namespaces").shuffle(random: random).map do |row|
+      namespace_order = (0...snapshot.fetch("namespaces").length).to_a.shuffle(random: random)
+      namespaces = namespace_order.map do |index|
+        row = snapshot.fetch("namespaces").fetch(index)
         [random.rand(0..0xffff_ffff), *row]
       end
+      namespace_names = namespace_order.map { |index| snapshot.fetch("namespace_names").fetch(index) }
       package_order = (0...snapshot.fetch("packages").length).to_a.shuffle(random: random)
       package_index = package_order.each_with_index.to_h
       packages = package_order.map do |old_index|
@@ -25,27 +28,50 @@ module RubyLens
           package.fetch("declarations").empty? ? 0 : 1,
         ]
       end
-      dependencies = package_order.flat_map do |old_index|
-        snapshot.fetch("packages").fetch(old_index).fetch("declarations").shuffle(random: random).map do |row|
-          [random.rand(0..0xffff_ffff), package_index.fetch(old_index), *row]
+      package_names = package_order.map { |old_index| snapshot.fetch("packages").fetch(old_index).fetch("name") }
+      indexed_dependency_count = snapshot.fetch("packages").sum do |package|
+        package.fetch("declarations").length
+      end
+      render_target = [18_000, indexed_dependency_count].min
+      dependencies = []
+      dependency_names = []
+      package_order.each do |old_index|
+        declarations = snapshot.fetch("packages").fetch(old_index).fetch("declarations").shuffle(random: random)
+        quota = if declarations.empty?
+          0
+        else
+          [declarations.length, [1, declarations.length * render_target / [indexed_dependency_count, 1].max].max].min
+        end
+        declarations.first(quota).each do |declaration|
+          dependencies << [
+            random.rand(0..0xffff_ffff),
+            package_index.fetch(old_index),
+            *declaration.fetch("signals"),
+          ]
+          dependency_names << declaration.fetch("name")
         end
       end
       scope_counts = [0, 1, 2].map { |scope| namespaces.count { |row| row[3] == scope } }
 
       {
-        "schema" => "rubylens.art.v1",
+        "schema" => "rubylens.art.v2",
+        "projectName" => snapshot.fetch("project_name"),
         "totals" => {
           "namespaces" => namespaces.length,
           "classes" => namespaces.count { |row| row[2].zero? },
           "modules" => namespaces.count { |row| row[2] == 1 },
           "scopes" => scope_counts,
           "packages" => packages.length,
-          "dependencyDeclarations" => dependencies.length,
+          "dependencyDeclarations" => indexed_dependency_count,
+          "renderedDependencyDeclarations" => dependencies.length,
         },
         "domains" => signal_domains(namespaces, dependencies),
         "componentCounts" => snapshot.fetch("components"),
+        "namespaceNames" => namespace_names,
         "namespaces" => namespaces,
+        "packageNames" => package_names,
         "packages" => packages,
+        "dependencyDeclarationNames" => dependency_names,
         "dependencyDeclarations" => dependencies,
         "warningCounts" => snapshot.fetch("warning_counts"),
       }

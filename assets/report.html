@@ -12,76 +12,133 @@
     body::before { content: ""; position: fixed; inset: 0; pointer-events: none; background: radial-gradient(circle at 42% 45%, rgba(78, 36, 112, .14), transparent 34%), radial-gradient(circle at 68% 22%, rgba(29, 91, 114, .08), transparent 28%); }
     canvas { position: fixed; inset: 0; width: 100%; height: 100%; cursor: grab; touch-action: none; }
     canvas:active { cursor: grabbing; }
-    .masthead { position: fixed; top: 28px; left: 32px; z-index: 2; pointer-events: none; max-width: 680px; }
+    canvas.is-pan, canvas.is-dragging-pan { cursor: move; }
+    canvas.is-pan:active, canvas.is-dragging-pan:active { cursor: grabbing; }
+    canvas:focus-visible { outline: 2px solid rgba(216, 200, 255, .85); outline-offset: -4px; }
+    .masthead { position: fixed; top: 28px; left: 32px; z-index: 2; pointer-events: none; max-width: 760px; }
     .eyebrow { margin: 0 0 10px; color: #b6a9c9; font-size: 11px; font-weight: 750; letter-spacing: .18em; text-transform: uppercase; }
     h1 { margin: 0; font: 500 clamp(28px, 4vw, 54px)/.95 ui-serif, Georgia, serif; letter-spacing: -.045em; }
-    .summary { margin: 14px 0 0; color: #aaa2b7; font-size: 13px; }
+    .overview { display: flex; flex-wrap: wrap; gap: 10px 24px; margin: 18px 0 0; }
+    .overview div { display: grid; grid-template-columns: auto auto; align-items: baseline; gap: 7px; }
+    .overview dt, .overview dd { margin: 0; }
+    .overview dt { color: #918a9e; font-size: 11px; }
+    .overview dd { color: #f3edf9; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .coverage { margin: 9px 0 0; color: #7f788b; font-size: 10px; }
     .status { display: inline-block; margin: 10px 0 0; border: 1px solid rgba(255, 198, 105, .22); border-radius: 999px; padding: 5px 8px; background: rgba(255, 184, 77, .07); color: #c9a96f; font-size: 10px; }
     .status[hidden] { display: none; }
-    .panel { position: fixed; z-index: 3; top: 20px; right: 20px; width: min(348px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow: auto; border: 1px solid rgba(255,255,255,.1); border-radius: 18px; background: rgba(9, 9, 18, .78); box-shadow: 0 24px 80px rgba(0,0,0,.4); backdrop-filter: blur(18px); }
+    .panel { position: fixed; z-index: 3; top: 20px; right: 20px; width: min(348px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow: auto; border: 1px solid rgba(255,255,255,.1); border-radius: 18px; background: rgba(9, 9, 18, .82); box-shadow: 0 24px 80px rgba(0,0,0,.4); backdrop-filter: blur(18px); transition: width 180ms cubic-bezier(.16, 1, .3, 1); }
+    .panel.is-collapsed { width: 190px; overflow: hidden; }
     .panel-header { position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; gap: 16px; align-items: start; padding: 18px 18px 14px; border-bottom: 1px solid rgba(255,255,255,.08); background: rgba(9, 9, 18, .92); }
+    .panel.is-collapsed .panel-header { align-items: center; padding-block: 13px; border-bottom: 0; }
+    .panel.is-collapsed .panel-header p { display: none; }
+    .panel-header-actions { display: flex; flex: none; gap: 6px; }
     .panel h2 { margin: 0; font-size: 14px; letter-spacing: -.01em; }
     .panel-header p { margin: 4px 0 0; color: #8d8798; font-size: 11px; line-height: 1.4; }
     button { border: 1px solid rgba(255,255,255,.12); border-radius: 9px; padding: 7px 10px; background: rgba(255,255,255,.06); color: #eeeaf4; font: inherit; font-size: 11px; cursor: pointer; }
     button:hover { background: rgba(255,255,255,.1); }
+    button:focus-visible { outline: 2px solid rgba(216, 200, 255, .9); outline-offset: 2px; }
     details { border-bottom: 1px solid rgba(255,255,255,.07); }
-    summary { display: flex; align-items: center; gap: 9px; padding: 14px 18px; cursor: pointer; list-style: none; font-size: 12px; font-weight: 700; }
+    summary { display: flex; align-items: center; gap: 10px; padding: 14px 18px; cursor: pointer; list-style: none; }
     summary::-webkit-details-marker { display: none; }
+    summary::after { content: "⌄"; margin-left: auto; color: #777080; font-size: 12px; transition: transform 160ms cubic-bezier(.16, 1, .3, 1); }
+    details[open] summary::after { transform: rotate(180deg); }
     .swatch { width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 14px currentColor; }
     .swatch.core { color: #f15f87; background: currentColor; }
     .swatch.tests { color: #69d7ff; background: currentColor; }
     .swatch.dependencies { color: #ffc86a; background: currentColor; }
-    .sliders { padding: 0 18px 15px; }
-    label { display: grid; grid-template-columns: 1fr 96px 34px; align-items: center; gap: 9px; min-height: 30px; color: #aaa4b3; font-size: 11px; }
-    input[type="range"] { width: 100%; accent-color: #d8c8ff; }
-    output { color: #f0eafa; text-align: right; font-variant-numeric: tabular-nums; }
+    .section-heading { display: grid; gap: 2px; }
+    .section-heading strong { color: #eee9f4; font-size: 12px; }
+    .section-heading small { color: #837c8d; font-size: 10px; font-weight: 500; }
+    .section-note { margin: -4px 0 13px; color: #756e7e; font-size: 9px; line-height: 1.4; }
+    .section-body { padding: 0 18px 16px; }
+    .section-actions { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+    .section-actions button[aria-pressed="true"] { border-color: rgba(216,200,255,.36); background: rgba(216,200,255,.14); color: #fff; }
+    .visibility { display: inline-flex; align-items: center; gap: 7px; margin-right: auto; color: #b8b1c0; font-size: 11px; cursor: pointer; }
+    .visibility input { width: 15px; height: 15px; margin: 0; accent-color: #d8c8ff; }
+    .fact-label { margin: 0 0 7px; color: #7f788b; font-size: 10px; }
+    .facts { display: grid; gap: 5px; }
+    .fact { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; width: 100%; padding: 9px 10px; text-align: left; }
+    .fact:hover { border-color: rgba(255,255,255,.2); }
+    .fact-title { display: flex; align-items: center; gap: 6px; min-width: 0; color: #a9a2b1; font-size: 10px; }
+    .fact-scope { flex: none; border: 1px solid rgba(255,255,255,.1); border-radius: 999px; padding: 2px 5px; color: #817a89; font-size: 8px; font-weight: 650; }
+    .fact-value { grid-row: 1 / span 2; grid-column: 2; align-self: center; color: #fffafd; font-size: 12px; font-weight: 750; font-variant-numeric: tabular-nums; }
+    .fact-name { overflow: hidden; color: #ece6f2; font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+    .fact[aria-pressed="true"] { border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.12); }
     .foot { padding: 15px 18px 17px; color: #7d7788; font-size: 10px; line-height: 1.55; }
     .toolbar { position: fixed; z-index: 2; left: 32px; bottom: 28px; display: flex; gap: 8px; }
+    #pan-mode[aria-pressed="true"] { border-color: rgba(216,200,255,.36); background: rgba(216,200,255,.14); color: #fff; }
+    .zoom-level { min-width: 43px; align-content: center; color: #9f98a8; font-size: 10px; font-variant-numeric: tabular-nums; text-align: center; }
     .hint { position: fixed; right: 28px; bottom: 24px; z-index: 2; color: #777181; font-size: 10px; pointer-events: none; }
+    .tooltip { position: fixed; z-index: 5; width: min(300px, calc(100vw - 24px)); border: 1px solid rgba(255,255,255,.13); border-radius: 13px; padding: 13px 14px; background: rgba(8, 8, 16, .95); box-shadow: 0 18px 55px rgba(0,0,0,.55); pointer-events: none; }
+    .tooltip[hidden] { display: none; }
+    .tooltip-category { margin: 0 0 4px; color: #9f96ab; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .tooltip-name { margin: 0; overflow-wrap: anywhere; color: #fffafd; font-size: 13px; font-weight: 700; line-height: 1.35; }
+    .tooltip-context { margin: 4px 0 0; color: #9f98a8; font-size: 10px; line-height: 1.4; }
+    .tooltip-metrics { display: grid; grid-template-columns: 1fr auto; gap: 5px 16px; margin: 11px 0 0; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.08); color: #a9a2b1; font-size: 10px; }
+    .tooltip-metrics dt, .tooltip-metrics dd { margin: 0; }
+    .tooltip-metrics dd { color: #f3edf9; font-variant-numeric: tabular-nums; text-align: right; }
     @media (max-width: 1080px) and (min-width: 761px) {
       .masthead { max-width: calc(100vw - 420px); }
       h1 { font-size: clamp(28px, 4vw, 42px); }
     }
+    @media (max-width: 840px) { .hint { display: none; } }
     @media (max-width: 760px) {
       .masthead { top: 22px; left: 20px; max-width: calc(100vw - 40px); }
       .panel { top: auto; bottom: 14px; right: 14px; left: 14px; width: auto; max-height: 46vh; }
-      .toolbar { display: none; }
+      .panel.is-collapsed { right: 14px; left: auto; width: 190px; }
+      .toolbar { left: 20px; bottom: 88px; }
+      .panel:not(.is-collapsed) ~ .toolbar { bottom: calc(46vh + 28px); }
       .hint { display: none; }
     }
+    @media (prefers-reduced-motion: reduce) { .panel, summary::after { transition: none; } }
   </style>
 </head>
 <body>
-  <canvas id="cosmos" aria-label="Interactive three-dimensional stellar artwork generated from anonymous Ruby codebase signals"></canvas>
+  <canvas id="cosmos" tabindex="0" aria-label="Interactive three-dimensional stellar artwork generated from RubyDex codebase signals. Hover or tap stars for declaration details."></canvas>
   <header class="masthead">
     <p class="eyebrow">RubyLens · local report</p>
     <h1>Ruby project</h1>
-    <p class="summary" id="summary"></p>
+    <dl class="overview" id="overview"></dl>
+    <p class="coverage" id="coverage"></p>
     <p class="status" id="status" hidden></p>
   </header>
-  <aside class="panel" aria-label="RubyDex signal weights">
+  <aside class="panel" id="panel" aria-label="Explore this codebase">
     <div class="panel-header">
-      <div><h2>Stellar weights</h2><p>Choose how RubyDex attributes shape luminosity and scale.</p></div>
-      <button type="button" id="reset">Reset</button>
+      <div><h2>Explore this codebase</h2><p>Show a system, focus its stars, or jump to a standout declaration.</p></div>
+      <div class="panel-header-actions"><button type="button" id="panel-toggle" aria-expanded="true" aria-controls="panel-body">Hide</button></div>
     </div>
-    <div id="controls"></div>
-    <div class="foot">Every rendered star is derived from the local RubyDex index. Names, source, comments, and absolute paths are excluded. Structural data may still be sensitive.</div>
+    <div id="panel-body"><div id="controls"></div>
+    <div class="foot">This owner-only report embeds declaration and gem names for hover details. Source, comments, and paths are excluded. Do not share the HTML unless you intend to disclose codebase structure.</div></div>
   </aside>
-  <div class="toolbar"><button type="button" id="motion" aria-pressed="false">Pause drift</button><button type="button" id="view">Reset view</button></div>
-  <div class="hint">Drag to rotate · scroll to zoom</div>
+  <div class="toolbar"><button type="button" id="motion" aria-pressed="false">Pause drift</button><button type="button" id="pan-mode" aria-label="Pan mode" aria-keyshortcuts="P" aria-pressed="false">Pan</button><button type="button" id="zoom-out" aria-label="Zoom out">−</button><output class="zoom-level" id="zoom-level" aria-label="Zoom level">100%</output><button type="button" id="zoom-in" aria-label="Zoom in">+</button><button type="button" id="view">Reset view</button></div>
+  <div class="hint">Hover for RubyDex data · drag to orbit · Shift-drag or Pan to move · scroll at cursor to zoom</div>
+  <aside class="tooltip" id="tooltip" role="status" hidden><p class="tooltip-category" id="tooltip-category"></p><p class="tooltip-name" id="tooltip-name"></p><p class="tooltip-context" id="tooltip-context"></p><dl class="tooltip-metrics" id="tooltip-metrics"></dl></aside>
   <script>
     "use strict";
     const model = JSON.parse(atob("{{MODEL_BASE64}}"));
     const canvas = document.getElementById("cosmos");
     const context = canvas.getContext("2d", { alpha: false });
+    const panel = document.getElementById("panel");
+    const panelBody = document.getElementById("panel-body");
+    const panelToggle = document.getElementById("panel-toggle");
+    const tooltip = document.getElementById("tooltip");
+    const tooltipCategory = document.getElementById("tooltip-category");
+    const tooltipName = document.getElementById("tooltip-name");
+    const tooltipContext = document.getElementById("tooltip-context");
+    const tooltipMetrics = document.getElementById("tooltip-metrics");
     const fields = ["ancestorDepth", "definitionSites", "reopenings", "descendants", "references", "members"];
-    const labels = { ancestorDepth: "Ancestors", definitionSites: "Definition sites", reopenings: "Reopenings", descendants: "Descendants", references: "References", members: "Members" };
-    const defaults = {
+    const signalWeights = {
       core: { ancestorDepth: .28, definitionSites: .2, reopenings: .18, descendants: .72, references: .82, members: .7 },
       tests: { ancestorDepth: .18, definitionSites: .25, reopenings: .18, descendants: .42, references: .85, members: .55 },
       dependencies: { ancestorDepth: .12, definitionSites: .35, reopenings: .2, descendants: .32, references: .48, members: .4 },
     };
-    let weights = structuredClone(defaults);
-    let width = 0, height = 0, dpr = 1, yaw = -.36, pitch = .34, zoom = 1, dragging = false, lastX = 0, lastY = 0, animationFrame = 0;
+    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, activeFactButton = null, navigationMode = "orbit";
+    const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7;
+    const pointers = new Map();
+    const visibleCategories = { core: true, tests: true, dependencies: true };
+    const visibilityInputs = {};
+    const focusButtons = {};
+    const excludedTriviaNames = new Set(["Object", "Kernel", "BasicObject"]);
     let drifting = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const colours = { core: [244, 82, 132], tests: [87, 204, 255], dependencies: [255, 184, 77] };
 
@@ -100,7 +157,7 @@
     }
 
     function weightedSignal(normalized, category) {
-      return fields.reduce((total, field, index) => total + weights[category][field] * normalized[index], .12);
+      return fields.reduce((total, field, index) => total + signalWeights[category][field] * normalized[index], .12);
     }
 
     function corePosition(seed) {
@@ -144,59 +201,317 @@
 
     function buildPoints() {
       const points = [];
-      for (const row of model.namespaces) {
+      model.namespaces.forEach((row, index) => {
         const category = row[3] === 1 ? "tests" : "core";
-        points.push({ category, seed: row[0], position: category === "tests" ? testPosition(row[0]) : corePosition(row[0]), normalized: normalizedSignals(row.slice(4, 10)), base: category === "core" ? .82 : .68 });
-      }
-      const groups = Array.from({ length: model.packages.length }, () => []);
-      for (const row of model.dependencyDeclarations) {
-        if (groups[row[1]]) groups[row[1]].push(row);
-      }
-      const target = Math.min(18000, model.dependencyDeclarations.length);
-      for (const group of groups) {
-        const quota = group.length === 0 ? 0 : Math.max(1, Math.floor(group.length * target / Math.max(1, model.dependencyDeclarations.length)));
-        for (let index = 0; index < Math.min(group.length, quota); index += 1) {
-          const row = group[index];
-          points.push({ category: "dependencies", seed: row[0], position: dependencyPosition(row[0], row[1]), normalized: normalizedSignals(row.slice(3, 9)), base: .45, declaration: true });
-        }
-      }
+        const values = row.slice(4, 10);
+        points.push({ category, name: model.namespaceNames[index], kind: row[2] === 0 ? "Class" : "Module", scope: row[3] === 1 ? "Test" : row[3] === 2 ? "Core and test" : "Core", seed: row[0], position: category === "tests" ? testPosition(row[0]) : corePosition(row[0]), values, normalized: normalizedSignals(values), base: category === "core" ? .82 : .68 });
+      });
+      model.dependencyDeclarations.forEach((row, index) => {
+        const values = row.slice(3, 9);
+        points.push({ category: "dependencies", name: model.dependencyDeclarationNames[index], packageName: model.packageNames[row[1]], kind: row[2] === 0 ? "Class" : row[2] === 1 ? "Module" : "Member", seed: row[0], position: dependencyPosition(row[0], row[1]), values, normalized: normalizedSignals(values), base: .45, declaration: true });
+      });
       packageAnchors.forEach((anchor, index) => {
         const packageRow = model.packages[index];
-        points.push({ category: "dependencies", seed: packageRow[0], position: anchor.slice(0, 3), normalized: normalizedSignals([0, packageRow[3], 0, 0, 0, 0]), base: 1.8, hub: true });
+        const values = [0, packageRow[3], 0, 0, 0, 0];
+        points.push({ category: "dependencies", name: model.packageNames[index], packageRole: packageRow[1] === 0 ? "Direct dependency" : "Transitive dependency", packageLocation: packageRow[2] === 0 ? "Workspace package" : "External gem", indexedDeclarations: packageRow[3], seed: packageRow[0], position: anchor.slice(0, 3), values, normalized: normalizedSignals(values), base: 1.8, hub: true });
       });
       return points;
     }
     const points = buildPoints();
-    const renderedDependencyDeclarations = points.filter(point => point.declaration).length;
+    const totals = model.totals;
+    const renderedDependencyDeclarations = model.totals.renderedDependencyDeclarations;
+    const directGemCount = model.packages.filter(row => row[1] === 0).length;
+    const transitiveGemCount = totals.packages - directGemCount;
+    const categoryMeta = {
+      core: { title: "Core code", count: totals.scopes[0] + totals.scopes[2], countLabel: "namespaces", note: `${totals.scopes[0].toLocaleString()} source-only · ${totals.scopes[2].toLocaleString()} also defined in tests`, focusZoom: 2.8 },
+      tests: { title: "Tests", count: totals.scopes[1], countLabel: "test-only namespaces", note: "Shown as the cyan outer structure", focusZoom: 1.35 },
+      dependencies: { title: "Gems", count: totals.packages, countLabel: "dependency gems", note: `${directGemCount.toLocaleString()} direct · ${transitiveGemCount.toLocaleString()} transitive`, focusZoom: .72 },
+    };
 
-    function updateSignals(category) {
+    function updateSignals() {
       for (const point of points) {
-        if (!category || point.category === category) point.signal = weightedSignal(point.normalized, point.category);
+        point.signal = weightedSignal(point.normalized, point.category);
       }
     }
 
-    function createControls() {
+    function addTooltipMetric(label, value) {
+      const term = document.createElement("dt");
+      const detail = document.createElement("dd");
+      term.textContent = label;
+      detail.textContent = Number(value).toLocaleString();
+      tooltipMetrics.append(term, detail);
+    }
+
+    function updateTooltipContent(point) {
+      tooltipMetrics.textContent = "";
+      tooltipCategory.textContent = point.hub ? "Gem" : point.category === "dependencies" ? "Gem declaration" : `${point.scope} namespace`;
+      tooltipName.textContent = point.name || "Unnamed declaration";
+      if (point.hub) {
+        tooltipContext.textContent = `${point.packageRole} · ${point.packageLocation}`;
+        addTooltipMetric("Indexed declarations", point.indexedDeclarations);
+        return;
+      }
+      tooltipContext.textContent = point.packageName ? `${point.kind} · ${point.packageName}` : point.kind;
+      addTooltipMetric("Ancestors", point.values[0]);
+      addTooltipMetric("Definition sites", point.values[1]);
+      addTooltipMetric("Reopenings", point.values[2]);
+      addTooltipMetric("Transitive descendants", point.values[3]);
+      addTooltipMetric("RubyDex references", point.values[4]);
+      addTooltipMetric("Members", point.values[5]);
+    }
+
+    function positionTooltip(point) {
+      if (!point?.screen) { tooltip.hidden = true; return; }
+      tooltip.hidden = false;
+      const bounds = tooltip.getBoundingClientRect();
+      const preferredX = point.screen[0] + 16;
+      const leftOfPoint = point.screen[0] - bounds.width - 16;
+      const fitsRight = preferredX + bounds.width <= sceneRight - 12;
+      const fitsLeft = leftOfPoint >= 12;
+      if (fitsRight || fitsLeft) {
+        tooltip.style.left = `${fitsRight ? preferredX : leftOfPoint}px`;
+        tooltip.style.top = `${clamp(point.screen[1] - bounds.height / 2, 12, sceneBottom - bounds.height - 12)}px`;
+      } else {
+        tooltip.style.left = `${clamp((sceneRight - bounds.width) / 2, 12, sceneRight - bounds.width - 12)}px`;
+        const below = point.screen[1] + 20;
+        tooltip.style.top = `${below + bounds.height <= sceneBottom - 12 ? below : Math.max(12, point.screen[1] - bounds.height - 20)}px`;
+      }
+    }
+
+    function selectPoint(point, locked = false) {
+      if (locked && selectionLocked && selectedPoint === point) point = null;
+      selectedPoint = point;
+      selectionLocked = Boolean(point) && locked;
+      if (point) updateTooltipContent(point);
+      else tooltip.hidden = true;
+      requestRender();
+    }
+
+    function hitTest(x, y) {
+      let nearest = null;
+      let nearestDistance = Infinity;
+      for (const point of points) {
+        if (!point.screen) continue;
+        if (focusedCategory && point.category !== focusedCategory) continue;
+        const dx = point.screen[0] - x;
+        const dy = point.screen[1] - y;
+        const distance = Math.hypot(dx, dy);
+        const radius = Math.max(8, point.screen[2] + 4);
+        if (distance <= radius && distance < nearestDistance) {
+          nearest = point;
+          nearestDistance = distance;
+        }
+      }
+      return nearest;
+    }
+
+    function queueHover(x, y) {
+      if (selectionLocked || dragging || pointers.size > 0) return;
+      pendingHover = [x, y];
+      if (hoverFrame) return;
+      hoverFrame = requestAnimationFrame(() => {
+        hoverFrame = 0;
+        if (!pendingHover) return;
+        const point = hitTest(pendingHover[0], pendingHover[1]);
+        pendingHover = null;
+        if (point !== selectedPoint) selectPoint(point);
+      });
+    }
+
+    function setPanelCollapsed(collapsed) {
+      if (collapsed && panelBody.contains(document.activeElement)) panelToggle.focus();
+      panel.classList.toggle("is-collapsed", collapsed);
+      panelBody.hidden = collapsed;
+      panelToggle.setAttribute("aria-expanded", String(!collapsed));
+      panelToggle.textContent = collapsed ? "Show" : "Hide";
+      updateSceneViewport();
+      requestRender();
+    }
+
+    function maxPoint(candidates, valueFor) {
+      let best = null;
+      let bestValue = -Infinity;
+      for (const point of candidates) {
+        const value = Number(valueFor(point)) || 0;
+        if (value > bestValue || (value === bestValue && point.name.localeCompare(best?.name || "") < 0)) {
+          best = point;
+          bestValue = value;
+        }
+      }
+      return best ? { point: best, value: bestValue } : null;
+    }
+
+    function factsFor(category) {
+      const declarations = points.filter(point => point.category === category && !point.hub && !excludedTriviaNames.has(point.name));
+      const metricFact = (title, index) => {
+        const result = maxPoint(declarations, point => point.values[index]);
+        return result && { title, ...result };
+      };
+      if (category === "dependencies") {
+        const largestGem = maxPoint(points.filter(point => point.hub), point => point.indexedDeclarations);
+        return [
+          largestGem && { title: "Largest gem", ...largestGem },
+          metricFact("Most RubyDex references · plotted", 4),
+          metricFact("Most indexed members · plotted", 5),
+          metricFact("Deepest ancestor chain · plotted", 0),
+        ].filter(Boolean);
+      }
+      return [
+        metricFact("Widest transitive descendant reach", 3),
+        metricFact("Most RubyDex references", 4),
+        metricFact("Most indexed members", 5),
+        metricFact("Deepest resolved ancestor chain", 0),
+      ].filter(Boolean);
+    }
+
+    function clearActiveFact() {
+      if (activeFactButton) activeFactButton.setAttribute("aria-pressed", "false");
+      activeFactButton = null;
+    }
+
+    function clearCategoryFocus() {
+      if (focusedCategory && focusButtons[focusedCategory]) {
+        focusButtons[focusedCategory].setAttribute("aria-pressed", "false");
+        focusButtons[focusedCategory].textContent = "Focus";
+      }
+      focusedCategory = null;
+    }
+
+    function clearExplorationFocus() {
+      clearActiveFact();
+      clearCategoryFocus();
+      selectPoint(null);
+    }
+
+    function setCategoryVisible(category, visible) {
+      visibleCategories[category] = visible;
+      if (visibilityInputs[category]) visibilityInputs[category].checked = visible;
+      if (!visible && (selectedPoint?.category === category || focusedCategory === category)) clearExplorationFocus();
+      requestRender();
+    }
+
+    function focusCategory(category) {
+      if (focusedCategory === category) {
+        clearExplorationFocus();
+        return;
+      }
+      setCategoryVisible(category, true);
+      clearActiveFact();
+      selectPoint(null);
+      clearCategoryFocus();
+      focusedCategory = category;
+      focusButtons[category].setAttribute("aria-pressed", "true");
+      focusButtons[category].textContent = "Focused";
+      setDrifting(false);
+      panX = 0;
+      panY = 0;
+      yaw = -.36;
+      pitch = .34;
+      zoom = categoryMeta[category].focusZoom;
+      requestRender();
+    }
+
+    function focusPoint(point, button) {
+      if (activeFactButton === button) {
+        clearExplorationFocus();
+        return;
+      }
+      setCategoryVisible(point.category, true);
+      clearActiveFact();
+      activeFactButton = button;
+      activeFactButton.setAttribute("aria-pressed", "true");
+      clearCategoryFocus();
+      setDrifting(false);
+      const [x, y, z] = point.position;
+      panX = 0;
+      panY = 0;
+      yaw = Math.atan2(x, z);
+      pitch = clamp(Math.atan2(y, Math.hypot(x, z)), -.95, .95);
+      zoom = point.hub ? 4 : point.category === "dependencies" ? 5 : 7;
+      selectedPoint = null;
+      selectionLocked = false;
+      selectPoint(point, true);
+    }
+
+    function createExplorer() {
       const container = document.getElementById("controls");
       container.textContent = "";
       for (const category of ["core", "tests", "dependencies"]) {
+        const meta = categoryMeta[category];
         const details = document.createElement("details");
         details.open = category === "core";
         const summary = document.createElement("summary");
-        summary.innerHTML = `<span class="swatch ${category}"></span>${category[0].toUpperCase() + category.slice(1)}`;
-        const sliders = document.createElement("div");
-        sliders.className = "sliders";
-        for (const field of fields) {
-          const label = document.createElement("label");
-          const name = document.createElement("span");
-          name.textContent = labels[field];
-          const input = document.createElement("input");
-          input.type = "range"; input.min = "0"; input.max = "1.5"; input.step = ".05"; input.value = weights[category][field];
-          const output = document.createElement("output");
-          output.value = Number(input.value).toFixed(2);
-          input.addEventListener("input", () => { weights[category][field] = Number(input.value); output.value = Number(input.value).toFixed(2); updateSignals(category); requestRender(); });
-          label.append(name, input, output); sliders.append(label);
+        const swatch = document.createElement("span");
+        swatch.className = `swatch ${category}`;
+        const heading = document.createElement("span");
+        heading.className = "section-heading";
+        const title = document.createElement("strong");
+        title.textContent = meta.title;
+        const count = document.createElement("small");
+        count.textContent = `${meta.count.toLocaleString()} ${meta.countLabel}`;
+        heading.append(title, count);
+        summary.append(swatch, heading);
+
+        const body = document.createElement("div");
+        body.className = "section-body";
+        const actions = document.createElement("div");
+        actions.className = "section-actions";
+        const visibility = document.createElement("label");
+        visibility.className = "visibility";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = true;
+        checkbox.setAttribute("aria-label", `Show ${meta.title}`);
+        checkbox.addEventListener("change", () => setCategoryVisible(category, checkbox.checked));
+        visibilityInputs[category] = checkbox;
+        const visibilityText = document.createElement("span");
+        visibilityText.textContent = "Visible";
+        visibility.append(checkbox, visibilityText);
+        const focus = document.createElement("button");
+        focus.type = "button";
+        focus.textContent = "Focus";
+        focus.setAttribute("aria-label", `Focus ${meta.title}`);
+        focus.setAttribute("aria-pressed", "false");
+        focusButtons[category] = focus;
+        focus.addEventListener("click", () => focusCategory(category));
+        actions.append(visibility, focus);
+
+        const sectionNote = document.createElement("p");
+        sectionNote.className = "section-note";
+        sectionNote.textContent = meta.note;
+
+        const factLabel = document.createElement("p");
+        factLabel.className = "fact-label";
+        factLabel.textContent = category === "dependencies" ? "One exact gem fact, then standouts among plotted declarations" : "Exact standouts from RubyDex's code knowledge";
+        const facts = document.createElement("div");
+        facts.className = "facts";
+        for (const fact of factsFor(category)) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "fact";
+          button.title = fact.point.name;
+          button.setAttribute("aria-pressed", "false");
+          const factTitle = document.createElement("span");
+          factTitle.className = "fact-title";
+          const factTitleText = document.createElement("span");
+          factTitleText.textContent = fact.title;
+          const factScope = document.createElement("span");
+          factScope.className = "fact-scope";
+          factScope.textContent = fact.point.hub ? "Gem" : fact.point.scope || fact.point.kind;
+          factTitle.append(factTitleText, factScope);
+          const factName = document.createElement("span");
+          factName.className = "fact-name";
+          factName.textContent = fact.point.name;
+          const factValue = document.createElement("span");
+          factValue.className = "fact-value";
+          factValue.textContent = fact.value.toLocaleString();
+          button.append(factTitle, factName, factValue);
+          button.addEventListener("click", () => focusPoint(fact.point, button));
+          facts.append(button);
         }
-        details.append(summary, sliders); container.append(details);
+        body.append(actions, sectionNote, factLabel, facts);
+        details.append(summary, body);
+        container.append(details);
       }
     }
 
@@ -205,7 +520,47 @@
       width = window.innerWidth; height = window.innerHeight;
       canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
+      updateSceneViewport();
       requestRender();
+    }
+
+    function updateSceneViewport() {
+      const panelBounds = panel.getBoundingClientRect();
+      sceneRight = width > 760 && !panel.classList.contains("is-collapsed") ? panelBounds.left - 14 : width;
+      sceneBottom = width <= 760 && !panel.classList.contains("is-collapsed") ? panelBounds.top - 12 : height;
+      sceneRight = Math.max(280, sceneRight);
+      sceneBottom = Math.max(320, sceneBottom);
+      sceneCenterX = sceneRight * .5;
+      sceneCenterY = sceneBottom * .53;
+    }
+
+    function zoomBetween(nextZoom, fromX, fromY, toX = fromX, toY = fromY) {
+      const clampedZoom = clamp(nextZoom, MIN_ZOOM, MAX_ZOOM);
+      const scale = clampedZoom / zoom;
+      panX = toX - sceneCenterX - (fromX - sceneCenterX - panX) * scale;
+      panY = toY - sceneCenterY - (fromY - sceneCenterY - panY) * scale;
+      zoom = clampedZoom;
+    }
+
+    function panBy(dx, dy) {
+      panX += dx;
+      panY += dy;
+    }
+
+    function resetCamera() {
+      yaw = -.36;
+      pitch = .34;
+      zoom = 1;
+      panX = 0;
+      panY = 0;
+    }
+
+    function setNavigationMode(mode) {
+      navigationMode = mode;
+      const panMode = document.getElementById("pan-mode");
+      const panning = navigationMode === "pan";
+      panMode.setAttribute("aria-pressed", String(panning));
+      canvas.classList.toggle("is-pan", panning);
     }
 
     function project(position, matrix) {
@@ -217,69 +572,220 @@
       const depth = 270 - z2;
       if (depth <= 35) return null;
       const perspective = 440 / depth * zoom;
-      return [width * .46 + x1 * perspective, height * .52 + y2 * perspective, perspective];
+      return [sceneCenterX + panX + x1 * perspective, sceneCenterY + panY + y2 * perspective, perspective];
     }
 
     function render() {
       animationFrame = 0;
+      document.getElementById("zoom-level").value = `${Math.round(zoom * 100)}%`;
       context.globalCompositeOperation = "source-over";
       context.fillStyle = "#03040a";
       context.fillRect(0, 0, width, height);
-      const vignette = context.createRadialGradient(width * .46, height * .5, 0, width * .46, height * .5, Math.max(width, height) * .72);
+      const vignette = context.createRadialGradient(sceneCenterX + panX, sceneCenterY + panY, 0, sceneCenterX + panX, sceneCenterY + panY, Math.max(width, height) * .72);
       vignette.addColorStop(0, "rgba(30,16,45,.18)"); vignette.addColorStop(1, "rgba(0,0,0,.6)");
       context.fillStyle = vignette; context.fillRect(0, 0, width, height);
       context.globalCompositeOperation = "lighter";
       const matrix = [Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch)];
       for (const point of points) {
+        point.screen = null;
+        if (!visibleCategories[point.category]) continue;
         const projected = project(point.position, matrix);
         if (!projected) continue;
         const [x, y, perspective] = projected;
-        if (x < -20 || x > width + 20 || y < -20 || y > height + 20) continue;
+        const cullMargin = point === selectedPoint ? 0 : 20;
+        if (x < -cullMargin || x > sceneRight + cullMargin || y < -cullMargin || y > sceneBottom + cullMargin) continue;
         const signal = point.signal;
         const size = clamp(point.base * (.62 + signal * .46) * perspective, .35, point.hub ? 5.2 : 3.2);
         const alpha = clamp(.14 + signal * .105, .12, point.hub ? .86 : .7);
+        const emphasis = selectedPoint ? (point === selectedPoint ? 1 : .12) : focusedCategory && point.category !== focusedCategory ? .16 : 1;
+        const visibleAlpha = alpha * emphasis;
         const colour = colours[point.category];
+        point.screen = [x, y, size];
         if (size > 1.35) {
           context.beginPath(); context.arc(x, y, size * 3.4, 0, Math.PI * 2);
-          context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${alpha * .055})`; context.fill();
+          context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${visibleAlpha * .055})`; context.fill();
         }
-        context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${alpha})`;
+        context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${visibleAlpha})`;
         if (size < .85) context.fillRect(x, y, 1, 1);
         else { context.beginPath(); context.arc(x, y, size, 0, Math.PI * 2); context.fill(); }
         if (size > 1.1) {
           context.beginPath(); context.arc(x, y, Math.max(.45, size * .24), 0, Math.PI * 2);
-          context.fillStyle = `rgba(255,248,244,${Math.min(.9, alpha * 1.25)})`; context.fill();
+          context.fillStyle = `rgba(255,248,244,${Math.min(.9, visibleAlpha * 1.25)})`; context.fill();
+        }
+        if (point === selectedPoint) {
+          context.beginPath(); context.arc(x, y, Math.max(7, size * 2.5), 0, Math.PI * 2);
+          context.strokeStyle = "rgba(255,255,255,.95)"; context.lineWidth = 1.2; context.stroke();
+          context.beginPath(); context.arc(x, y, Math.max(12, size * 4), 0, Math.PI * 2);
+          context.strokeStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},.5)`; context.lineWidth = 1; context.stroke();
         }
       }
       context.globalCompositeOperation = "source-over";
-      if (drifting && !dragging) { yaw += .00055; requestRender(); }
+      if (selectedPoint) positionTooltip(selectedPoint);
+      if (drifting && !dragging && !selectedPoint) { yaw += .00055; requestRender(); }
     }
 
     function requestRender() {
       if (!animationFrame) animationFrame = requestAnimationFrame(render);
     }
 
-    canvas.addEventListener("pointerdown", event => { dragging = true; lastX = event.clientX; lastY = event.clientY; canvas.setPointerCapture(event.pointerId); });
-    canvas.addEventListener("pointermove", event => { if (!dragging) return; yaw += (event.clientX - lastX) * .006; pitch = clamp(pitch + (event.clientY - lastY) * .004, -.95, .95); lastX = event.clientX; lastY = event.clientY; requestRender(); });
-    canvas.addEventListener("pointerup", () => { dragging = false; requestRender(); });
-    canvas.addEventListener("pointercancel", () => { dragging = false; requestRender(); });
-    canvas.addEventListener("wheel", event => { event.preventDefault(); zoom = clamp(zoom * Math.exp(-event.deltaY * .0008), .55, 2.4); requestRender(); }, { passive: false });
-    window.addEventListener("resize", resize);
-    document.getElementById("reset").addEventListener("click", () => { weights = structuredClone(defaults); updateSignals(); createControls(); requestRender(); });
-    document.getElementById("motion").addEventListener("click", event => { drifting = !drifting; event.currentTarget.textContent = drifting ? "Pause drift" : "Resume drift"; event.currentTarget.setAttribute("aria-pressed", String(!drifting)); requestRender(); });
-    document.getElementById("view").addEventListener("click", () => { yaw = -.36; pitch = .34; zoom = 1; requestRender(); });
+    function setDrifting(next) {
+      drifting = next;
+      const motion = document.getElementById("motion");
+      motion.textContent = drifting ? "Pause drift" : "Resume drift";
+      motion.setAttribute("aria-pressed", String(!drifting));
+      requestRender();
+    }
 
-    const totals = model.totals;
-    const dependencyCopy = totals.dependencyDeclarations === renderedDependencyDeclarations
-      ? `${totals.dependencyDeclarations.toLocaleString()} dependency declarations`
-      : `${totals.dependencyDeclarations.toLocaleString()} dependency declarations indexed · ${renderedDependencyDeclarations.toLocaleString()} rendered`;
-    document.getElementById("summary").textContent = `${totals.namespaces.toLocaleString()} core/test namespaces · ${totals.packages.toLocaleString()} packages · ${dependencyCopy}`;
+    const pointerMetrics = () => {
+      const active = [...pointers.values()];
+      if (active.length < 2) return null;
+      return {
+        distance: Math.hypot(active[0][0] - active[1][0], active[0][1] - active[1][1]),
+        x: (active[0][0] + active[1][0]) / 2,
+        y: (active[0][1] + active[1][1]) / 2,
+      };
+    };
+    function clearGestureState() {
+      pointers.clear();
+      gesture = null;
+      pinchState = null;
+      dragging = false;
+      canvas.classList.remove("is-dragging-pan");
+      requestRender();
+    };
+    canvas.addEventListener("pointerdown", event => {
+      canvas.focus({ preventScroll: true });
+      const firstPointer = pointers.size === 0;
+      pointers.set(event.pointerId, [event.clientX, event.clientY]);
+      canvas.setPointerCapture(event.pointerId);
+      dragging = true;
+      if (firstPointer) {
+        const mode = navigationMode === "pan" || event.shiftKey || event.button !== 0 ? "pan" : "orbit";
+        gesture = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, lastX: event.clientX, lastY: event.clientY, mode, moved: false, tappable: event.button === 0 };
+        canvas.classList.toggle("is-dragging-pan", mode === "pan");
+        if (!selectionLocked) selectPoint(null);
+      } else {
+        gesture = null;
+        pinchState = pointerMetrics();
+        canvas.classList.remove("is-dragging-pan");
+      }
+    });
+    canvas.addEventListener("pointermove", event => {
+      if (!pointers.has(event.pointerId)) {
+        if (event.pointerType === "mouse") queueHover(event.clientX, event.clientY);
+        return;
+      }
+      pointers.set(event.pointerId, [event.clientX, event.clientY]);
+      if (pointers.size >= 2) {
+        const nextPinch = pointerMetrics();
+        if (pinchState && nextPinch && pinchState.distance > 0) {
+          zoomBetween(zoom * nextPinch.distance / pinchState.distance, pinchState.x, pinchState.y, nextPinch.x, nextPinch.y);
+        }
+        pinchState = nextPinch;
+        gesture = null;
+        requestRender();
+        return;
+      }
+      if (!gesture || gesture.pointerId !== event.pointerId) return;
+      const dx = event.clientX - gesture.lastX;
+      const dy = event.clientY - gesture.lastY;
+      if (Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) > 3) gesture.moved = true;
+      if (gesture.mode === "pan") panBy(dx, dy);
+      else {
+        yaw += dx * .006;
+        pitch = clamp(pitch + dy * .004, -.95, .95);
+      }
+      gesture.lastX = event.clientX;
+      gesture.lastY = event.clientY;
+      requestRender();
+    });
+    function finishPointer(event, cancelled = false) {
+      const wasTap = !cancelled && pointers.size === 1 && gesture?.pointerId === event.pointerId && gesture.tappable && !gesture.moved;
+      pointers.delete(event.pointerId);
+      gesture = null;
+      pinchState = pointers.size >= 2 ? pointerMetrics() : null;
+      dragging = pointers.size > 0;
+      canvas.classList.remove("is-dragging-pan");
+      if (wasTap) {
+        const point = hitTest(event.clientX, event.clientY);
+        clearActiveFact();
+        clearCategoryFocus();
+        if (point) selectPoint(point, true);
+        else clearExplorationFocus();
+      }
+      requestRender();
+    }
+    canvas.addEventListener("pointerup", event => finishPointer(event));
+    canvas.addEventListener("pointercancel", event => finishPointer(event, true));
+    canvas.addEventListener("lostpointercapture", event => { if (pointers.has(event.pointerId)) finishPointer(event, true); });
+    canvas.addEventListener("pointerleave", () => { if (!selectionLocked && pointers.size === 0) selectPoint(null); });
+    canvas.addEventListener("contextmenu", event => event.preventDefault());
+    window.addEventListener("blur", clearGestureState);
+    canvas.addEventListener("wheel", event => {
+      event.preventDefault();
+      if (pointers.size > 0) return;
+      const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? height : 1);
+      zoomBetween(zoom * Math.exp(-delta * .0012), event.clientX, event.clientY);
+      requestRender();
+    }, { passive: false });
+    canvas.addEventListener("dblclick", event => {
+      if (pointers.size > 0) return;
+      zoomBetween(zoom * 2, event.clientX, event.clientY);
+      requestRender();
+    });
+    canvas.addEventListener("keydown", event => {
+      if (pointers.size > 0) return;
+      if (event.key === "+" || event.key === "=") zoomBetween(zoom * ZOOM_STEP, sceneCenterX, sceneCenterY);
+      else if (event.key === "-") zoomBetween(zoom / ZOOM_STEP, sceneCenterX, sceneCenterY);
+      else if (event.key === "0") resetCamera();
+      else if (event.key.toLowerCase() === "p") setNavigationMode(navigationMode === "pan" ? "orbit" : "pan");
+      else if (event.key.startsWith("Arrow")) {
+        const distance = event.shiftKey ? 96 : 32;
+        if (event.key === "ArrowLeft") panBy(-distance, 0);
+        else if (event.key === "ArrowRight") panBy(distance, 0);
+        else if (event.key === "ArrowUp") panBy(0, -distance);
+        else if (event.key === "ArrowDown") panBy(0, distance);
+      } else return;
+      event.preventDefault();
+      requestRender();
+    });
+    window.addEventListener("keydown", event => { if (event.key === "Escape") clearExplorationFocus(); });
+    window.addEventListener("resize", resize);
+    document.getElementById("motion").addEventListener("click", () => setDrifting(!drifting));
+    document.getElementById("pan-mode").addEventListener("click", () => setNavigationMode(navigationMode === "pan" ? "orbit" : "pan"));
+    document.getElementById("zoom-in").addEventListener("click", () => { if (pointers.size === 0) zoomBetween(zoom * ZOOM_STEP, sceneCenterX, sceneCenterY); requestRender(); });
+    document.getElementById("zoom-out").addEventListener("click", () => { if (pointers.size === 0) zoomBetween(zoom / ZOOM_STEP, sceneCenterX, sceneCenterY); requestRender(); });
+    document.getElementById("view").addEventListener("click", () => {
+      resetCamera();
+      setNavigationMode("orbit");
+      for (const category of Object.keys(visibleCategories)) setCategoryVisible(category, true);
+      clearExplorationFocus();
+      requestRender();
+    });
+    panelToggle.addEventListener("click", () => setPanelCollapsed(panelToggle.getAttribute("aria-expanded") === "true"));
+
+    function addOverviewMetric(label, value) {
+      const group = document.createElement("div");
+      const term = document.createElement("dt");
+      const detail = document.createElement("dd");
+      term.textContent = label;
+      detail.textContent = value.toLocaleString();
+      group.append(term, detail);
+      document.getElementById("overview").append(group);
+    }
+    addOverviewMetric("core namespaces", categoryMeta.core.count);
+    addOverviewMetric("test-only namespaces", categoryMeta.tests.count);
+    addOverviewMetric("gems", categoryMeta.dependencies.count);
+    const plottedPercent = totals.dependencyDeclarations === 0 ? 100 : renderedDependencyDeclarations / totals.dependencyDeclarations * 100;
+    document.getElementById("coverage").textContent = `${renderedDependencyDeclarations.toLocaleString()} of ${totals.dependencyDeclarations.toLocaleString()} gem declarations plotted (${plottedPercent.toFixed(1)}%)`;
     const warningTotal = Object.values(model.warningCounts).reduce((sum, count) => sum + count, 0);
     if (warningTotal > 0) { const status = document.getElementById("status"); status.hidden = false; status.textContent = `${warningTotal.toLocaleString()} partial-index warning${warningTotal === 1 ? "" : "s"}`; }
-    const motion = document.getElementById("motion");
-    motion.textContent = drifting ? "Pause drift" : "Resume drift";
-    motion.setAttribute("aria-pressed", String(!drifting));
-    updateSignals(); createControls(); resize();
+    setDrifting(drifting);
+    setNavigationMode(navigationMode);
+    document.querySelector("h1").textContent = model.projectName;
+    document.title = `RubyLens · ${model.projectName}`;
+    canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover or tap stars for RubyDex declaration details. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, and use arrow keys to pan.`);
+    updateSignals(); createExplorer(); setPanelCollapsed(window.matchMedia("(max-width: 760px)").matches); resize();
   </script>
 </body>
 </html>
