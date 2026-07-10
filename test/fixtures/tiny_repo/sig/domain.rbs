@@ -1,0 +1,13 @@
+module Demo
+  module Trackable
+  end
+
+  class Base
+  end
+
+  class Order < Base
+    include Trackable
+
+    def total: () -> Integer
+  end
+end

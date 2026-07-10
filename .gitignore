@@ -1,0 +1,5 @@
+/.rubylens-tmp/
+/generated/*
+!/generated/.gitkeep
+/prototype/codebase-cosmos/node_modules/
+/prototype/codebase-cosmos/dist/

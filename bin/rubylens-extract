@@ -1,0 +1,41 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "optparse"
+require_relative "../lib/rubylens"
+
+options = { mode: "control" }
+parser = OptionParser.new do |arguments|
+  arguments.banner = "Usage: rubylens-extract TARGET --output DIRECTORY [--mode control|workspace]"
+  arguments.on("--output DIRECTORY", "Generated snapshot directory") { |value| options[:output] = value }
+  arguments.on(
+    "--mode MODE",
+    RubyLens::Extractor::MODES,
+    "control or upstream workspace research mode (workspace is not private-safe)",
+  ) { |value| options[:mode] = value }
+  arguments.on("--target-lockfile FILE", "Target-only lockfile used to distinguish tooling closure") do |value|
+    options[:target_lockfile] = value
+  end
+end
+parser.parse!
+target = ARGV.shift
+if target.nil? || options[:output].nil? || !ARGV.empty?
+  warn parser
+  exit 2
+end
+if options.fetch(:mode) == "workspace"
+  warn "WARNING: workspace mode preserves upstream Graph#index_workspace behavior and may index ignored/untracked Ruby files; it is research-only, not private-safe."
+end
+
+summary = RubyLens::Extractor.new(
+  target_root: target,
+  output_dir: options.fetch(:output),
+  mode: options.fetch(:mode),
+  target_lockfile: options[:target_lockfile],
+).run
+puts JSON.generate(
+  status: summary.fetch("status"),
+  mode: summary.dig("target", "mode"),
+  totals: summary.fetch("totals"),
+  dependency_coverage: summary.fetch("dependency_coverage"),
+)

@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="oklch(0.055 0 0)" />
+    <title>RubyLens · Codebase Cosmos</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="gallery-header">
+        <a class="wordmark" href="?target=rails&style=galaxy&variant=a" aria-label="RubyLens codebase visualizer">
+          <span class="ruby-mark" aria-hidden="true"></span>
+          <span>RubyLens</span>
+        </a>
+        <div class="gallery-switchers">
+          <nav class="target-switcher" aria-label="Choose a codebase">
+            <button type="button" data-target="rails" aria-pressed="true">Rails</button>
+            <button type="button" data-target="rdoc" aria-pressed="false">RDoc</button>
+          </nav>
+          <nav class="style-switcher" aria-label="Choose a visual style">
+            <button type="button" data-style="galaxy" aria-pressed="true">Galaxy</button>
+            <button type="button" data-style="city" aria-pressed="false">City</button>
+          </nav>
+        </div>
+      </header>
+
+      <main class="cosmos-stage" aria-labelledby="model-title">
+        <canvas id="cosmos-canvas" tabindex="0" aria-label="Interactive Concentric Galaxy art model of the whole Rails codebase. Drag to rotate and use a mouse wheel or pinch gesture to zoom." aria-describedby="model-description provenance role-key"></canvas>
+        <div id="star-tooltip" role="tooltip" hidden></div>
+        <section class="model-copy" aria-live="polite">
+          <p><strong id="model-title">Concentric Galaxy</strong></p>
+          <p id="model-description">Rails core gathers inward, tests counter-sweep around it, and dependencies hold the outer orbit.</p>
+          <ul id="role-key" class="role-key" aria-label="Visual categories">
+            <li><span class="role-swatch role-core" aria-hidden="true"></span>Core</li>
+            <li><span class="role-swatch role-tests" aria-hidden="true"></span>Tests</li>
+            <li><span class="role-swatch role-dependencies" aria-hidden="true"></span>Dependencies</li>
+          </ul>
+        </section>
+        <button id="formula-open" class="formula-open" type="button" aria-controls="formula-panel" aria-expanded="true">⌁ Signals</button>
+        <aside id="formula-panel" class="formula-panel" aria-label="RubyDex signal mixer">
+          <header class="formula-header">
+            <div>
+              <p class="formula-eyebrow">RubyDex weights</p>
+              <h2>Signal mixer</h2>
+            </div>
+            <button id="formula-close" type="button" aria-label="Hide RubyDex signal mixer">Hide</button>
+          </header>
+          <nav class="formula-tabs" aria-label="Choose a code category">
+            <button type="button" data-formula-role="core" aria-pressed="true">Core</button>
+            <button type="button" data-formula-role="tests" aria-pressed="false">Tests</button>
+            <button type="button" data-formula-role="dependencies" aria-pressed="false">Deps</button>
+          </nav>
+          <section class="dependency-granularity" aria-label="Choose dependency star granularity">
+            <span>Dependency stars</span>
+            <div>
+              <button type="button" data-dependency-granularity="packages" aria-pressed="true">Packages <small id="dependency-package-count">230</small></button>
+              <button type="button" data-dependency-granularity="declarations" aria-pressed="false">Declarations <small id="dependency-declaration-count">105k</small></button>
+            </div>
+          </section>
+          <p id="formula-equation" class="formula-equation"></p>
+          <div id="formula-controls" class="formula-controls"></div>
+          <footer class="formula-actions">
+            <button id="formula-reset-role" type="button">Reset Core</button>
+            <button id="formula-reset-all" type="button">Reset all</button>
+          </footer>
+        </aside>
+        <div id="fallback" class="fallback" hidden role="status">
+          <strong>WebGL is unavailable.</strong>
+          <p id="fallback-message">This local sculpture needs WebGL to render its complete data field.</p>
+        </div>
+      </main>
+
+      <footer class="gallery-footer">
+        <div class="motion-controls">
+          <button id="motion-toggle" type="button" aria-pressed="false"><span aria-hidden="true">Ⅱ</span><span>Pause</span></button>
+          <button id="reset-view" type="button"><span aria-hidden="true">⌖</span><span>Reset</span></button>
+        </div>
+        <p id="provenance">Rails · 2,523 core · 5,528 tests · 230 dependencies · package presence does not prove runtime loading</p>
+      </footer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

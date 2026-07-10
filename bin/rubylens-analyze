@@ -1,0 +1,35 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+require "optparse"
+require_relative "../lib/rubylens"
+
+options = {}
+parser = OptionParser.new do |arguments|
+  arguments.banner = "Usage: rubylens-analyze TARGET --control DIR --workspace DIR --output FILE [--target-lockfile FILE]"
+  arguments.on("--control DIR", "Control snapshot directory") { |value| options[:control] = value }
+  arguments.on("--workspace DIR", "Workspace snapshot directory") { |value| options[:workspace] = value }
+  arguments.on("--output FILE", "Analysis JSON path") { |value| options[:output] = value }
+  arguments.on("--target-lockfile FILE", "Target-only Bundler lockfile") { |value| options[:target_lockfile] = value }
+end
+parser.parse!
+target = ARGV.shift
+required = %i[control workspace output]
+if target.nil? || !ARGV.empty? || required.any? { |key| options[key].nil? }
+  warn parser
+  exit 2
+end
+
+payload = RubyLens::Analyzer.new(
+  target_root: target,
+  control_dir: options.fetch(:control),
+  workspace_dir: options.fetch(:workspace),
+  output_path: options.fetch(:output),
+  target_lockfile: options[:target_lockfile],
+).run
+puts JSON.generate(
+  status: payload.fetch("status"),
+  population: payload.dig("population", "workspace_namespaces"),
+  dependency_summary: payload.dig("dependencies", "summary"),
+)

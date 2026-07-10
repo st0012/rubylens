@@ -1,0 +1,21 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+require "optparse"
+require_relative "../lib/rubylens"
+
+options = {}
+parser = OptionParser.new do |arguments|
+  arguments.banner = "Usage: rubylens-prepare-overlay TARGET --output DIRECTORY"
+  arguments.on("--output DIRECTORY", "Disposable bundle overlay directory") { |value| options[:output] = value }
+end
+parser.parse!
+target = ARGV.shift
+if target.nil? || options[:output].nil? || !ARGV.empty?
+  warn parser
+  exit 2
+end
+
+result = RubyLens::OverlayBuilder.new(target_root: target, output_dir: options.fetch(:output)).run
+puts JSON.generate(result)
