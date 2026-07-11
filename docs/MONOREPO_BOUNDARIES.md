@@ -36,7 +36,7 @@ boundaries:
     label: Other
 ```
 
-Rules use normalized, workspace-relative paths from the existing Git-selected manifest. RubyLens must not scan ignored or untracked files to discover groups.
+Rules use normalized, workspace-relative paths from a tracked-only view of the Git manifest. This is deliberately narrower than the existing indexing selection, which continues to include nonignored untracked files. RubyLens must not scan ignored or untracked files to discover groups.
 
 ## Matching contract
 
@@ -50,7 +50,7 @@ Rules use normalized, workspace-relative paths from the existing Git-selected ma
 - Do not initially support silently dropping unmatched source.
 - Group ownership is independent of Core/Test role. `components/acme-foundation/test/...` belongs to Acme Foundation and remains cyan Test code.
 - YAML aliases, object tags, duplicate mapping keys, unknown keys, duplicate or colliding group IDs, absolute paths, `..`, and unsupported glob syntax are rejected.
-- `each` groups expand only from directories proven by the existing Git-selected workspace manifest. Ignored, untracked, and direct child files cannot create groups.
+- `each` groups expand only from directories proven by the tracked-only workspace manifest view. Ignored, untracked, and direct child files cannot create groups, while the broader indexing behavior remains unchanged.
 
 ## Namespace ownership
 

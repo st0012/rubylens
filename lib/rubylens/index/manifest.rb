@@ -13,7 +13,7 @@ module RubyLens
     class Manifest
       Package = Data.define(:name, :version, :role, :location, :root, :files)
 
-      attr_reader :root, :files, :workspace_files, :packages, :warnings, :boundaries
+      attr_reader :root, :files, :workspace_files, :tracked_workspace_files, :packages, :warnings, :boundaries
 
       def self.build(root:, lockfile: nil, configuration: Configuration.resolve(root: root))
         new(root: root, lockfile: lockfile, configuration: configuration).tap(&:build)
@@ -32,8 +32,10 @@ module RubyLens
       end
 
       def build
-        @workspace_files = GitRepository.new(@root).selected_files.freeze
-        @boundaries = Boundaries.build(root: @root, workspace_files: @workspace_files, configuration: @configuration)
+        repository = GitRepository.new(@root)
+        @workspace_files = repository.selected_files.freeze
+        @tracked_workspace_files = repository.tracked_files.freeze
+        @boundaries = Boundaries.build(root: @root, workspace_files: @tracked_workspace_files, configuration: @configuration)
         build_packages
         @package_roots = @packages.each_with_index.map { |package, index| [package.root, index] }
           .sort_by { |package_root, _index| -package_root.to_s.length }
