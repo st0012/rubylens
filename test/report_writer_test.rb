@@ -193,7 +193,7 @@ class ReportWriterTest < Minitest::Test
       refute_includes(html, "RubyLensCapture")
       refute_includes(html, 'name="rubylens-artifact" content="showcase"')
       assert_includes(html, "SHOWCASE_POINT_LIMIT = 50_000")
-      assert_includes(html, "SHOWCASE_DURATION_MS = 60_000")
+      assert_includes(html, '"durationMs": 60000')
       assert_includes(html, "function showcasePointSample")
       assert_includes(html, "const rank = point => [hash(point.seed, 73), point.seed, point]")
       assert_includes(html, "if (hubs.length >= SHOWCASE_POINT_LIMIT)")

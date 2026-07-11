@@ -1,21 +1,15 @@
     :root { color-scheme: dark; font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     * { box-sizing: border-box; }
     html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #03040a; color: #f6f2ff; }
-    body::before { content: ""; position: fixed; inset: 0; pointer-events: none; background: radial-gradient(circle at 42% 45%, rgba(78, 36, 112, .14), transparent 34%), radial-gradient(circle at 68% 22%, rgba(29, 91, 114, .08), transparent 28%); }
-    canvas { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-    .masthead { position: fixed; top: 40px; left: 44px; z-index: 2; width: min(760px, calc(100vw - 88px)); pointer-events: none; text-shadow: 0 2px 14px #03040a, 0 0 4px #03040a; }
-    .eyebrow { margin: 0 0 12px; color: #c2b3d4; font-size: 11px; font-weight: 750; letter-spacing: .18em; text-transform: uppercase; }
-    h1 { display: -webkit-box; margin: 0; overflow: hidden; overflow-wrap: anywhere; color: #f6f2ff; font: 500 clamp(38px, 5.4vw, 72px)/.95 ui-serif, Georgia, serif; letter-spacing: -.04em; text-wrap: balance; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-    .cinema-stats { display: grid; grid-template-columns: repeat(4, minmax(72px, max-content)); gap: 10px 24px; margin: 22px 0 0; }
+    .showcase-stage { position: absolute; overflow: hidden; transform-origin: top left; background: #03040a; }
+    .showcase-stage::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 42% 45%, rgba(78, 36, 112, .14), transparent 34%), radial-gradient(circle at 68% 22%, rgba(29, 91, 114, .08), transparent 28%); }
+    canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .masthead { position: absolute; z-index: 2; pointer-events: none; text-shadow: 0 2px 14px #03040a, 0 0 4px #03040a; transform-origin: top left; }
+    .eyebrow { margin: 0 0 10px; color: #c2b3d4; font-size: 11px; font-weight: 750; letter-spacing: .18em; text-transform: uppercase; }
+    h1 { display: -webkit-box; margin: 0; overflow: hidden; overflow-wrap: anywhere; color: #f6f2ff; font: 500 38.88px/.95 ui-serif, Georgia, serif; letter-spacing: -.045em; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+    .cinema-stats { display: grid; grid-template-columns: repeat(4, minmax(72px, auto)); gap: 10px 24px; margin: 20px 0 0; }
     .cinema-stats div { min-width: 0; }
     .cinema-stats dt, .cinema-stats dd { margin: 0; }
-    .cinema-stats dt { color: #9a92a4; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+    .cinema-stats dt { color: #8e8799; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
     .cinema-stats dd { margin-top: 3px; color: #f5eff9; font-size: 15px; font-weight: 720; font-variant-numeric: tabular-nums; }
-    .cinema-secondary { margin: 14px 0 0; color: #a49cab; font-size: 10px; letter-spacing: .025em; text-wrap: pretty; }
-    @media (max-width: 680px) {
-      .masthead { top: 24px; left: 22px; width: calc(100vw - 44px); }
-      .eyebrow { margin-bottom: 9px; font-size: 9px; }
-      h1 { font-size: clamp(32px, 10vw, 52px); }
-      .cinema-stats { grid-template-columns: repeat(2, minmax(90px, max-content)); gap: 10px 22px; margin-top: 17px; }
-      .cinema-secondary { max-width: 48ch; line-height: 1.45; }
-    }
+    .cinema-secondary { margin: 14px 0 0; color: #91899b; font-size: 10px; letter-spacing: .025em; }
