@@ -4,13 +4,17 @@ require "base64"
 require "fileutils"
 require "json"
 require "securerandom"
+require_relative "report_asset_assembler"
 
 module RubyLens
   class ReportWriter
     MODEL_PLACEHOLDER = "{{MODEL_BASE64}}"
 
-    def initialize(template_path: File.expand_path("../../assets/report.html", __dir__))
+    def initialize(template_path: nil, asset_assembler: nil)
+      raise ArgumentError, "provide template_path or asset_assembler, not both" if template_path && asset_assembler
+
       @template_path = template_path
+      @asset_assembler = asset_assembler || ReportAssetAssembler.new unless template_path
     end
 
     def write(model, output:)
@@ -18,8 +22,10 @@ module RubyLens
       directory = File.dirname(output)
       FileUtils.mkdir_p(directory, mode: 0o700)
       protect_default_directory(directory)
-      template = File.read(@template_path)
-      raise Error, "report template has no model placeholder" unless template.include?(MODEL_PLACEHOLDER)
+      template = @template_path ? File.read(@template_path) : @asset_assembler.assemble
+      unless template.scan(MODEL_PLACEHOLDER).length == 1
+        raise Error, "report template must contain exactly one #{MODEL_PLACEHOLDER} placeholder"
+      end
 
       payload = Base64.strict_encode64(JSON.generate(model))
       html = template.sub(MODEL_PLACEHOLDER, payload)

@@ -7,16 +7,20 @@ class PackageTest < Minitest::Test
     specification = Gem::Specification.load(File.expand_path("../rubylens.gemspec", __dir__))
 
     assert_includes(specification.files, "exe/rubylens")
-    assert_includes(specification.files, "assets/report.html")
+    assert_includes(specification.files, "assets/runtime/report.js")
+    assert_includes(specification.files, "assets/shells/report.html")
+    assert_includes(specification.files, "assets/styles/report.css")
     assert_includes(specification.files, "docs/MONOREPO_BOUNDARIES.md")
     assert_includes(specification.files, "docs/REFERENCE_ROUTES_FUTURE.md")
     assert_includes(specification.files, "lib/rubylens/gif_generator.rb")
     assert_includes(specification.files, "lib/rubylens/gif_writer.rb")
+    assert_includes(specification.files, "lib/rubylens/report_asset_assembler.rb")
     assert_includes(specification.files, "lib/rubylens/index/rubydex_adapter.rb")
     refute(specification.files.any? { |path| path.start_with?("docs/assets/") })
     refute(specification.files.any? { |path| path.start_with?("prototype/") })
     refute(specification.files.any? { |path| path.start_with?("generated/") })
     refute_includes(specification.files, "lib/rubylens/extractor.rb")
+    refute_includes(specification.files, "assets/report.html")
   end
 
   def test_gem_pins_the_capture_browser_dependency
