@@ -13,4 +13,11 @@ class PackageTest < Minitest::Test
     refute(specification.files.any? { |path| path.start_with?("generated/") })
     refute_includes(specification.files, "lib/rubylens/extractor.rb")
   end
+
+  def test_gem_supports_ruby_3_2_and_newer
+    specification = Gem::Specification.load(File.expand_path("../rubylens.gemspec", __dir__))
+
+    assert(specification.required_ruby_version.satisfied_by?(Gem::Version.new("3.2.0")))
+    refute(specification.required_ruby_version.satisfied_by?(Gem::Version.new("3.1.9")))
+  end
 end
