@@ -20,7 +20,7 @@ class ArtModelBuilderTest < Minitest::Test
           "role" => 0,
           "location" => 1,
           "ruby_counts" => [2, 1, 4, 3],
-          "declarations" => [{ "name" => "Example::Client", "signals" => [0, 2, 1, 0, 1, 3, 4] }],
+          "declarations" => [[0, 2, 1, 0, 1, 3, 4]],
         },
       ],
       "warning_counts" => { "manifest" => 0, "index" => 0, "integrity" => 0 },
@@ -74,8 +74,8 @@ class ArtModelBuilderTest < Minitest::Test
           "location" => 1,
           "ruby_counts" => [4, 5, 6, 7],
           "declarations" => [
-            { "name" => "Example::One", "signals" => [0, 2, 3, 1, 4, 5, 6] },
-            { "name" => "Example::Two", "signals" => [1, 1, 7, 2, 3, 4, 2] },
+            [0, 2, 3, 1, 4, 5, 6],
+            [1, 1, 7, 2, 3, 4, 2],
           ],
         },
       ],
@@ -87,10 +87,8 @@ class ArtModelBuilderTest < Minitest::Test
     assert_equal([0, 1, 2, 4, 5, 6, 7], model.fetch("packages").first.drop(1))
   end
 
-  def test_samples_dependency_identity_before_serialization
-    declarations = 18_020.times.map do |index|
-      { "name" => "Example::Member#{index}", "signals" => [2, 0, 1, 0, 0, 0, 0] }
-    end
+  def test_caps_dependency_star_sampling
+    declarations = 18_020.times.map { [2, 0, 1, 0, 0, 0, 0] }
     snapshot = {
       "project_name" => "Large Demo",
       "components" => [],

@@ -51,7 +51,7 @@ module RubyLens
           dependencies << [
             random.rand(0..0xffff_ffff),
             package_index.fetch(old_index),
-            *declaration.fetch("signals").drop(1),
+            *declaration.drop(1),
           ]
         end
       end

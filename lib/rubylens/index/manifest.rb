@@ -22,6 +22,10 @@ module RubyLens
         @lockfile = Pathname(lockfile || @root.join("Gemfile.lock")).expand_path
         @warnings = []
         @packages = []
+        @package_roots = []
+        @package_index_by_file = {}
+        @package_index_cache = {}
+        @relative_workspace_path_cache = {}
       end
 
       def build
@@ -29,15 +33,26 @@ module RubyLens
         build_packages
         @package_roots = @packages.each_with_index.map { |package, index| [package.root, index] }
           .sort_by { |package_root, _index| -package_root.to_s.length }
+        @package_index_by_file = @workspace_files.each_with_object({}) do |path, package_index_by_file|
+          package_index_by_file[path.to_s] = nil
+        end
+        @package_roots.each do |_package_root, index|
+          @packages.fetch(index).files.each do |path|
+            path = path.to_s
+            @package_index_by_file[path] = index unless @package_index_by_file.key?(path)
+          end
+        end
+        @package_index_by_file.freeze
         @files = (@workspace_files + @packages.flat_map(&:files)).uniq.freeze
         self
       end
 
       def package_index_for(path)
-        path = Pathname(path).expand_path
-        path = path.realpath if path.exist?
-        entry = @package_roots.find { |package_root, _index| Paths.inside?(path, package_root) }
-        entry&.last
+        path = path.to_s
+        return @package_index_by_file[path] if @package_index_by_file.key?(path)
+        return @package_index_cache[path] if @package_index_cache.key?(path)
+
+        @package_index_cache[path] = uncached_package_index_for(path)
       rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP
         nil
       end
@@ -47,12 +62,25 @@ module RubyLens
       end
 
       def relative_workspace_path(path)
-        Pathname(path).realpath.relative_path_from(@root).to_s
+        path = path.to_s
+        return @relative_workspace_path_cache[path] if @relative_workspace_path_cache.key?(path)
+
+        @relative_workspace_path_cache[path] = Pathname(path).realpath.relative_path_from(@root).to_s
       rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP, ArgumentError
         nil
       end
 
       private
+
+      def uncached_package_index_for(path)
+        resolved = Pathname(path).expand_path
+        resolved = resolved.realpath if resolved.exist?
+        resolved_path = resolved.to_s
+        return @package_index_by_file[resolved_path] if @package_index_by_file.key?(resolved_path)
+
+        entry = @package_roots.find { |package_root, _index| Paths.inside?(resolved, package_root) }
+        entry&.last
+      end
 
       def build_packages
         unless @lockfile.file?

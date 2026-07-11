@@ -14,6 +14,8 @@ module RubyLens
       end
 
       def index(manifest)
+        @location_path_cache = {}
+        @workspace_location_cache = {}
         graph = @graph_factory.call(manifest.root)
         index_errors = Array(graph.index_all(manifest.files))
         graph.resolve
@@ -23,7 +25,7 @@ module RubyLens
         reference_data = workspace_reference_data(graph, declarations, manifest, workspace.fetch(:ordinal_by_name))
 
         {
-          "schema" => "rubylens.snapshot.v2",
+          "schema" => "rubylens.snapshot.v3",
           "project_name" => project_name(manifest),
           "components" => workspace.fetch(:component_counts),
           "namespace_names" => workspace.fetch(:records).map { |declaration, _definitions| declaration.name },
@@ -38,6 +40,9 @@ module RubyLens
             "integrity" => integrity_failures.length,
           },
         }
+      ensure
+        @location_path_cache = nil
+        @workspace_location_cache = nil
       end
 
       private
@@ -97,18 +102,15 @@ module RubyLens
           next unless package_index
 
           sites = definitions.map { |definition| site_key(definition.location) }.uniq.length
-          declaration_rows.fetch(package_index) << {
-            "name" => declaration.name,
-            "signals" => [
-              namespace_kind(declaration),
-              namespace?(declaration) ? [declaration.ancestors.count - 1, 0].max : 0,
-              sites,
-              [sites - 1, 0].max,
-              namespace?(declaration) ? [declaration.descendants.count - 1, 0].max : 0,
-              safe_length(declaration, :references),
-              namespace?(declaration) ? safe_length(declaration, :members) : 0,
-            ],
-          }
+          declaration_rows.fetch(package_index) << [
+            namespace_kind(declaration),
+            namespace?(declaration) ? [declaration.ancestors.count - 1, 0].max : 0,
+            sites,
+            [sites - 1, 0].max,
+            namespace?(declaration) ? [declaration.descendants.count - 1, 0].max : 0,
+            safe_length(declaration, :references),
+            namespace?(declaration) ? safe_length(declaration, :members) : 0,
+          ]
           construct_index = ruby_construct_index(declaration)
           ruby_counts.fetch(package_index)[construct_index] += 1 if construct_index
         end
@@ -128,27 +130,34 @@ module RubyLens
         source_ranges = workspace_source_ranges(declarations, manifest, ordinal_by_name)
         inbound = Hash.new(0)
         route_counts = Hash.new(0)
-        occurrences = Set.new
+        occurrences_by_uri = Hash.new { |hash, uri| hash[uri] = Set.new }
         counts = Hash.new(0)
         target_cache = {}
 
         graph.constant_references.each do |reference|
           next unless reference.respond_to?(:declaration)
-          next unless workspace_location?(reference.location, manifest)
+
+          location = reference.location
+          next unless workspace_location?(location, manifest)
+
+          target_declaration = reference.declaration
+          uri = location.uri
+          span = location_span(location)
 
           counts["resolved_workspace"] += 1
-          inbound_ordinal = ordinal_by_name[reference.declaration.name]
+          target_name = target_declaration.name
+          inbound_ordinal = ordinal_by_name[target_name]
           inbound[inbound_ordinal] += 1 if inbound_ordinal
 
-          source_ordinal = source_namespace_ordinal(reference.location, source_ranges)
+          source_ordinal = source_namespace_ordinal(uri, span, source_ranges)
           unless source_ordinal
             counts["unmapped_source"] += 1
             next
           end
 
-          target_key = [reference.declaration.class.name, reference.declaration.name]
+          target_key = [target_declaration.class.name, target_name]
           target = target_cache.fetch(target_key) do
-            target_cache[target_key] = route_target(reference.declaration, manifest, ordinal_by_name)
+            target_cache[target_key] = route_target(target_declaration, manifest, ordinal_by_name)
           end
           unless target
             counts["unmapped_target"] += 1
@@ -156,8 +165,8 @@ module RubyLens
           end
 
           target_kind, target_ordinal = target
-          occurrence = [source_ordinal, target_kind, target_ordinal, reference.location.uri, *location_span(reference.location)]
-          unless occurrences.add?(occurrence)
+          occurrence = [source_ordinal, target_kind, target_ordinal, *span]
+          unless occurrences_by_uri[uri].add?(occurrence)
             counts["deduplicated"] += 1
             next
           end
@@ -189,7 +198,7 @@ module RubyLens
 
             source = definition.declaration || definition.lexical_owner&.declaration || declaration
             ordinal = workspace_namespace_ordinal(source, ordinal_by_name)
-            ranges[location.uri] << [location, ordinal] if ordinal
+            ranges[location.uri] << [*location_span(location), ordinal] if ordinal
           rescue StandardError
             next
           end
@@ -197,31 +206,33 @@ module RubyLens
         ranges
       end
 
-      def source_namespace_ordinal(location, source_ranges)
+      def source_namespace_ordinal(uri, span, source_ranges)
+        start_line, start_column, end_line, end_column = span
         best_ordinal = nil
-        best_position = nil
-        source_ranges.fetch(location.uri, []).each do |definition_location, ordinal|
-          next unless location_contains?(definition_location, location)
+        best_start_line = nil
+        best_start_column = nil
+        best_end_line = nil
+        best_end_column = nil
+        source_ranges.fetch(uri, []).each do |range_start_line, range_start_column, range_end_line, range_end_column, ordinal|
+          next if range_start_line > start_line ||
+            (range_start_line == start_line && range_start_column > start_column)
+          next if range_end_line < end_line ||
+            (range_end_line == end_line && range_end_column < end_column)
 
-          position = [
-            definition_location.start_line,
-            definition_location.start_column,
-            -definition_location.end_line,
-            -definition_location.end_column,
-          ]
-          next if best_position && (position <=> best_position) <= 0
+          better = best_start_line.nil? ||
+            range_start_line > best_start_line ||
+            (range_start_line == best_start_line && range_start_column > best_start_column) ||
+            (range_start_line == best_start_line && range_start_column == best_start_column && range_end_line < best_end_line) ||
+            (range_start_line == best_start_line && range_start_column == best_start_column && range_end_line == best_end_line && range_end_column < best_end_column)
+          next unless better
 
-          best_position = position
+          best_start_line = range_start_line
+          best_start_column = range_start_column
+          best_end_line = range_end_line
+          best_end_column = range_end_column
           best_ordinal = ordinal
         end
         best_ordinal
-      end
-
-      def location_contains?(container, location)
-        start_position = [location.start_line, location.start_column]
-        end_position = [location.end_line, location.end_column]
-        ([container.start_line, container.start_column] <=> start_position) <= 0 &&
-          ([container.end_line, container.end_column] <=> end_position) >= 0
       end
 
       def route_target(declaration, manifest, ordinal_by_name)
@@ -328,7 +339,11 @@ module RubyLens
       end
 
       def workspace_location?(location, manifest)
-        manifest.workspace_path?(location_path(location))
+        uri = location.uri
+        @workspace_location_cache ||= {}
+        return @workspace_location_cache[uri] if @workspace_location_cache.key?(uri)
+
+        @workspace_location_cache[uri] = manifest.workspace_path?(location_path(location, uri))
       rescue StandardError
         false
       end
@@ -394,15 +409,27 @@ module RubyLens
         end
       end
 
-      def location_path(location)
-        uri = URI.parse(location.uri)
+      def location_path(location, uri_string = nil)
+        uri_string ||= location.uri
+        @location_path_cache ||= {}
+        return @location_path_cache[uri_string] if @location_path_cache.key?(uri_string)
+
+        uri = URI.parse(uri_string)
         raise Error, "Rubydex returned a non-file location" unless uri.scheme == "file"
 
-        URI::RFC2396_PARSER.unescape(uri.path)
+        @location_path_cache[uri_string] = URI::RFC2396_PARSER.unescape(uri.path)
       end
 
       def safe_length(object, method)
-        object.public_send(method).count
+        records = object.public_send(method)
+        size = records.size
+        size.nil? ? safe_count(records) : size
+      rescue StandardError
+        safe_count(records)
+      end
+
+      def safe_count(records)
+        records ? records.count : 0
       rescue StandardError
         0
       end
