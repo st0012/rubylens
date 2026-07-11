@@ -1,9 +1,22 @@
 # frozen_string_literal: true
 
 require "base64"
+require "open3"
 require_relative "test_helper"
 
 class ReportWriterTest < Minitest::Test
+  def test_can_be_required_and_constructed_directly
+    lib = File.expand_path("../lib", __dir__)
+    _output, error, status = Open3.capture3(
+      RbConfig.ruby,
+      "-I#{lib}",
+      "-e",
+      'require "rubylens/report_writer"; RubyLens::ReportWriter.new'
+    )
+
+    assert(status.success?, error)
+  end
+
   def test_embeds_the_model_in_an_assembled_template
     assembler = Object.new
     assembler.define_singleton_method(:assemble) do

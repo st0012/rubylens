@@ -4,6 +4,7 @@ require "base64"
 require "fileutils"
 require "json"
 require "securerandom"
+require_relative "report_asset_assembler"
 
 module RubyLens
   class ReportWriter
