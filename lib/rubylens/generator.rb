@@ -4,14 +4,21 @@ module RubyLens
   Result = Data.define(:output_path, :counts, :warnings)
 
   class GenerationPipeline
-    def initialize(manifest_builder: Index::Manifest, adapter: Index::RubydexAdapter.new, model_builder: ArtModelBuilder.new)
+    def initialize(
+      manifest_builder: Index::Manifest,
+      adapter: Index::RubydexAdapter.new,
+      model_builder: ArtModelBuilder.new,
+      configuration_resolver: Configuration.method(:resolve)
+    )
       @manifest_builder = manifest_builder
       @adapter = adapter
       @model_builder = model_builder
+      @configuration_resolver = configuration_resolver
     end
 
-    def call(root:, lockfile: nil)
-      manifest = @manifest_builder.build(root: root, lockfile: lockfile)
+    def call(root:, lockfile: nil, config: nil, no_config: false)
+      configuration = @configuration_resolver.call(root:, path: config, disabled: no_config)
+      manifest = @manifest_builder.build(root: root, lockfile: lockfile, configuration: configuration)
       snapshot = @adapter.index(manifest)
       model = @model_builder.build(snapshot)
       warning_counts = snapshot.fetch("warning_counts")
@@ -36,7 +43,7 @@ module RubyLens
       @report_writer = report_writer
     end
 
-    def call(path: Dir.pwd, output: nil, lockfile: nil)
+    def call(path: Dir.pwd, output: nil, lockfile: nil, config: nil, no_config: false)
       root = File.realpath(path)
       if output.nil?
         output = File.join(root, DEFAULT_REPORT_NAME)
@@ -45,7 +52,7 @@ module RubyLens
         end
         GitRepository.new(root).exclude_local(output)
       end
-      model, warnings = @pipeline.call(root:, lockfile:)
+      model, warnings = @pipeline.call(root:, lockfile:, config:, no_config:)
       output_path = @report_writer.write(model, output: output)
 
       RubyLens::Result.new(output_path: output_path, counts: model.fetch("totals").freeze, warnings:)

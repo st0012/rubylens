@@ -73,7 +73,7 @@ class GeneratorTest < Minitest::Test
   def generator
     manifest = Struct.new(:warnings).new([])
     manifest_builder = Object.new
-    manifest_builder.define_singleton_method(:build) { |root:, lockfile:| manifest }
+    manifest_builder.define_singleton_method(:build) { |root:, lockfile:, configuration:| manifest }
     adapter = Object.new
     adapter.define_singleton_method(:index) do |_manifest|
       { "warning_counts" => { "index" => 0, "integrity" => 0 } }
