@@ -47,6 +47,30 @@ class ArtModelBuilderTest < Minitest::Test
     assert(first.fetch("dependencyStars").all? { |row| row.length == 8 && row.all?(Integer) })
   end
 
+  def test_keeps_snapshot_v4_compatibility_without_bounded_aggregate_fields
+    snapshot = {
+      "schema" => "rubylens.snapshot.v4",
+      "project_name" => "Legacy Demo",
+      "components" => [],
+      "namespace_names" => [],
+      "namespaces" => [],
+      "category_stats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
+      "packages" => [{
+        "name" => "legacy-gem", "role" => 1, "location" => 1, "ruby_counts" => [0, 0, 2, 0],
+        "declarations" => [[2, 1, 1, 0, 0, 3, 4], [2, 2, 1, 0, 0, 5, 6]],
+      }],
+      "warning_counts" => { "manifest" => 0, "index" => 0, "integrity" => 0 },
+    }
+
+    model = RubyLens::ArtModelBuilder.new(seed: 12).build(snapshot)
+
+    assert_equal("rubylens.art.v7", model.fetch("schema"))
+    assert_equal(2, model.dig("totals", "dependencyStars"))
+    assert_equal(2, model.dig("totals", "renderedDependencyStars"))
+    assert_equal({ "ancestorDepth" => 2, "definitionSites" => 1, "reopenings" => 0, "descendants" => 0,
+      "references" => 5, "members" => 6 }, model.fetch("domains"))
+  end
+
   def test_preserves_package_ruby_construct_counts
     snapshot = {
       "project_name" => "Aggregate Demo",
@@ -93,5 +117,37 @@ class ArtModelBuilderTest < Minitest::Test
     assert_equal(8, model.fetch("packages").first.length)
     assert_equal([1, 1, 18_020, 1, 1, 18_020, 100], model.fetch("packages").first.drop(1))
     refute(model.key?("dependencyDeclarationNames"))
+  end
+
+  def test_uses_exact_dependency_totals_and_domains_with_bounded_snapshot_rows
+    snapshot = {
+      "schema" => "rubylens.snapshot.v5",
+      "project_name" => "Million Demo",
+      "components" => [],
+      "namespace_names" => [],
+      "namespaces" => [],
+      "category_stats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
+      "dependency_signal_maxima" => [99, 98, 97, 96, 95, 94],
+      "packages" => [{
+        "name" => "large-gem",
+        "role" => 1,
+        "location" => 1,
+        "declaration_count" => 1_000_000,
+        "ruby_counts" => [1, 2, 3, 4],
+        "declarations" => [[0, 1, 1, 0, 0, 0, 0], [1, 2, 1, 0, 0, 0, 0]],
+      }],
+      "warning_counts" => { "manifest" => 0, "index" => 0, "integrity" => 0 },
+    }
+
+    model = RubyLens::ArtModelBuilder.new(seed: 12).build(snapshot)
+
+    assert_equal(1_000_000, model.dig("totals", "dependencyStars"))
+    assert_equal(2, model.dig("totals", "renderedDependencyStars"))
+    assert_equal([1, 1, 1_000_000, 1, 2, 3, 4], model.fetch("packages").first.drop(1))
+    assert_equal(
+      { "ancestorDepth" => 99, "definitionSites" => 98, "reopenings" => 97, "descendants" => 96,
+        "references" => 95, "members" => 94 },
+      model.fetch("domains")
+    )
   end
 end

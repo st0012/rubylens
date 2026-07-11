@@ -11,13 +11,14 @@ class RubydexAdapterTest < Minitest::Test
     snapshot = adapter.index(manifest)
     serialized = JSON.generate(snapshot)
 
-    assert_equal("rubylens.snapshot.v4", snapshot.fetch("schema"))
+    assert_equal("rubylens.snapshot.v5", snapshot.fetch("schema"))
     assert_equal("Tiny Repo", snapshot.fetch("project_name"))
     assert_equal(9, snapshot.fetch("namespaces").length)
     assert_equal(9, snapshot.fetch("namespace_names").length)
     assert_equal(9, snapshot.fetch("components").sum)
     assert(snapshot.fetch("namespaces").all? { |row| row.length == 14 && row.all?(Integer) })
     assert_equal({ "core" => [4, 4, 3, 1], "tests" => [1, 0, 0, 0] }, snapshot.fetch("category_stats"))
+    assert_equal(6, snapshot.fetch("dependency_signal_maxima").length)
     assert_includes(snapshot.fetch("namespace_names"), "Demo::Order")
     order_index = snapshot.fetch("namespace_names").index("Demo::Order")
     assert_equal([1, 0, 2, 1, 1], snapshot.fetch("namespaces").fetch(order_index).last(5))
@@ -64,6 +65,38 @@ class RubydexAdapterTest < Minitest::Test
     assert_nil(adapter.instance_variable_get(:@workspace_location_cache))
   end
 
+  def test_collects_declarations_without_materializing_the_enumerable
+    declarations = Object.new
+    declarations.define_singleton_method(:each) { |_block = nil, &block| [].each(&block) }
+    declarations.define_singleton_method(:to_a) { raise "must stream declarations" }
+    manifest = Struct.new(:packages).new([])
+
+    collected = RubyLens::Index::RubydexAdapter.new.send(:collect_declarations, declarations, manifest)
+
+    assert_empty(collected.fetch(:workspace_records))
+    assert_equal({ "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] }, collected.fetch(:category_stats))
+    assert_empty(collected.fetch(:dependency_aggregation).packages)
+  end
+
+  def test_dependency_extraction_failure_cannot_silently_undercount
+    declaration = Object.new
+    declaration.define_singleton_method(:definitions) { raise "broken definitions" }
+    manifest = Struct.new(:packages).new([Object.new])
+
+    error = assert_raises(RuntimeError) do
+      RubyLens::Index::RubydexAdapter.new.send(:collect_dependency_declaration, Object.new, declaration, manifest)
+    end
+    assert_equal("broken definitions", error.message)
+  end
+
+  def test_non_file_definitions_are_intentionally_ineligible_for_packages
+    location = Struct.new(:uri).new("https://example.test/builtin.rbs")
+    manifest = Object.new
+    manifest.define_singleton_method(:package_index_for) { raise "non-file locations must not be indexed" }
+
+    assert_nil(RubyLens::Index::RubydexAdapter.new.send(:package_index_for_location, location, manifest))
+  end
+
   def test_compacts_dependency_declarations_without_embedding_their_names
     Dir.mktmpdir("rubylens-package-declarations-") do |directory|
       lib = File.join(directory, "lib")
@@ -94,6 +127,7 @@ class RubydexAdapterTest < Minitest::Test
       package = snapshot.fetch("packages").find { |row| row.fetch("name") == "minitest" }
 
       assert(package)
+      assert_equal(package.fetch("declarations").length, package.fetch("declaration_count"))
       refute_empty(package.fetch("declarations"))
       assert(package.fetch("declarations").all? { |row| row.length == 7 && row.all?(Integer) })
       refute_includes(JSON.generate(snapshot), directory)
