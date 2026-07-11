@@ -31,15 +31,15 @@ The report is fully local: it makes no network requests and needs neither Node n
 
 RubyLens can index a target and render its locally generated model as a fixed, seamless galaxy loop:
 
-![RubyLens cinematic export of Rails, showing a dense pink Core system, a cyan Test halo, amber dependency systems, and aggregate Ruby statistics during a smooth orbit.](docs/assets/rubylens-rails-galaxy.gif)
+[![Animated RubyLens preview of Rails; opens the full 20-second export. A dense pink Core galaxy, cyan Test halo, and amber dependency systems rotate beneath aggregate Ruby statistics.](docs/assets/rubylens-rails-galaxy-preview.gif)](docs/assets/rubylens-rails-galaxy-full.gif)
 
-*[Rails](https://github.com/rails/rails) rendered locally as a shortened RubyLens galaxy preview. Default exports are 20-second loops. The GIF contains no source text, file paths, declaration names, or gem names.*
+*[Rails](https://github.com/rails/rails) rendered locally by RubyLens. This phone-friendly 10-second preview opens the [full 20-second default export](docs/assets/rubylens-rails-galaxy-full.gif) (960×540, 12 fps, 19.3 MiB). Both GIFs contain no source text, file paths, declaration names, or gem names.*
 
 ```sh
 bundle exec rubylens gif .
 ```
 
-The default `rubylens-galaxy.gif` is 20 seconds, 12 frames per second, and 960×540. Capture mode hides the explorer, tooltips, declaration names, and gem names. It shows the project title, aggregate Core counts, Test class/method counts, the dependency-gem count, and the rotating stellar model.
+The default `rubylens-galaxy.gif` is 20 seconds, 12 frames per second, and 960×540. The camera completes one unbroken 360° orbit across those 20 seconds, using a close three-quarter view and a subtle breathing zoom. Capture mode hides the explorer, tooltips, declaration names, and gem names. It shows the project title, aggregate Core counts, Test class/method counts, the dependency-gem count, and the rotating stellar model.
 
 The GIF contains no source text or paths, but it is not anonymous: its title, counts, and visual structure can identify or characterize a private codebase. Review the finished animation before sharing it.
 

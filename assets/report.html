@@ -152,6 +152,7 @@
     };
     let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null;
     const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35, CAPTURE_POINT_LIMIT = 50_000;
+    const CAPTURE_CAMERA = Object.freeze({ turns: 1, referenceWidth: 720, referenceHeight: 405, centerX: .52, centerY: .60, startYaw: -.36, pitch: .40, pitchSway: .09, zoom: 1.05, zoomBreath: .035 });
     const TOP_DOWN_PITCH = Math.PI / 2;
     const contextVisibility = { selection: .75, category: .16, package: .75 };
     const pointers = new Map();
@@ -784,8 +785,8 @@
       if (captureMode) {
         sceneRight = width;
         sceneBottom = height;
-        sceneCenterX = width * .5;
-        sceneCenterY = height * .54;
+        sceneCenterX = width * CAPTURE_CAMERA.centerX;
+        sceneCenterY = height * CAPTURE_CAMERA.centerY;
         return;
       }
       const panelBounds = panel.getBoundingClientRect();
@@ -949,14 +950,15 @@
       tooltip.hidden = true;
       Object.keys(visibleCategories).forEach(category => { visibleCategories[category] = true; });
       const progress = ((index % total) + total) % total / total;
-      const phase = progress * Math.PI * 2;
-      yaw = -.36 + phase;
-      pitch = .28 + Math.sin(phase) * .08;
-      zoom = .88 + (1 - Math.cos(phase)) * .025;
+      const phase = progress * Math.PI * 2 * CAPTURE_CAMERA.turns;
+      const viewportScale = Math.min(width / CAPTURE_CAMERA.referenceWidth, height / CAPTURE_CAMERA.referenceHeight);
+      yaw = CAPTURE_CAMERA.startYaw + phase;
+      pitch = CAPTURE_CAMERA.pitch + Math.sin(phase) * CAPTURE_CAMERA.pitchSway;
+      zoom = (CAPTURE_CAMERA.zoom + (1 - Math.cos(phase)) * CAPTURE_CAMERA.zoomBreath) * viewportScale;
       panX = 0;
       panY = 0;
       render(performance.now());
-      return { index, total, yaw, pitch, zoom, renderedPoints: renderPoints.length };
+      return { index, total, yaw, pitch, zoom, viewportScale, renderedPoints: renderPoints.length };
     }
 
     function populateCaptureStats() {
