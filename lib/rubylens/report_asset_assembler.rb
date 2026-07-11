@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "errors"
+
 module RubyLens
   class ReportAssetAssembler
     STYLES_PLACEHOLDER = "{{REPORT_STYLES}}"

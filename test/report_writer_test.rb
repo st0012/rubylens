@@ -27,16 +27,40 @@ class ReportWriterTest < Minitest::Test
     assert_equal("provide template_path or asset_assembler, not both", error.message)
   end
 
-  def test_can_be_required_and_constructed_directly
-    lib = File.expand_path("../lib", __dir__)
-    _output, error, status = Open3.capture3(
-      RbConfig.ruby,
-      "-I#{lib}",
-      "-e",
-      'require "rubylens/report_writer"; RubyLens::ReportWriter.new'
-    )
+  def test_direct_require_exposes_malformed_asset_errors
+    Dir.mktmpdir("rubylens-report-assets-") do |directory|
+      shell = File.join(directory, "report.html")
+      stylesheet = File.join(directory, "report.css")
+      runtime = File.join(directory, "report.js")
+      File.write(shell, "{{REPORT_RUNTIME}}")
+      File.write(stylesheet, "body {}")
+      File.write(runtime, '"use strict";')
+      lib = File.expand_path("../lib", __dir__)
+      script = <<~'RUBY'
+        require "rubylens/report_writer"
+        RubyLens::ReportWriter.new
+        assembler = RubyLens::ReportAssetAssembler.new(
+          shell_path: ARGV[0], stylesheet_path: ARGV[1], runtime_path: ARGV[2]
+        )
+        begin
+          assembler.assemble
+        rescue RubyLens::Error => error
+          puts error.message
+        else
+          abort "expected RubyLens::Error"
+        end
+      RUBY
 
-    assert(status.success?, error)
+      output, error, status = Open3.capture3(
+        RbConfig.ruby, "-I#{lib}", "-e", script, shell, stylesheet, runtime
+      )
+
+      assert(status.success?, error)
+      assert_equal(
+        "report shell must contain exactly one {{REPORT_STYLES}} placeholder\n",
+        output
+      )
+    end
   end
 
   def test_embeds_the_model_in_an_assembled_template
