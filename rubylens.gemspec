@@ -25,7 +25,7 @@ Gem::Specification.new do |specification|
     "docs/REFERENCE_ROUTES_FUTURE.md",
     "exe/rubylens",
     "lib/rubylens.rb",
-    *Dir["lib/rubylens/{art_model_builder,cli,errors,generator,git_repository,paths,report_asset_assembler,report_writer,showcase_generator,showcase_model,showcase_writer,version}.rb"],
+    *Dir["lib/rubylens/{art_model_builder,cli,configuration,errors,generator,git_repository,paths,report_asset_assembler,report_writer,showcase_generator,showcase_model,showcase_writer,version}.rb"],
     *Dir["lib/rubylens/index/*.rb"],
     *Dir["lib/rubylens/model/*.rb"],
   ]

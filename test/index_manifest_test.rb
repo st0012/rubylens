@@ -13,10 +13,55 @@ class IndexManifestTest < Minitest::Test
       ["config.ru", "lib/domain.rb", "lib/reopen.rb", "sig/domain.rbs", "tasks/demo.rake", "test/order_test.rb"],
       relative,
     )
+    assert_equal(:absent, manifest.boundaries.source)
+    assert_empty(manifest.boundaries.groups)
+    assert_nil(manifest.boundaries.ungrouped)
     assert_equal(manifest.workspace_files, manifest.files)
     assert_equal([], manifest.packages)
     assert_equal(["No Gemfile.lock found; dependency systems were omitted."], manifest.warnings)
     refute(manifest.files.any? { |path| path.end_with?("ignored.rb") })
+  end
+
+  def test_boundary_expansion_uses_only_git_selected_workspace_files
+    Dir.mktmpdir("rubylens-monorepo-") do |directory|
+      FileUtils.mkdir_p(File.join(directory, "apps", "tracked", "lib"))
+      FileUtils.mkdir_p(File.join(directory, "apps", "ignored", "lib"))
+      File.write(File.join(directory, "apps", "tracked", "lib", "tracked.rb"), "Tracked = true\n")
+      File.write(File.join(directory, "apps", "ignored", "lib", "ignored.rb"), "Ignored = true\n")
+      File.write(File.join(directory, ".gitignore"), "apps/ignored/\n")
+      File.write(File.join(directory, ".rubylens.yml"), <<~YAML)
+        version: 1
+        boundaries:
+          groups:
+            - each: apps/*
+              id_prefix: app
+              label: "App · %{basename}"
+      YAML
+      system("git", "-C", directory, "init", "--quiet", exception: true)
+      system("git", "-C", directory, "add", ".gitignore", ".rubylens.yml", "apps/tracked/lib/tracked.rb", exception: true)
+
+      manifest = RubyLens::Index::Manifest.build(root: directory)
+
+      assert_equal(["app-tracked"], manifest.boundaries.groups.map(&:id))
+      refute_includes(manifest.boundaries.groups.map(&:id), "app-ignored")
+    end
+  end
+
+  def test_absent_and_disabled_configuration_preserve_the_exact_snapshot_and_artifact
+    absent_manifest = RubyLens::Index::Manifest.build(root: FIXTURE)
+    disabled = RubyLens::Configuration.resolve(root: FIXTURE, disabled: true)
+    disabled_manifest = RubyLens::Index::Manifest.build(root: FIXTURE, configuration: disabled)
+    adapter = RubyLens::Index::RubydexAdapter.new
+
+    absent_snapshot = adapter.index(absent_manifest)
+    disabled_snapshot = adapter.index(disabled_manifest)
+
+    assert_equal(absent_manifest.workspace_files, disabled_manifest.workspace_files)
+    assert_equal(absent_snapshot, disabled_snapshot)
+    assert_equal(
+      RubyLens::ArtModelBuilder.new.build(absent_snapshot),
+      RubyLens::ArtModelBuilder.new.build(disabled_snapshot),
+    )
   end
 
   def test_excludes_rubylens_tool_only_dependency_closure

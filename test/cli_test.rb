@@ -79,4 +79,18 @@ class CLITest < Minitest::Test
     refute_includes(errors.string, "build [TARGET]")
     refute_includes(errors.string, "gif [TARGET]")
   end
+
+  def test_report_forwards_configuration_options
+    received = nil
+    report_generator = lambda do |**options|
+      received = options
+      RubyLens::Result.new(output_path: "/tmp/report.html", counts: {}, warnings: [])
+    end
+
+    status = RubyLens::CLI.new(stdout: StringIO.new, stderr: StringIO.new, report_generator: report_generator)
+      .run(["report", ".", "--config", "/tmp/boundaries.yml"])
+
+    assert_equal(0, status)
+    assert_equal("/tmp/boundaries.yml", received.fetch(:config))
+  end
 end

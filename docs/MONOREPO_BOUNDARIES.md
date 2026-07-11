@@ -2,11 +2,13 @@
 
 RubyLens should treat a large monorepo as a galaxy of first-class Core systems rather than one undifferentiated Core cloud. A repository such as Shopify Core can configure `apps/*`, `components/*`, and shared infrastructure as separate systems while preserving Tests and Gems as visual roles.
 
-This is a design contract, not an implemented configuration format yet.
+The configuration and Git-selected manifest plumbing described below are implemented. Namespace ownership, group aggregates, and scene behavior remain staged design work.
 
 ## Proposed configuration
 
 RubyLens discovers `TARGET/.rubylens.yml` by default. `--config FILE` selects another file and `--no-config` preserves today's single-Core behavior.
+
+Precedence is deterministic: `--no-config`, then an explicit `--config FILE`, then `TARGET/.rubylens.yml`, then unchanged single-project behavior when no configuration exists. Passing `--config` and `--no-config` together is an error. Explicit paths are resolved from the invoking process's working directory and must exist; a missing discovered file is not an error.
 
 ```yaml
 version: 1
@@ -47,6 +49,8 @@ Rules use normalized, workspace-relative paths from the existing Git-selected ma
 - Unmatched files belong to `Other` by default. `ungrouped.mode: error` supports repositories that require complete coverage.
 - Do not initially support silently dropping unmatched source.
 - Group ownership is independent of Core/Test role. `components/payments/test/...` belongs to Payments and remains cyan Test code.
+- YAML aliases, object tags, duplicate mapping keys, unknown keys, duplicate or colliding group IDs, absolute paths, `..`, and unsupported glob syntax are rejected.
+- `each` groups expand only from directories proven by the existing Git-selected workspace manifest. Ignored, untracked, and direct child files cannot create groups.
 
 ## Namespace ownership
 

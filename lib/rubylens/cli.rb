@@ -64,12 +64,16 @@ module RubyLens
         option.on("--lockfile FILE", "Gemfile.lock used to select exact dependency versions") do |value|
           options[:lockfile] = value
         end
+        configuration_options(option, options)
       end
       parser.parse!(arguments)
       target = arguments.shift || Dir.pwd
       raise OptionParser::InvalidArgument, "unexpected argument: #{arguments.first}" unless arguments.empty?
 
-      result = generator.call(path: target, output: options[:output], lockfile: options[:lockfile])
+      result = generator.call(
+        path: target, output: options[:output], lockfile: options[:lockfile],
+        config: options[:config], no_config: options.fetch(:no_config, false),
+      )
       print_result(result)
       @stderr.puts warning
       0
@@ -81,6 +85,11 @@ module RubyLens
         counts: result.counts,
         warnings: result.warnings,
       )
+    end
+
+    def configuration_options(parser, options)
+      parser.on("--config FILE", "Boundary configuration (default: TARGET/.rubylens.yml)") { |value| options[:config] = value }
+      parser.on("--no-config", "Ignore boundary configuration") { options[:no_config] = true }
     end
 
     def print_version

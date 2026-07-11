@@ -5,22 +5,25 @@ require "bundler/lockfile_parser"
 require "find"
 require "pathname"
 require "set"
+require_relative "../configuration"
+require_relative "boundaries"
 
 module RubyLens
   module Index
     class Manifest
       Package = Data.define(:name, :version, :role, :location, :root, :files)
 
-      attr_reader :root, :files, :workspace_files, :packages, :warnings
+      attr_reader :root, :files, :workspace_files, :packages, :warnings, :boundaries
 
-      def self.build(root:, lockfile: nil)
-        new(root: root, lockfile: lockfile).tap(&:build)
+      def self.build(root:, lockfile: nil, configuration: Configuration.resolve(root: root))
+        new(root: root, lockfile: lockfile, configuration: configuration).tap(&:build)
       end
 
-      def initialize(root:, lockfile: nil)
+      def initialize(root:, lockfile: nil, configuration: Configuration.resolve(root: root))
         @root = Pathname(root).expand_path.realpath
         @lockfile = Pathname(lockfile || @root.join("Gemfile.lock")).expand_path
         @warnings = []
+        @configuration = configuration
         @packages = []
         @package_roots = []
         @package_index_by_file = {}
@@ -30,6 +33,7 @@ module RubyLens
 
       def build
         @workspace_files = GitRepository.new(@root).selected_files.freeze
+        @boundaries = Boundaries.build(root: @root, workspace_files: @workspace_files, configuration: @configuration)
         build_packages
         @package_roots = @packages.each_with_index.map { |package, index| [package.root, index] }
           .sort_by { |package_root, _index| -package_root.to_s.length }
