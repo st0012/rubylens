@@ -9,8 +9,8 @@ module RubyLens
   class ReportWriter
     MODEL_PLACEHOLDER = "{{MODEL_BASE64}}"
 
-    def initialize(template_path: File.expand_path("../../assets/report.html", __dir__))
-      @template_path = template_path
+    def initialize(asset_assembler: ReportAssetAssembler.new)
+      @asset_assembler = asset_assembler
     end
 
     def write(model, output:)
@@ -18,7 +18,7 @@ module RubyLens
       directory = File.dirname(output)
       FileUtils.mkdir_p(directory, mode: 0o700)
       protect_default_directory(directory)
-      template = File.read(@template_path)
+      template = @asset_assembler.assemble
       raise Error, "report template has no model placeholder" unless template.include?(MODEL_PLACEHOLDER)
 
       payload = Base64.strict_encode64(JSON.generate(model))

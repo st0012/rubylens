@@ -4,6 +4,23 @@ require "base64"
 require_relative "test_helper"
 
 class ReportWriterTest < Minitest::Test
+  def test_embeds_the_model_in_an_assembled_template
+    assembler = Object.new
+    assembler.define_singleton_method(:assemble) do
+      '<meta name="generator" content="RubyLens"><script>JSON.parse(atob("{{MODEL_BASE64}}"))</script>'
+    end
+
+    Dir.mktmpdir("rubylens-report-") do |directory|
+      output = File.join(directory, "report.html")
+      model = { "projectName" => "Demo" }
+
+      RubyLens::ReportWriter.new(asset_assembler: assembler).write(model, output: output)
+
+      encoded = File.read(output).match(/atob\("([A-Za-z0-9+\/=]+)"\)/).captures.first
+      assert_equal(model, JSON.parse(Base64.strict_decode64(encoded)))
+    end
+  end
+
   def test_writes_an_offline_owner_only_report_and_protects_default_directory
     Dir.mktmpdir("rubylens-report-") do |directory|
       output = File.join(directory, ".rubylens", "report.html")
