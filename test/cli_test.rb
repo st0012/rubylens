@@ -29,4 +29,52 @@ class CLITest < Minitest::Test
     assert_equal(0, status)
     assert_equal("#{RubyLens::VERSION}\n", output.string)
   end
+
+  def test_gif_prints_machine_readable_result_and_forwards_capture_options
+    output = StringIO.new
+    errors = StringIO.new
+    received = nil
+    gif_generator = lambda do |**options, &progress|
+      received = options
+      progress.call(:capture, 1, 1)
+      progress.call(:encode, 2, 2)
+      RubyLens::Result.new(
+        output_path: "/tmp/galaxy.gif",
+        counts: { "namespaces" => 24 },
+        warnings: [],
+      )
+    end
+
+    status = RubyLens::CLI.new(stdout: output, stderr: errors, gif_generator: gif_generator).run(
+      ["gif", ".", "--output", "/tmp/galaxy.gif", "--duration", "10", "--fps", "8", "--size", "640x360", "--browser", "/tmp/chrome", "--ffmpeg", "/tmp/ffmpeg"],
+    )
+
+    assert_equal(0, status)
+    assert_equal(
+      {
+        path: ".",
+        output: "/tmp/galaxy.gif",
+        duration: 10.0,
+        fps: 8,
+        width: 640,
+        height: 360,
+        browser_path: "/tmp/chrome",
+        ffmpeg_path: "/tmp/ffmpeg",
+      },
+      received,
+    )
+    assert_equal("/tmp/galaxy.gif", JSON.parse(output.string).fetch("output"))
+    assert_includes(errors.string, "Capturing galaxy frames")
+    assert_includes(errors.string, "Encoding GIF")
+    assert_includes(errors.string, "Share them intentionally")
+  end
+
+  def test_gif_rejects_an_invalid_size
+    errors = StringIO.new
+
+    status = RubyLens::CLI.new(stdout: StringIO.new, stderr: errors).run(["gif", ".", "--size", "wide"])
+
+    assert_equal(2, status)
+    assert_includes(errors.string, "size must use WIDTHxHEIGHT")
+  end
 end

@@ -55,7 +55,7 @@ module RubyLens
       end.sort
     end
 
-    def exclude_local(path)
+    def exclude_local(path, description: "report")
       path = Pathname(path).expand_path
       path = path.dirname.realpath.join(path.basename)
       raise ExtractionError, "local exclude path is outside the Git repository" unless Paths.inside?(path, @git_root)
@@ -68,7 +68,7 @@ module RubyLens
       FileUtils.mkdir_p(exclude_path.dirname)
       relative = path.relative_path_from(@git_root).to_s
       _tracked_output, tracked_status = capture("ls-files", "--error-unmatch", "--", relative)
-      raise ExtractionError, "default report path is already tracked by Git" if tracked_status.success?
+      raise ExtractionError, "default #{description} path is already tracked by Git" if tracked_status.success?
 
       directory = File.dirname(relative)
       basename = File.basename(relative)

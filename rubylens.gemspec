@@ -16,9 +16,11 @@ Gem::Specification.new do |specification|
   specification.files = [
     "README.md",
     "assets/report.html",
+    "docs/MONOREPO_BOUNDARIES.md",
+    "docs/REFERENCE_ROUTES_FUTURE.md",
     "exe/rubylens",
     "lib/rubylens.rb",
-    *Dir["lib/rubylens/{art_model_builder,cli,errors,generator,git_repository,paths,report_writer,version}.rb"],
+    *Dir["lib/rubylens/{art_model_builder,cli,errors,generator,gif_generator,gif_writer,git_repository,paths,report_writer,version}.rb"],
     *Dir["lib/rubylens/index/*.rb"],
   ]
   specification.bindir = "exe"
@@ -27,4 +29,5 @@ Gem::Specification.new do |specification|
 
   specification.add_dependency "rubydex", "= 0.2.9"
   specification.add_dependency "base64", ">= 0.2"
+  specification.add_dependency "ferrum", "= 0.17.2"
 end

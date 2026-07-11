@@ -24,9 +24,8 @@ Accuracy note: this brief uses the preferred narrative spelling **RubyDex**. The
 - Present the RubyDex model as a guided explorer for general Ruby users: separate core, test-only, and gem counts; let users show or focus each system; and turn ancestry, descendants, members, and references into clickable standout facts that highlight declarations.
 - Make deep inspection spatially navigable: zoom toward the cursor or pinch midpoint, preserve orbit controls, and support explicit mouse, touch, and keyboard panning through dense clouds.
 - Treat dependency focus as a lightweight level-of-detail state: double-click one existing gem system to pause drift, expand its current points, and sharpen its stars without duplicating dependency models in memory.
-- Turn resolved constant references into directed travel routes. Attribute each workspace reference to its enclosing namespace, collapse dependency targets to gem systems, show a capped directional neighborhood for a selection, and offer an explicit All routes mode for the complete aggregated layer. Do not present method occurrences as a call graph.
 - Keep Galaxy A as the selected direction. City Blocks is paused until the stellar direction and gem pipeline are mature.
-- Keep 3D coordinates and layout simulation renderer-owned rather than embedding positions in the compact `rubylens.art.v6` model.
+- Keep 3D coordinates and layout simulation renderer-owned rather than embedding positions in the compact `rubylens.art.v7` model.
 
 ## Confirmed RubyDex reality
 
@@ -44,17 +43,20 @@ The upstream [API reference](https://shopify.github.io/rubydex/) should remain t
 - What visual properties represent size, type, ownership, and risk without turning the scene into an unreadable dashboard.
 - How dependency depth, direct versus transitive gems, and workspace packages should be grouped below the waterline.
 - The level-of-detail and search strategy needed for very large repositories.
+- How configurable monorepo boundaries become stable, independently focusable Core systems; see [the boundary design](docs/MONOREPO_BOUNDARIES.md).
+- Which additional shareable formats should follow the cinematic GIF export without weakening local-first privacy.
 - Whether the production report remains a single HTML file or becomes a fully local report directory; either form must stay offline at runtime.
 - Whether a hosted product is worth building, and what explicit redaction and upload controls it would require.
 
 ## Current vertical slice
 
 1. An explicit Git-selected manifest is the only file list passed to `Graph#index_all`; exact locked gem files are containment-audited and RubyLens's tool-only dependency closure is removed.
-2. The Rubydex adapter emits Ruby-facing metrics, declaration/package names, and compact aggregated resolved constant-reference routes. Source text, comments, paths, and dependency declaration identities do not cross into the report payload.
-3. `RubyLens.generate` and `rubylens build` write one owner-only, self-contained HTML report with guided core, tests, and gems exploration, smooth spatial travel, selected reference neighborhoods, and an opt-in complete route layer.
-4. The lightweight Canvas renderer implements the approved galaxy morphology without requiring Node. The Three.js prototype remains a design lab rather than a planned runtime migration.
+2. The Rubydex adapter emits the signals and workspace/package names needed for local hover proof. Dependency declaration identities, source text, comments, and paths do not cross into the report payload.
+3. `RubyLens.generate` and `rubylens build` write one owner-only, self-contained HTML report with guided core, tests, and gems exploration plus RubyDex-powered clickable facts.
+4. The production Canvas renderer implements the approved galaxy morphology without requiring Node at report runtime. The Three.js prototype remains a design lab for HDR bloom, point-spread shaders, dust attenuation, and higher-scale rendering.
+5. `RubyLens.generate_gif` and `rubylens gif` reuse the local indexing pipeline to render a fixed 20-second galaxy loop with familiar Ruby statistics, bounded capture detail, private temporary files, and an owner-only GIF output.
 
-The next production slice is search and large-repository route-layer profiling behind the same local-only privacy boundary.
+The next production slice is configurable multi-system monorepo boundaries, without changing the local-only privacy boundary. Resolved reference routes are paused; their findings and revival criteria are preserved in [the archived route design](docs/REFERENCE_ROUTES_FUTURE.md).
 
 ## Privacy guardrails
 
