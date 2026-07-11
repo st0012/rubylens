@@ -2,8 +2,20 @@
     const model = JSON.parse(atob("{{MODEL_BASE64}}"));
     const captureMode = new URLSearchParams(window.location.search).get("capture") === "1";
     if (captureMode) document.body.classList.add("is-capture");
-    const canvas = document.getElementById("cosmos");
-    const context = canvas.getContext("2d", { alpha: false });
+    let canvas = document.getElementById("cosmos");
+    const forceCanvasRenderer = new URLSearchParams(window.location.search).get("renderer") === "canvas";
+    const rendererSelection = window.RubyLensPointRenderer.create(canvas, { forceCanvas: forceCanvasRenderer });
+    let pointRenderer = rendererSelection.renderer || null;
+    let context = null;
+    if (!pointRenderer) {
+      context = canvas.getContext("2d", { alpha: false });
+      if (!context) {
+        const replacement = canvas.cloneNode(false);
+        canvas.replaceWith(replacement);
+        canvas = replacement;
+        context = canvas.getContext("2d", { alpha: false });
+      }
+    }
     const panel = document.getElementById("panel");
     const panelBody = document.getElementById("panel-body");
     const panelToggle = document.getElementById("panel-toggle");
@@ -131,6 +143,8 @@
       return candidates.slice(0, available).map(candidate => candidate[2]).concat(hubs);
     }
     const renderPoints = capturePointSample();
+    if (pointRenderer) pointRenderer.sync(renderPoints);
+    const rendererMetrics = { cpuProjectedPoints: 0, cpuProjectionMilliseconds: 0, frameMilliseconds: 0 };
     const totals = model.totals;
     const renderedDependencyStars = model.totals.renderedDependencyStars;
     const directGemCount = model.packages.filter(row => row[1] === 0).length;
@@ -645,7 +659,8 @@
       dpr = Math.min(window.devicePixelRatio || 1, 2);
       width = window.innerWidth; height = window.innerHeight;
       canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
-      context.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (pointRenderer) pointRenderer.resize(width, height, dpr);
+      else context.setTransform(dpr, 0, 0, dpr, 0, 0);
       updateSceneViewport();
       requestRender();
     }
@@ -736,10 +751,49 @@
       return [sceneCenterX + panX + x1 * perspective, sceneCenterY + panY + y2 * perspective, perspective];
     }
 
+    function updateInteractionProjection(matrix) {
+      const started = performance.now();
+      const candidates = new Set([...interactivePoints, ...dependencyHubs]);
+      if (selectedPoint) candidates.add(selectedPoint);
+      let projectedCount = 0;
+      for (const point of candidates) {
+        point.screen = null;
+        if (point.hub) point.cloudScreenRadius = null;
+        if (!visibleCategories[point.category]) continue;
+        projectedCount += 1;
+        const projected = project(point, matrix);
+        if (!projected) continue;
+        const [x, y, perspective] = projected;
+        if (x < -20 || x > sceneRight + 20 || y < -20 || y > sceneBottom + 20) continue;
+        const size = clamp(point.base * (.62 + point.signal * .46) * perspective, .35, point.hub ? 5.2 : 3.2);
+        point.screen = [x, y, size];
+        if (point.hub) {
+          const expansion = expandedPackageIndex === point.packageIndex ? DEPENDENCY_EXPANSION : 1;
+          point.cloudScreenRadius = Math.max(12, packageAnchors[point.packageIndex][3] * perspective * expansion * 1.2);
+        }
+      }
+      rendererMetrics.cpuProjectedPoints = projectedCount;
+      rendererMetrics.cpuProjectionMilliseconds = performance.now() - started;
+    }
+
     function render(timestamp) {
+      const frameStarted = performance.now();
       animationFrame = 0;
       updateCameraFlight(timestamp);
       document.getElementById("zoom-level").value = `${Math.round(zoom * 100)}%`;
+      const matrix = [Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch)];
+      if (pointRenderer) {
+        pointRenderer.draw({ matrix, width, height, panX, panY, sceneCenterX, sceneCenterY, zoom, visibleCategories, focusedCategory, expandedPackageIndex, expandedAnchor: expandedPackageIndex === null ? null : packageAnchors[expandedPackageIndex], selectedPoint, selectionLocked });
+        updateInteractionProjection(matrix);
+        if (selectedPoint) {
+          if (cameraFlight) tooltip.hidden = true;
+          else positionTooltip(selectedPoint);
+        }
+        rendererMetrics.frameMilliseconds = performance.now() - frameStarted;
+        if (cameraFlight) requestRender();
+        else if (drifting && !dragging && !selectedPoint) { yaw += .00055; requestRender(); }
+        return;
+      }
       context.globalCompositeOperation = "source-over";
       context.fillStyle = "#03040a";
       context.fillRect(0, 0, width, height);
@@ -747,7 +801,6 @@
       vignette.addColorStop(0, "rgba(30,16,45,.18)"); vignette.addColorStop(1, "rgba(0,0,0,.6)");
       context.fillStyle = vignette; context.fillRect(0, 0, width, height);
       context.globalCompositeOperation = "lighter";
-      const matrix = [Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch)];
       const deepDetail = clamp(Math.log2(Math.max(1, zoom)) / 5, 0, 1);
       for (const point of renderPoints) {
         point.screen = null;
@@ -793,6 +846,8 @@
         }
       }
       context.globalCompositeOperation = "source-over";
+      rendererMetrics.cpuProjectedPoints = renderPoints.length;
+      rendererMetrics.frameMilliseconds = performance.now() - frameStarted;
       if (selectedPoint) {
         if (cameraFlight) tooltip.hidden = true;
         else positionTooltip(selectedPoint);
@@ -1013,6 +1068,8 @@
         totalPoints: points.length,
         renderedGemHubs: renderPoints.filter(point => point.hub).length,
         totalGemHubs: dependencyHubs.length,
+        renderer: () => pointRenderer ? pointRenderer.info() : { kind: "canvas2d", fallbackReason: rendererSelection.error },
+        metrics: () => ({ ...rendererMetrics }),
       });
       document.documentElement.dataset.captureReady = "true";
     } else {
@@ -1020,3 +1077,11 @@
       setPanelCollapsed(window.matchMedia("(max-width: 760px)").matches);
       resize();
     }
+    window.RubyLensRendererDebug = Object.freeze({
+      info: () => pointRenderer ? pointRenderer.info() : { kind: "canvas2d", fallbackReason: rendererSelection.error },
+      metrics: () => ({ ...rendererMetrics }),
+      sample: () => {
+        const point = interactivePoints.find(candidate => candidate.screen);
+        return point ? { x: point.screen[0], y: point.screen[1], size: point.screen[2], category: point.category } : null;
+      },
+    });

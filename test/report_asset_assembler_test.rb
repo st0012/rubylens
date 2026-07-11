@@ -7,11 +7,13 @@ class ReportAssetAssemblerTest < Minitest::Test
   # SHA-256 of assets/report.html at 81427e6, before the renderer assets were extracted.
   REPORT_HTML_81427E6_SHA256 = "b5469adb1b773a164150a8a50c149f8d1fd4706de8b1638cafde8ce81d66f21c"
 
-  def test_assembles_assets_byte_for_byte_with_the_81427e6_report_baseline
-    assert_equal(
-      REPORT_HTML_81427E6_SHA256,
-      Digest::SHA256.hexdigest(RubyLens::ReportAssetAssembler.new.assemble)
-    )
+  def test_assembles_renderer_runtime_before_the_report_application
+    assembled = RubyLens::ReportAssetAssembler.new.assemble
+
+    assert_operator(assembled.index("window.RubyLensPointRenderer"), :<, assembled.index("const model = JSON.parse"))
+    assert_equal(1, assembled.scan(RubyLens::ReportWriter::MODEL_PLACEHOLDER).length)
+    refute_includes(assembled, RubyLens::ReportAssetAssembler::STYLES_PLACEHOLDER)
+    refute_includes(assembled, RubyLens::ReportAssetAssembler::RUNTIME_PLACEHOLDER)
   end
 
   def test_requires_each_asset_placeholder_exactly_once
@@ -43,7 +45,7 @@ class ReportAssetAssemblerTest < Minitest::Test
     RubyLens::ReportAssetAssembler.new(
       shell_path: write(File.dirname(stylesheet), "report.html", shell),
       stylesheet_path: stylesheet,
-      runtime_path: runtime
+      runtime_paths: [runtime]
     )
   end
 

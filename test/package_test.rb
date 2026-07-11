@@ -8,6 +8,7 @@ class PackageTest < Minitest::Test
 
     assert_includes(specification.files, "exe/rubylens")
     assert_includes(specification.files, "assets/runtime/report.js")
+    assert_includes(specification.files, "assets/runtime/point_renderer.js")
     assert_includes(specification.files, "assets/shells/report.html")
     assert_includes(specification.files, "assets/styles/report.css")
     assert_includes(specification.files, "docs/MONOREPO_BOUNDARIES.md")

@@ -16,6 +16,7 @@ Gem::Specification.new do |specification|
   specification.files = [
     "README.md",
     "assets/runtime/report.js",
+    "assets/runtime/point_renderer.js",
     "assets/shells/report.html",
     "assets/styles/report.css",
     "docs/MONOREPO_BOUNDARIES.md",
