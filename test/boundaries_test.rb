@@ -17,14 +17,17 @@ class BoundariesTest < Minitest::Test
       boundaries = RubyLens::Index::Boundaries.build(root:, workspace_files:, configuration:)
 
       assert_equal(
-        %w[shared app-acme-catalog app-acme-console component-acme-foundation],
+        %w[shared app-acme-catalog app-acme-console component-acme-foundation ungrouped],
         boundaries.groups.map(&:id),
       )
       refute_includes(boundaries.groups.map(&:id), "app-readme-rb")
       assert_equal(
-        ["Shared core", "App · acme-catalog", "App · acme-console", "Component · acme-foundation"],
+        ["Shared core", "App · acme-catalog", "App · acme-console", "Component · acme-foundation", "Other"],
         boundaries.groups.map(&:label),
       )
+      assert_equal("shared", boundaries.group_for("lib/example.rb").id)
+      assert_equal("app-acme-console", boundaries.group_for("apps/acme-console/lib/example.rb").id)
+      assert_equal("ungrouped", boundaries.group_for("tasks/example.rake").id)
     end
   end
 
@@ -38,6 +41,42 @@ class BoundariesTest < Minitest::Test
         RubyLens::Index::Boundaries.build(root:, workspace_files:, configuration:)
       end
       assert_equal("duplicate or colliding boundary group id: app-acme", error.message)
+    end
+  end
+
+  def test_first_matching_rule_wins
+    Dir.mktmpdir("rubylens-boundaries-") do |directory|
+      root = Pathname(directory)
+      path = root.join("boundaries.yml")
+      File.write(path, <<~YAML)
+        version: 1
+        boundaries:
+          groups:
+            - { id: preferred, label: Preferred, paths: [apps/acme/**] }
+            - { id: fallback, label: Fallback, paths: [apps/**] }
+      YAML
+      configuration = RubyLens::Configuration.resolve(root:, path:)
+      boundaries = RubyLens::Index::Boundaries.build(root:, workspace_files: [], configuration:)
+
+      assert_equal("preferred", boundaries.group_for("apps/acme/lib/example.rb").id)
+    end
+  end
+
+  def test_ungrouped_error_is_deterministic
+    Dir.mktmpdir("rubylens-boundaries-") do |directory|
+      root = Pathname(directory)
+      path = root.join("boundaries.yml")
+      File.write(path, <<~YAML)
+        version: 1
+        boundaries:
+          groups:
+            - { id: core, label: Core, paths: [lib/**] }
+          ungrouped: { mode: error }
+      YAML
+      configuration = RubyLens::Configuration.resolve(root:, path:)
+      boundaries = RubyLens::Index::Boundaries.build(root:, workspace_files: [], configuration:)
+
+      assert_raises(RubyLens::Error) { boundaries.group_for("tasks/example.rake") }
     end
   end
 

@@ -24,14 +24,35 @@ module RubyLens
         @groups = @configuration.rules.flat_map do |rule|
           rule.each ? expanded_groups(rule) : explicit_group(rule)
         end
+        @ungrouped = @configuration.ungrouped
+        if @ungrouped&.mode == "group"
+          @groups << Group.new(
+            id: "ungrouped", label: @ungrouped.label,
+            rule_order: @configuration.rules.length, paths: [].freeze,
+          )
+        end
         validate_generated_ids
         @groups.freeze
-        @ungrouped = @configuration.ungrouped
+        @group_indexes = @groups.each_with_index.to_h.freeze
         freeze
       end
 
       def configured?
         @configuration.configured?
+      end
+
+      def group_for(relative_path)
+        group = @groups.find do |candidate|
+          candidate.paths.any? { |pattern| path_matches?(relative_path, pattern) }
+        end
+        return group if group
+        return @groups.last if @ungrouped&.mode == "group"
+
+        raise Error, "workspace path is not covered by boundary configuration"
+      end
+
+      def group_index(group)
+        @group_indexes.fetch(group)
       end
 
       private
@@ -63,6 +84,19 @@ module RubyLens
         raise Error, "boundary directory cannot produce a stable group id: #{value}" if normalized.empty?
 
         normalized
+      end
+
+      def path_matches?(path, pattern)
+        path_segments = path.to_s.tr(File::SEPARATOR, "/").split("/")
+        pattern_segments = pattern.split("/")
+        recursive = pattern_segments.last == "**"
+        pattern_segments = pattern_segments[0...-1] if recursive
+        expected_length = pattern_segments.length
+        return false if recursive ? path_segments.length < expected_length : path_segments.length != expected_length
+
+        pattern_segments.each_with_index.all? do |segment, index|
+          segment == "*" || segment == path_segments[index]
+        end
       end
 
       def validate_generated_ids

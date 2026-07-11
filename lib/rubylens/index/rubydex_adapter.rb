@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "digest"
 require "rubydex"
 require "uri"
 require_relative "../model/dependency_aggregation"
@@ -16,6 +17,7 @@ module RubyLens
       def index(manifest)
         @location_path_cache = {}
         @workspace_location_cache = {}
+        @boundary_group_cache = {}
         graph = @graph_factory.call(manifest.root)
         index_errors = Array(graph.index_all(manifest.files))
         graph.resolve
@@ -24,7 +26,7 @@ module RubyLens
         workspace = workspace_namespaces(collected.fetch(:workspace_records), manifest)
         inbound_references = inbound_workspace_references(graph, manifest, workspace.fetch(:ordinal_by_name))
 
-        {
+        snapshot = {
           "schema" => "rubylens.snapshot.v5",
           "project_name" => project_name(manifest),
           "components" => workspace.fetch(:component_counts),
@@ -39,9 +41,16 @@ module RubyLens
             "integrity" => integrity_failures.length,
           },
         }
+        if configured_boundaries?(manifest)
+          snapshot["schema"] = "rubylens.snapshot.v6"
+          snapshot["groups"] = build_group_rows(workspace, collected.fetch(:group_ruby_counts), manifest)
+          validate_group_totals!(snapshot.fetch("groups"), collected.fetch(:category_stats))
+        end
+        snapshot
       ensure
         @location_path_cache = nil
         @workspace_location_cache = nil
+        @boundary_group_cache = nil
       end
 
       private
@@ -50,6 +59,9 @@ module RubyLens
         records = []
         category_stats = { "core" => Array.new(4, 0), "tests" => Array.new(4, 0) }
         aggregation = Model::DependencyAggregation.new(package_count: manifest.packages.length)
+        group_ruby_counts = if configured_boundaries?(manifest)
+          Array.new(manifest.boundaries.groups.length) { { "core" => Array.new(4, 0), "tests" => Array.new(4, 0) } }
+        end
 
         declarations.each do |declaration|
           if namespace?(declaration)
@@ -58,24 +70,37 @@ module RubyLens
             end
             records << [declaration, definitions] unless definitions.empty?
           end
-          collect_category_stat(category_stats, declaration, manifest)
+          collect_category_stat(category_stats, declaration, manifest, group_ruby_counts)
           collect_dependency_declaration(aggregation, declaration, manifest)
         end
 
-        { workspace_records: records, category_stats:, dependency_aggregation: aggregation }
+        { workspace_records: records, category_stats:, dependency_aggregation: aggregation, group_ruby_counts: }
       end
 
       def workspace_namespaces(records, manifest)
         ordinal_by_name = records.each_with_index.to_h { |(declaration, _definitions), index| [declaration.name, index] }
-        components = records.map { |_declaration, definitions| component_for(definitions, manifest) }
-        component_ids = components.uniq.sort.each_with_index.to_h
+        if configured_boundaries?(manifest)
+          components = records.map { |_declaration, definitions| owner_group_for(definitions, manifest).id }
+          component_ids = manifest.boundaries.groups.each_with_index.to_h { |group, index| [group.id, index] }
+          component_counts = Array.new(component_ids.length, 0)
+          components.each { |id| component_counts[component_ids.fetch(id)] += 1 }
+          cross_group = records.map do |_declaration, definitions|
+            definition_groups(definitions, manifest).uniq.length > 1
+          end
+        else
+          components = records.map { |_declaration, definitions| component_for(definitions, manifest) }
+          component_ids = components.uniq.sort.each_with_index.to_h
+          component_counts = components.tally.sort_by { |name, _count| component_ids.fetch(name) }.map(&:last)
+          cross_group = nil
+        end
 
         {
           records: records,
           ordinal_by_name: ordinal_by_name,
           component_ids: component_ids,
           components: components,
-          component_counts: components.tally.sort_by { |name, _count| component_ids.fetch(name) }.map(&:last),
+          component_counts: component_counts,
+          cross_group: cross_group,
         }
       end
 
@@ -114,6 +139,42 @@ module RubyLens
             "ruby_counts" => aggregate.fetch(:ruby_counts),
             "declarations" => aggregate.fetch(:declarations),
           }
+        end
+      end
+
+      def build_group_rows(workspace, ruby_counts, manifest)
+        namespace_counts = Array.new(manifest.boundaries.groups.length) { Array.new(3, 0) }
+        cross_group_counts = Array.new(manifest.boundaries.groups.length, 0)
+        workspace.fetch(:records).each_with_index do |(_declaration, definitions), index|
+          group_index = workspace.fetch(:component_ids).fetch(workspace.fetch(:components).fetch(index))
+          namespace_counts.fetch(group_index)[scope_for(definitions, manifest)] += 1
+          cross_group_counts[group_index] += 1 if workspace.fetch(:cross_group).fetch(index)
+        end
+
+        manifest.boundaries.groups.each_with_index.map do |group, index|
+          {
+            "id" => group.id,
+            "name" => group.label,
+            "anchor_seed" => group_anchor_seed(group.id),
+            "namespace_counts" => namespace_counts.fetch(index),
+            "ruby_counts" => ruby_counts.fetch(index),
+            "cross_group_namespaces" => cross_group_counts.fetch(index),
+          }
+        end
+      end
+
+      def group_anchor_seed(id)
+        Digest::SHA256.digest("rubylens.group\0#{id}").unpack1("N")
+      end
+
+      def validate_group_totals!(groups, category_stats)
+        %w[core tests].each do |category|
+          totals = groups.each_with_object(Array.new(4, 0)) do |group, sums|
+            group.fetch("ruby_counts").fetch(category).each_with_index { |count, index| sums[index] += count }
+          end
+          next if totals == category_stats.fetch(category)
+
+          raise Error, "group #{category} aggregates do not reconcile with category totals"
         end
       end
 
@@ -203,7 +264,7 @@ module RubyLens
         0
       end
 
-      def collect_category_stat(stats, declaration, manifest)
+      def collect_category_stat(stats, declaration, manifest, group_ruby_counts = nil)
         construct_index = ruby_construct_index(declaration)
         return unless construct_index
 
@@ -214,7 +275,16 @@ module RubyLens
 
         category = scope_for(definitions, manifest) == 1 ? "tests" : "core"
         stats.fetch(category)[construct_index] += 1
+        if group_ruby_counts
+          group = owner_group_for(definitions, manifest)
+          group_index = manifest.boundaries.group_index(group)
+          group_ruby_counts.fetch(group_index).fetch(category)[construct_index] += 1
+        end
+      rescue Error
+        raise
       rescue StandardError
+        raise if group_ruby_counts
+
         nil
       end
 
@@ -252,6 +322,38 @@ module RubyLens
           relative.split(File::SEPARATOR).any? { |segment| TEST_SEGMENTS.include?(segment) } ? 1 : 0
         end.uniq
         scopes.length > 1 ? 2 : scopes.first || 0
+      end
+
+      def owner_group_for(definitions, manifest)
+        grouped = definitions.each_with_object(Hash.new { |hash, group| hash[group] = [] }) do |definition, groups|
+          groups[group_for_definition(definition, manifest)] << definition
+        end
+        grouped.min_by do |group, group_definitions|
+          unique_definitions = group_definitions.uniq { |definition| site_key(definition.location) }
+          core_sites = unique_definitions.count { |definition| !test_definition?(definition, manifest) }
+          [-core_sites, -unique_definitions.length, group.rule_order, group.id]
+        end&.first || raise(Error, "workspace declaration has no boundary owner")
+      end
+
+      def definition_groups(definitions, manifest)
+        definitions.map { |definition| group_for_definition(definition, manifest) }
+      end
+
+      def group_for_definition(definition, manifest)
+        relative = manifest.relative_workspace_path(location_path(definition.location))
+        raise Error, "workspace definition has no relative path" unless relative
+
+        @boundary_group_cache ||= {}
+        @boundary_group_cache[relative] ||= manifest.boundaries.group_for(relative)
+      end
+
+      def test_definition?(definition, manifest)
+        relative = manifest.relative_workspace_path(location_path(definition.location))
+        relative && relative.split(File::SEPARATOR).any? { |segment| TEST_SEGMENTS.include?(segment) }
+      end
+
+      def configured_boundaries?(manifest)
+        manifest.respond_to?(:boundaries) && manifest.boundaries.configured?
       end
 
       def site_key(location)

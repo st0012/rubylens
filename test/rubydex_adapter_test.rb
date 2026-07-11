@@ -12,6 +12,7 @@ class RubydexAdapterTest < Minitest::Test
     serialized = JSON.generate(snapshot)
 
     assert_equal("rubylens.snapshot.v5", snapshot.fetch("schema"))
+    refute(snapshot.key?("groups"))
     assert_equal("Tiny Repo", snapshot.fetch("project_name"))
     assert_equal(9, snapshot.fetch("namespaces").length)
     assert_equal(9, snapshot.fetch("namespace_names").length)
@@ -39,6 +40,77 @@ class RubydexAdapterTest < Minitest::Test
     assert_equal("RDoc", adapter.send(:project_name, manifest.new(Pathname("/tmp/rdoc"))))
   end
 
+  def test_configured_snapshot_has_deterministic_ownership_exact_aggregates_and_no_paths
+    with_synthetic_monorepo do |directory|
+      manifest = RubyLens::Index::Manifest.build(root: directory)
+      first = RubyLens::Index::RubydexAdapter.new.index(manifest)
+      second = RubyLens::Index::RubydexAdapter.new.index(manifest)
+
+      assert_equal(first, second)
+      assert_equal("rubylens.snapshot.v6", first.fetch("schema"))
+      assert_equal(
+        [
+          {
+            "id" => "foundation", "name" => "Acme Foundation", "anchor_seed" => 1_412_334_502,
+            "namespace_counts" => [1, 0, 0],
+            "ruby_counts" => { "core" => [1, 0, 1, 1], "tests" => [0, 0, 0, 0] },
+            "cross_group_namespaces" => 1,
+          },
+          {
+            "id" => "app-acme-alpha", "name" => "Acme App · acme-alpha", "anchor_seed" => 3_723_487_693,
+            "namespace_counts" => [1, 0, 1],
+            "ruby_counts" => { "core" => [2, 0, 0, 0], "tests" => [0, 0, 0, 0] },
+            "cross_group_namespaces" => 2,
+          },
+          {
+            "id" => "app-acme-zeta", "name" => "Acme App · acme-zeta", "anchor_seed" => 577_949_547,
+            "namespace_counts" => [1, 1, 0],
+            "ruby_counts" => { "core" => [1, 0, 0, 0], "tests" => [1, 0, 0, 0] },
+            "cross_group_namespaces" => 1,
+          },
+          {
+            "id" => "ungrouped", "name" => "Other", "anchor_seed" => 178_442_524,
+            "namespace_counts" => [1, 0, 0],
+            "ruby_counts" => { "core" => [1, 0, 0, 0], "tests" => [0, 0, 0, 0] },
+            "cross_group_namespaces" => 0,
+          },
+        ],
+        first.fetch("groups"),
+      )
+      assert(first.fetch("namespaces").all? { |row| row.length == 14 && row.all?(Integer) })
+
+      group_indexes = first.fetch("groups").each_with_index.to_h { |group, index| [group.fetch("id"), index] }
+      owners = first.fetch("namespace_names").each_with_index.to_h do |name, index|
+        [name, first.fetch("namespaces").fetch(index).first]
+      end
+      assert_equal(group_indexes.fetch("foundation"), owners.fetch("RuleTie"))
+      assert_equal(group_indexes.fetch("app-acme-alpha"), owners.fetch("LexicalTie"))
+      assert_equal(group_indexes.fetch("app-acme-alpha"), owners.fetch("CoreWins"))
+      assert_equal(group_indexes.fetch("app-acme-zeta"), owners.fetch("TotalWins"))
+      assert_equal(group_indexes.fetch("ungrouped"), owners.fetch("Unowned"))
+      core_wins_row = first.fetch("namespaces").fetch(first.fetch("namespace_names").index("CoreWins"))
+      assert_equal(2, core_wins_row.fetch(2))
+
+      %w[core tests].each do |category|
+        aggregate = first.fetch("groups").map { |group| group.fetch("ruby_counts").fetch(category) }
+          .transpose.map(&:sum)
+        assert_equal(first.fetch("category_stats").fetch(category), aggregate)
+      end
+      assert_equal(first.fetch("namespaces").length, first.fetch("groups").sum { |group| group.fetch("namespace_counts").sum })
+      assert_equal(4, first.fetch("groups").sum { |group| group.fetch("cross_group_namespaces") })
+
+      serialized = JSON.generate(first)
+      refute_includes(serialized, directory)
+      refute_includes(serialized, ".rubylens.yml")
+      refute_includes(serialized, "apps/*")
+      refute_includes(serialized, "ownership.rb")
+      refute_includes(serialized, "file://")
+
+      error = assert_raises(RubyLens::Error) { RubyLens::ArtModelBuilder.new(seed: 12).build(first) }
+      assert_equal("configured boundary snapshots require rubylens.art.v8", error.message)
+    end
+  end
+
   def test_safe_length_uses_size_and_falls_back_to_count
     adapter = RubyLens::Index::RubydexAdapter.allocate
     sized = Object.new
@@ -54,6 +126,18 @@ class RubydexAdapterTest < Minitest::Test
     assert_equal(7, adapter.send(:safe_length, Struct.new(:records).new(sized), :records))
     assert_equal(4, adapter.send(:safe_length, Struct.new(:records).new(counted), :records))
     assert_equal(5, adapter.send(:safe_length, Struct.new(:records).new(raised_size), :records))
+  end
+
+  def test_configured_group_totals_cannot_silently_undercount
+    groups = [{ "ruby_counts" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] } }]
+    category_stats = { "core" => [1, 0, 0, 0], "tests" => [0, 0, 0, 0] }
+
+    error = assert_raises(RubyLens::Error) do
+      RubyLens::Index::RubydexAdapter.new.send(:validate_group_totals!, groups, category_stats)
+    end
+    assert_equal("group core aggregates do not reconcile with category totals", error.message)
+    empty_stats = { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] }
+    RubyLens::Index::RubydexAdapter.new.send(:validate_group_totals!, [], empty_stats)
   end
 
   def test_location_caches_are_cleared_when_indexing_fails
@@ -132,6 +216,57 @@ class RubydexAdapterTest < Minitest::Test
       assert(package.fetch("declarations").all? { |row| row.length == 7 && row.all?(Integer) })
       refute_includes(JSON.generate(snapshot), directory)
       refute_includes(JSON.generate(snapshot), "Minitest::Test")
+    end
+  end
+
+
+  private
+
+  def with_synthetic_monorepo
+    Dir.mktmpdir("rubylens-synthetic-monorepo-") do |directory|
+      files = {
+        "components/acme-foundation/lib/ownership.rb" => <<~RUBY,
+          class RuleTie
+            FOUNDATION = true
+            def foundation; end
+          end
+        RUBY
+        "apps/acme-alpha/lib/ownership.rb" => <<~RUBY,
+          class LexicalTie; end
+          class CoreWins; end
+          class TotalWins; end
+        RUBY
+        "apps/acme-zeta/lib/ownership.rb" => <<~RUBY,
+          class RuleTie; end
+          class LexicalTie; end
+          class TotalWins; end
+          class TotalWins; end
+        RUBY
+        "apps/acme-zeta/test/core_wins_test.rb" => "class CoreWins; end\nclass SyntheticTestOnly; end\n",
+        "misc/unowned.rb" => "class Unowned; end\n",
+      }
+      files.each do |relative, contents|
+        path = File.join(directory, relative)
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, contents)
+      end
+      File.write(File.join(directory, ".rubylens.yml"), <<~YAML)
+        version: 1
+        boundaries:
+          groups:
+            - id: foundation
+              label: Acme Foundation
+              paths: [components/acme-foundation/**]
+            - each: apps/*
+              id_prefix: app
+              label: "Acme App · %{basename}"
+          ungrouped:
+            mode: group
+            label: Other
+      YAML
+      system("git", "-C", directory, "init", "--quiet", exception: true)
+      system("git", "-C", directory, "add", ".", exception: true)
+      yield directory
     end
   end
 end
