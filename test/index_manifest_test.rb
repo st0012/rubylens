@@ -60,6 +60,34 @@ class IndexManifestTest < Minitest::Test
     assert_equal(2, fallback_calls)
   end
 
+  def test_package_lookup_preserves_package_ownership_for_workspace_overlap
+    manifest = RubyLens::Index::Manifest.allocate
+    outer_package = RubyLens::Index::Manifest::Package.new(
+      name: "outer",
+      version: "1.0.0",
+      role: "direct",
+      location: "external",
+      root: Pathname("/tmp/example"),
+      files: ["/tmp/example/nested/shared.rb", "/tmp/example/outer.rb"],
+    )
+    inner_package = RubyLens::Index::Manifest::Package.new(
+      name: "inner",
+      version: "1.0.0",
+      role: "transitive",
+      location: "external",
+      root: Pathname("/tmp/example/nested"),
+      files: ["/tmp/example/nested/shared.rb"],
+    )
+    manifest.instance_variable_set(:@workspace_files, ["/tmp/example/nested/shared.rb", "/tmp/workspace.rb"])
+    manifest.instance_variable_set(:@packages, [outer_package, inner_package])
+    manifest.instance_variable_set(:@package_roots, [[inner_package.root, 1], [outer_package.root, 0]])
+    manifest.send(:build_package_index)
+
+    assert_equal(1, manifest.package_index_for("/tmp/example/nested/shared.rb"))
+    assert_equal(0, manifest.package_index_for("/tmp/example/outer.rb"))
+    assert_nil(manifest.package_index_for("/tmp/workspace.rb"))
+  end
+
   def test_package_lookup_resolves_a_symlink_to_an_audited_file
     Dir.mktmpdir("rubylens-package-lookup-") do |directory|
       root = Pathname(directory).join("gem")

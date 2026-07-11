@@ -33,16 +33,7 @@ module RubyLens
         build_packages
         @package_roots = @packages.each_with_index.map { |package, index| [package.root, index] }
           .sort_by { |package_root, _index| -package_root.to_s.length }
-        @package_index_by_file = @workspace_files.each_with_object({}) do |path, package_index_by_file|
-          package_index_by_file[path.to_s] = nil
-        end
-        @package_roots.each do |_package_root, index|
-          @packages.fetch(index).files.each do |path|
-            path = path.to_s
-            @package_index_by_file[path] = index unless @package_index_by_file.key?(path)
-          end
-        end
-        @package_index_by_file.freeze
+        build_package_index
         @files = (@workspace_files + @packages.flat_map(&:files)).uniq.freeze
         self
       end
@@ -71,6 +62,21 @@ module RubyLens
       end
 
       private
+
+      def build_package_index
+        package_index_by_file = {}
+        @package_roots.each do |_package_root, index|
+          @packages.fetch(index).files.each do |path|
+            path = path.to_s
+            package_index_by_file[path] = index unless package_index_by_file.key?(path)
+          end
+        end
+        @workspace_files.each do |path|
+          path = path.to_s
+          package_index_by_file[path] = nil unless package_index_by_file.key?(path)
+        end
+        @package_index_by_file = package_index_by_file.freeze
+      end
 
       def uncached_package_index_for(path)
         resolved = Pathname(path).expand_path
