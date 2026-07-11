@@ -109,6 +109,22 @@ class ConfigurationTest < Minitest::Test
     end
   end
 
+  def test_requires_exactly_one_yaml_document
+    invalid_documents = [
+      "",
+      "# comments only\n",
+      "---\n",
+      "version: 1\nboundaries: { groups: [] }\n---\nversion: 1\nboundaries: { groups: [] }\n",
+      "version: 1\nboundaries: { groups: [] }\n---\n",
+    ]
+
+    invalid_documents.each do |document|
+      with_config(document) do |path|
+        assert_raises(RubyLens::Error) { RubyLens::Configuration.resolve(root: "/unused", path: path) }
+      end
+    end
+  end
+
   private
 
   def with_config(contents)

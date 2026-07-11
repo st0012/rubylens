@@ -18,9 +18,13 @@ module RubyLens
 
     attr_reader :rules, :ungrouped, :source
 
+    def self.disabled
+      new(rules: [], ungrouped: nil, source: :disabled)
+    end
+
     def self.resolve(root:, path: nil, disabled: false)
       raise Error, "--config and --no-config cannot be used together" if path && disabled
-      return new(rules: [], ungrouped: nil, source: :disabled) if disabled
+      return self.disabled if disabled
 
       if path
         config_path = Pathname(path).expand_path
@@ -37,7 +41,7 @@ module RubyLens
 
     def self.load(path, source:)
       contents = path.read
-      reject_duplicate_mapping_keys(contents)
+      validate_yaml_stream(contents)
       document = YAML.safe_load(contents, permitted_classes: [], permitted_symbols: [], aliases: false)
       raise Error, "configuration must be a mapping" unless document.is_a?(Hash)
 
@@ -102,8 +106,14 @@ module RubyLens
         end
       end
 
-      def reject_duplicate_mapping_keys(contents)
+      def validate_yaml_stream(contents)
         stream = Psych.parse_stream(contents)
+        root = stream.children.first&.children&.first
+        empty_scalar = root.is_a?(Psych::Nodes::Scalar) && root.value.empty?
+        unless stream.children.length == 1 && root && !empty_scalar
+          raise Error, "configuration must contain exactly one nonempty YAML document"
+        end
+
         pending = stream.children.dup
         until pending.empty?
           node = pending.pop

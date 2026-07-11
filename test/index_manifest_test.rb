@@ -26,8 +26,11 @@ class IndexManifestTest < Minitest::Test
     Dir.mktmpdir("rubylens-monorepo-") do |directory|
       FileUtils.mkdir_p(File.join(directory, "apps", "tracked", "lib"))
       FileUtils.mkdir_p(File.join(directory, "apps", "ignored", "lib"))
+      FileUtils.mkdir_p(File.join(directory, "apps", "untracked", "lib"))
       File.write(File.join(directory, "apps", "tracked", "lib", "tracked.rb"), "Tracked = true\n")
       File.write(File.join(directory, "apps", "ignored", "lib", "ignored.rb"), "Ignored = true\n")
+      untracked = File.join(directory, "apps", "untracked", "lib", "untracked.rb")
+      File.write(untracked, "Untracked = true\n")
       File.write(File.join(directory, ".gitignore"), "apps/ignored/\n")
       File.write(File.join(directory, ".rubylens.yml"), <<~YAML)
         version: 1
@@ -44,6 +47,9 @@ class IndexManifestTest < Minitest::Test
 
       assert_equal(["app-tracked"], manifest.boundaries.groups.map(&:id))
       refute_includes(manifest.boundaries.groups.map(&:id), "app-ignored")
+      refute_includes(manifest.boundaries.groups.map(&:id), "app-untracked")
+      assert_includes(manifest.workspace_files, File.realpath(untracked))
+      refute_includes(manifest.tracked_workspace_files, File.realpath(untracked))
     end
   end
 

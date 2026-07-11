@@ -3,6 +3,21 @@
 require_relative "test_helper"
 
 class GitRepositoryTest < Minitest::Test
+  def test_distinguishes_tracked_files_from_unignored_indexing_files
+    Dir.mktmpdir("rubylens-git-files-") do |directory|
+      system("git", "-C", directory, "init", "--quiet", exception: true)
+      tracked = File.join(directory, "tracked.rb")
+      untracked = File.join(directory, "untracked.rb")
+      File.write(tracked, "Tracked = true\n")
+      File.write(untracked, "Untracked = true\n")
+      system("git", "-C", directory, "add", "tracked.rb", exception: true)
+      repository = RubyLens::GitRepository.new(directory)
+
+      assert_equal([File.realpath(tracked)], repository.tracked_files)
+      assert_equal([File.realpath(tracked), File.realpath(untracked)], repository.selected_files)
+    end
+  end
+
   def test_adds_default_report_to_local_git_excludes_once
     Dir.mktmpdir("rubylens-git-") do |directory|
       system("git", "-C", directory, "init", "--quiet", exception: true)
