@@ -21,7 +21,7 @@ module RubyLens
       @showcase_writer = showcase_writer
     end
 
-    def call(path: Dir.pwd, output: nil, lockfile: nil)
+    def call(path: Dir.pwd, output: nil, lockfile: nil, config: nil, no_config: false)
       root = File.realpath(path)
       if output.nil?
         output = File.join(root, DEFAULT_SHOWCASE_NAME)
@@ -30,7 +30,7 @@ module RubyLens
         end
         GitRepository.new(root).exclude_local(output, description: "showcase")
       end
-      model, warnings = @pipeline.call(root:, lockfile:)
+      model, warnings = @pipeline.call(root:, lockfile:, config:, no_config:)
       output_path = @showcase_writer.write(@showcase_model.call(model), output: output)
 
       Result.new(output_path:, counts: model.fetch("totals").freeze, warnings:)

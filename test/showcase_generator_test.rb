@@ -70,7 +70,7 @@ class ShowcaseGeneratorTest < Minitest::Test
     @indexed = false
     manifest = Struct.new(:warnings).new([])
     manifest_builder = Object.new
-    manifest_builder.define_singleton_method(:build) { |root:, lockfile:| manifest }
+    manifest_builder.define_singleton_method(:build) { |root:, lockfile:, configuration:| manifest }
     adapter = Object.new
     owner = self
     adapter.define_singleton_method(:index) do |_manifest|
