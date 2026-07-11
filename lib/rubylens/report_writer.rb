@@ -23,7 +23,9 @@ module RubyLens
       FileUtils.mkdir_p(directory, mode: 0o700)
       protect_default_directory(directory)
       template = @template_path ? File.read(@template_path) : @asset_assembler.assemble
-      raise Error, "report template has no model placeholder" unless template.include?(MODEL_PLACEHOLDER)
+      unless template.scan(MODEL_PLACEHOLDER).length == 1
+        raise Error, "report template must contain exactly one #{MODEL_PLACEHOLDER} placeholder"
+      end
 
       payload = Base64.strict_encode64(JSON.generate(model))
       html = template.sub(MODEL_PLACEHOLDER, payload)

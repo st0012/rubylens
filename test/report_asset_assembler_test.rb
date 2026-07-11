@@ -4,9 +4,12 @@ require "digest"
 require_relative "test_helper"
 
 class ReportAssetAssemblerTest < Minitest::Test
-  def test_assembles_the_extracted_assets_byte_for_byte
+  # SHA-256 of assets/report.html at 81427e6, before the renderer assets were extracted.
+  REPORT_HTML_81427E6_SHA256 = "b5469adb1b773a164150a8a50c149f8d1fd4706de8b1638cafde8ce81d66f21c"
+
+  def test_assembles_assets_byte_for_byte_with_the_81427e6_report_baseline
     assert_equal(
-      "b5469adb1b773a164150a8a50c149f8d1fd4706de8b1638cafde8ce81d66f21c",
+      REPORT_HTML_81427E6_SHA256,
       Digest::SHA256.hexdigest(RubyLens::ReportAssetAssembler.new.assemble)
     )
   end

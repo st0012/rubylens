@@ -80,6 +80,28 @@ class ReportWriterTest < Minitest::Test
     end
   end
 
+  def test_requires_exactly_one_model_placeholder
+    templates = ["<html></html>", "{{MODEL_BASE64}}{{MODEL_BASE64}}"]
+
+    templates.each_with_index do |template, index|
+      assembler = Object.new
+      assembler.define_singleton_method(:assemble) { template }
+
+      Dir.mktmpdir("rubylens-report-") do |directory|
+        output = File.join(directory, "report-#{index}.html")
+        error = assert_raises(RubyLens::Error) do
+          RubyLens::ReportWriter.new(asset_assembler: assembler).write({}, output: output)
+        end
+
+        assert_equal(
+          "report template must contain exactly one {{MODEL_BASE64}} placeholder",
+          error.message
+        )
+        refute_path_exists(output)
+      end
+    end
+  end
+
   def test_writes_an_offline_owner_only_report_and_protects_default_directory
     Dir.mktmpdir("rubylens-report-") do |directory|
       output = File.join(directory, ".rubylens", "report.html")
