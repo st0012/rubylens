@@ -29,6 +29,12 @@ begin
     evidence[name] = {info: browser.evaluate("window.RubyLensRendererDebug.info()"), metrics: browser.evaluate("window.RubyLensRendererDebug.metrics()"), sample:}
     next unless name == "webgl"
     browser.evaluate("window.RubyLensRendererDebug.selectSample()")
+    deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 2
+    until browser.evaluate("!document.getElementById('tooltip').hidden && document.getElementById('tooltip').getBoundingClientRect().width > 0")
+      raise "locked-selection tooltip did not settle" if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+      sleep 0.02
+    end
+    sleep 0.05
     browser.screenshot(path: File.join(output, "webgl-locked-selection.png"), full: false)
     browser.evaluate("window.RubyLensRendererDebug.focusCategory('core')")
     sleep 1
