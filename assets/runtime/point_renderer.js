@@ -88,13 +88,15 @@
         }
         sync(points) {
           const data=new Float32Array(points.length*8);
+          const pointIndexes=new Map();
           points.forEach((point,index)=>{
+            pointIndexes.set(point,index);
             const offset=index*8, category=point.category==="core"?0:point.category==="tests"?1:2;
             data.set([point.position[0],point.position[1],point.position[2],point.base,point.signal,category,point.hub?1:0,point.packageIndex??-1],offset);
           });
           const started=performance.now();
           const gl=this.gl; gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer); gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
-          this.points=points; this.pointIndexes=new Map(points.map((point,index)=>[point,index])); this.count=points.length; this.needsSync=false; this.uploadMilliseconds=performance.now()-started;
+          this.points=points; this.pointIndexes=pointIndexes; this.count=points.length; this.needsSync=false; this.uploadMilliseconds=performance.now()-started;
           return this.uploadMilliseconds;
         }
         resize(width,height,dpr) { this.gl.viewport(0,0,Math.round(width*dpr),Math.round(height*dpr)); }

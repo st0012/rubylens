@@ -10,7 +10,6 @@ root = File.expand_path("..", __dir__)
 output = File.expand_path(ENV.fetch("OUTPUT", File.join(root, "tmp", "renderer-benchmark", Time.now.utc.strftime("%Y%m%dT%H%M%SZ"))))
 frames = Integer(ENV.fetch("FRAMES", "600"))
 counts = ENV.fetch("COUNTS", "25000,50000,100000,250000").split(",").map { |value| Integer(value) }
-modes = ENV.fetch("MODES", "webgl2").split(",")
 browser_path = ENV["BROWSER_PATH"]
 FileUtils.mkdir_p(output, mode: 0o700)
 
@@ -19,7 +18,6 @@ harness = <<~JAVASCRIPT
   const params = new URLSearchParams(location.search);
   const pointCount = Number(params.get("points"));
   const frameCount = Number(params.get("frames"));
-  const mode = params.get("mode") || "webgl2";
   const canvas = document.querySelector("canvas");
   canvas.width = 1440; canvas.height = 900;
   const categoryNames = ["core", "tests", "dependencies"];
@@ -30,14 +28,7 @@ harness = <<~JAVASCRIPT
     return {position:[Math.cos(angle)*radius,((hash(seed+11)%4000)/1000-2)*(dense?2:7),Math.sin(angle)*radius],base:index%997===0?1.8:.55+(seed%40)/100,signal:.2+(hash(seed+19)%700)/1000,category:categoryNames[index%3],hub:index%997===0};
   });
   const interactive = points.slice(0, Math.min(512, points.length));
-  class CanvasBenchmarkRenderer {
-    constructor(canvas){this.context=canvas.getContext("2d",{alpha:false});this.kind="canvas2d";}
-    sync(points){this.points=points;return 0;}
-    resize(){}
-    draw(frame){const c=this.context,m=frame.matrix;c.globalCompositeOperation="source-over";c.fillStyle="#03040a";c.fillRect(0,0,1440,900);c.globalCompositeOperation="lighter";for(const point of this.points){const [x,y,z]=point.position,x1=x*m[0]-z*m[1],z1=x*m[1]+z*m[0],y2=y*m[2]-z1*m[3],depth=270-(y*m[3]+z1*m[2]);if(depth<=35)continue;const perspective=440/depth*1.05,sx=720+x1*perspective,sy=477+y2*perspective;if(sx<0||sx>1440||sy<0||sy>900)continue;c.fillStyle=point.category==="core"?"rgba(244,82,132,.35)":point.category==="tests"?"rgba(87,204,255,.35)":"rgba(255,184,77,.35)";c.fillRect(sx,sy,1,1);}}
-    info(){return {kind:this.kind};}
-  }
-  const selection = mode==="canvas2d"?{renderer:new CanvasBenchmarkRenderer(canvas)}:RubyLensPointRenderer.create(canvas);
+  const selection = RubyLensPointRenderer.create(canvas);
   if (!selection.renderer) throw new Error(selection.error || "renderer unavailable");
   const renderer=selection.renderer;
   const uploadMilliseconds=renderer.sync(points);
@@ -60,7 +51,7 @@ harness = <<~JAVASCRIPT
     index++;
     if(index<=frameCount) requestAnimationFrame(tick); else {
       const measured=frameTimes.slice(Math.min(30,Math.floor(frameTimes.length/10)));
-      window.benchmarkResult={mode,pointCount,requestedFrameCount:frameCount,measuredFrameCount:measured.length,medianFrameMilliseconds:percentile(measured,.5),p95FrameMilliseconds:percentile(measured,.95),medianCpuSubmitMilliseconds:percentile(renderWorkTimes,.5),p95CpuSubmitMilliseconds:percentile(renderWorkTimes,.95),framesOver16_7:measured.filter(v=>v>16.7).length,framesOver33_3:measured.filter(v=>v>33.3).length,droppedFrameRatio:measured.filter(v=>v>25.05).length/measured.length,uploadMilliseconds,cpuProjectedPoints:mode==="canvas2d"?pointCount:cpuProjectedPoints,medianCpuProjectionMilliseconds:percentile(cpuProjectionTimes,.5),renderer:renderer.info()};
+      window.benchmarkResult={mode:"webgl2",pointCount,requestedFrameCount:frameCount,measuredFrameCount:measured.length,medianFrameMilliseconds:percentile(measured,.5),p95FrameMilliseconds:percentile(measured,.95),medianCpuSubmitMilliseconds:percentile(renderWorkTimes,.5),p95CpuSubmitMilliseconds:percentile(renderWorkTimes,.95),framesOver16_7:measured.filter(v=>v>16.7).length,framesOver33_3:measured.filter(v=>v>33.3).length,droppedFrameRatio:measured.filter(v=>v>25.05).length/measured.length,uploadMilliseconds,cpuProjectedPoints,medianCpuProjectionMilliseconds:percentile(cpuProjectionTimes,.5),renderer:renderer.info()};
       document.documentElement.dataset.ready="true";
     }
   }
@@ -79,16 +70,16 @@ options[:browser_path] = File.expand_path(browser_path) if browser_path
 browser = nil
 begin
   browser = Ferrum::Browser.new(**options)
-  results = modes.product(counts).map do |mode, count|
-    browser.go_to("file://#{html}?points=#{count}&frames=#{frames}&mode=#{mode}")
+  results = counts.map do |count|
+    browser.go_to("file://#{html}?points=#{count}&frames=#{frames}")
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 120
     until browser.evaluate('document.documentElement.dataset.ready === "true"')
       raise "benchmark timed out at #{count} points" if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
       sleep 0.05
     end
     result = browser.evaluate("window.benchmarkResult")
-    raise "100k WebGL CPU projection is not bounded" if mode == "webgl2" && count == 100_000 && result.fetch("cpuProjectedPoints") > 512
-    browser.screenshot(path: File.join(output, "#{mode}-#{count}.png"), full: false)
+    raise "100k WebGL CPU projection is not bounded" if count == 100_000 && result.fetch("cpuProjectedPoints") > 512
+    browser.screenshot(path: File.join(output, "webgl2-#{count}.png"), full: false)
     result
   end
   os, = Open3.capture2("sw_vers", "-productVersion")
