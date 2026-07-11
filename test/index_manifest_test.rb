@@ -45,7 +45,7 @@ class IndexManifestTest < Minitest::Test
 
       manifest = RubyLens::Index::Manifest.build(root: directory)
 
-      assert_equal(["app-tracked"], manifest.boundaries.groups.map(&:id))
+      assert_equal(["app-tracked", "ungrouped"], manifest.boundaries.groups.map(&:id))
       refute_includes(manifest.boundaries.groups.map(&:id), "app-ignored")
       refute_includes(manifest.boundaries.groups.map(&:id), "app-untracked")
       assert_includes(manifest.workspace_files, File.realpath(untracked))
@@ -64,10 +64,14 @@ class IndexManifestTest < Minitest::Test
 
     assert_equal(absent_manifest.workspace_files, disabled_manifest.workspace_files)
     assert_equal(absent_snapshot, disabled_snapshot)
+    assert_equal(JSON.generate(absent_snapshot), JSON.generate(disabled_snapshot))
+    absent_art = RubyLens::ArtModelBuilder.new.build(absent_snapshot)
+    disabled_art = RubyLens::ArtModelBuilder.new.build(disabled_snapshot)
     assert_equal(
-      RubyLens::ArtModelBuilder.new.build(absent_snapshot),
-      RubyLens::ArtModelBuilder.new.build(disabled_snapshot),
+      absent_art,
+      disabled_art,
     )
+    assert_equal(JSON.generate(absent_art), JSON.generate(disabled_art))
   end
 
   def test_excludes_rubylens_tool_only_dependency_closure

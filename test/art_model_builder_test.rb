@@ -3,6 +3,14 @@
 require_relative "test_helper"
 
 class ArtModelBuilderTest < Minitest::Test
+  def test_rejects_configured_snapshot_until_art_v8_exists
+    error = assert_raises(RubyLens::Error) do
+      RubyLens::ArtModelBuilder.new.build("schema" => "rubylens.snapshot.v6")
+    end
+
+    assert_equal("configured boundary snapshots require rubylens.art.v8", error.message)
+  end
+
   def test_builds_a_deterministic_local_art_contract_with_hover_identity
     snapshot = {
       "project_name" => "Demo",

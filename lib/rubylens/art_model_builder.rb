@@ -9,6 +9,10 @@ module RubyLens
     end
 
     def build(snapshot)
+      if snapshot["schema"] == "rubylens.snapshot.v6"
+        raise Error, "configured boundary snapshots require rubylens.art.v8"
+      end
+
       random = Random.new(@seed)
       namespace_order = (0...snapshot.fetch("namespaces").length).to_a.shuffle(random: random)
       namespaces = namespace_order.map do |index|

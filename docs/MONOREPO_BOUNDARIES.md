@@ -63,7 +63,7 @@ Classify every canonical namespace definition by group, then select the visual o
 3. earliest matching configuration rule;
 4. lexical group ID.
 
-Store the number of groups touched as `groupSpan`. A value greater than one identifies shared or cross-system namespaces without exposing paths. Group-level counts use the dominant owner, while the namespace's existing Core/Test scope still controls its role and colour.
+Group-level namespace counts use the dominant owner, while `cross_group_namespaces` records the exact number of owned namespaces reopened across more than one group. This avoids adding a redundant span value to every namespace row. The namespace's existing Core/Test scope still controls its role and colour.
 
 The adapter already assigns a compact component ordinal to each namespace. The implementation should evolve that latent dimension into configured group ownership rather than adding a second ownership field.
 
@@ -72,13 +72,14 @@ The adapter already assigns a compact component ordinal to each namespace. The i
 The first implementation should use new contracts so old reports cannot silently misread group ordinals.
 
 ```text
-rubylens.snapshot.v5
+rubylens.snapshot.v6 (configured projects only)
   groups:
-    [{ id, label, source, namespace_counts, ruby_counts, mixed_count }]
+    [{ id, name, anchor_seed, namespace_counts,
+       ruby_counts: { core, tests }, cross_group_namespaces }]
   namespaces:
-    [group_ordinal, kind, scope, ..., instance_variables, group_span]
+    [group_ordinal, kind, scope, ..., instance_variables]
 
-rubylens.art.v8
+rubylens.art.v8 (future scene-metadata checkpoint)
   groupNames: [label, ...]
   groups:
     [seed, core_namespaces, test_namespaces, classes, modules,
@@ -86,11 +87,15 @@ rubylens.art.v8
   groupRanges:
     [first_namespace, length, ...]
   namespaces:
-    existing compact row plus groupSpan
+    existing compact row with group ordinal
   totals:
     namespaces, renderedNamespaces, groups, packages, dependencyStars,
     renderedDependencyStars
 ```
+
+`namespace_counts` is `[core, tests, mixed]`. Each `ruby_counts` value is `[classes, modules, methods, constants]`, matching `category_stats`; group values must sum elementwise to the repository totals.
+
+Until `art.v8` lands, the art builder rejects configured `snapshot.v6` rather than allowing an `art.v7` report to silently interpret group ordinals as legacy component ordinals.
 
 Only labels, aggregate values, ordinals, and derived seeds enter the HTML. Do not embed configured patterns, full boundary paths, or the configuration file path.
 
@@ -130,7 +135,7 @@ The default share overlay should say `Core systems · N` alongside repository-wi
 
 ## Implementation batches
 
-1. Strict configuration loader, safe glob matcher, discovery/CLI plumbing, group ownership, and `snapshot.v5`.
+1. Strict configuration loader, safe glob matcher, discovery/CLI plumbing, group ownership, and `snapshot.v6`.
 2. `art.v8` group metadata, deterministic anchors, overview level of detail, and smooth group focus.
 3. Workspace-star sampling, contiguous group ranges, explorer search/virtualization, and mobile group selection.
 4. Synthetic 100,000-namespace/1,000-group tests plus profiling against a representative public or user-authorized large monorepo and visual tuning.
