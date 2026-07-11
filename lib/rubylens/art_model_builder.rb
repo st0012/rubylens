@@ -1,17 +1,21 @@
 # frozen_string_literal: true
 
+require "digest"
+require_relative "model/dependency_aggregation"
+require_relative "model/group_layout"
+require_relative "model/namespace_allocation"
+
 module RubyLens
   class ArtModelBuilder
     SIGNAL_FIELDS = %w[ancestorDepth definitionSites reopenings descendants references members].freeze
 
-    def initialize(seed: 0x51A7_E11A)
+    def initialize(seed: 0x51A7_E11A, namespace_budget: nil)
       @seed = seed
+      @namespace_budget = namespace_budget
     end
 
     def build(snapshot)
-      if snapshot["schema"] == "rubylens.snapshot.v6"
-        raise Error, "configured boundary snapshots require rubylens.art.v8"
-      end
+      return build_configured(snapshot) if snapshot["schema"] == "rubylens.snapshot.v6"
 
       random = Random.new(@seed)
       namespace_order = (0...snapshot.fetch("namespaces").length).to_a.shuffle(random: random)
@@ -79,6 +83,116 @@ module RubyLens
     end
 
     private
+
+    def build_configured(snapshot)
+      source_groups = snapshot.fetch("groups")
+      sizes = source_groups.map { |group| group.fetch("namespace_counts").sum }
+      seeds = source_groups.map { |group| group.fetch("anchor_seed") }
+      budget = @namespace_budget.nil? ? sizes.sum : Integer(@namespace_budget)
+      quotas = Model::NamespaceAllocation.new(
+        sizes:, keys: source_groups.map { |group| group.fetch("id") }, budget:
+      ).quotas
+      candidates = Array.new(source_groups.length) { [] }
+      snapshot.fetch("namespaces").each_with_index do |row, index|
+        name = snapshot.fetch("namespace_names").fetch(index)
+        rank = stable_namespace_rank(name)
+        candidates.fetch(row.fetch(0)) << [rank, name, row]
+      end
+
+      namespaces = []
+      namespace_names = []
+      group_ranges = []
+      source_groups.each_index do |group_index|
+        selected = candidates.fetch(group_index).sort_by { |seed, name, _row| [seed, name] }
+          .first(quotas.fetch(group_index))
+        first = namespaces.length
+        selected.each_with_index do |(_rank, name, row), selected_index|
+          namespaces << [visual_namespace_seed(group_index, selected_index), *row]
+          namespace_names << name
+        end
+        group_ranges << [first, selected.length]
+      end
+
+      groups = source_groups.each_with_index.map do |group, index|
+        core, tests = group.fetch("ruby_counts").values_at("core", "tests")
+        namespace_core, namespace_tests, namespace_mixed = group.fetch("namespace_counts")
+        [
+          index,
+          namespace_core, namespace_tests, namespace_mixed, group.fetch("cross_group_namespaces"),
+          *core, *tests,
+        ]
+      end
+      group_anchors = Model::GroupLayout.new(seeds:, namespace_counts: sizes).anchors
+      package_model = build_configured_packages(snapshot)
+      {
+        "schema" => "rubylens.art.v8",
+        "projectName" => snapshot.fetch("project_name"),
+        "totals" => {
+          "namespaces" => snapshot.fetch("namespaces").length,
+          "renderedNamespaces" => namespaces.length,
+          "groups" => groups.length,
+          "packages" => package_model.fetch(:packages).length,
+          "dependencyStars" => package_model.fetch(:indexed_dependency_count),
+          "renderedDependencyStars" => package_model.fetch(:dependencies).length,
+        },
+        "domains" => configured_signal_domains(snapshot),
+        "categoryStats" => snapshot.fetch("category_stats"),
+        "groupNames" => source_groups.map { |group| group.fetch("name") },
+        "groups" => groups,
+        "groupRanges" => group_ranges,
+        "groupAnchors" => group_anchors,
+        "namespaceNames" => namespace_names,
+        "namespaces" => namespaces,
+        "packageNames" => package_model.fetch(:package_names),
+        "packages" => package_model.fetch(:packages),
+        "dependencyStars" => package_model.fetch(:dependencies),
+        "warningCounts" => snapshot.fetch("warning_counts"),
+      }
+    end
+
+    def build_configured_packages(snapshot)
+      sampled_dependency_count = snapshot.fetch("packages").sum { |package| package.fetch("declarations").length }
+      if sampled_dependency_count > Model::DependencyAggregation::DEFAULT_ROW_LIMIT
+        raise Error, "configured dependency rows exceed the bounded snapshot contract"
+      end
+
+      random = Random.new(@seed)
+      package_order = (0...snapshot.fetch("packages").length).to_a.shuffle(random: random)
+      package_index = package_order.each_with_index.to_h
+      packages = package_order.map do |old_index|
+        package = snapshot.fetch("packages").fetch(old_index)
+        declaration_count = package.fetch("declaration_count") { package.fetch("declarations").length }
+        [random.rand(0..0xffff_ffff), package.fetch("role"), package.fetch("location"), declaration_count, *package.fetch("ruby_counts")]
+      end
+      package_names = package_order.map { |old_index| snapshot.fetch("packages").fetch(old_index).fetch("name") }
+      indexed_dependency_count = snapshot.fetch("packages").sum do |package|
+        package.fetch("declaration_count") { package.fetch("declarations").length }
+      end
+      dependencies = []
+      package_order.each do |old_index|
+        package = snapshot.fetch("packages").fetch(old_index)
+        package.fetch("declarations").shuffle(random: random).each do |declaration|
+          dependencies << [random.rand(0..0xffff_ffff), package_index.fetch(old_index), *declaration.drop(1)]
+        end
+      end
+      { packages:, package_names:, indexed_dependency_count:, dependencies: }
+    end
+
+    def stable_namespace_rank(name)
+      Digest::SHA256.digest("rubylens.namespace\0#{@seed}\0#{name}").unpack1("N")
+    end
+
+    def visual_namespace_seed(group_index, selected_index)
+      Digest::SHA256.digest("rubylens.visual\0#{@seed}\0#{group_index}\0#{selected_index}").unpack1("N")
+    end
+
+    def configured_signal_domains(snapshot)
+      namespace_maxima = (3..8).map { |column| maximum(snapshot.fetch("namespaces"), column) }
+      dependency_maxima = snapshot.fetch("dependency_signal_maxima")
+      SIGNAL_FIELDS.each_with_index.to_h do |field, index|
+        [field, [namespace_maxima.fetch(index), dependency_maxima.fetch(index)].max]
+      end
+    end
 
     def signal_domains(namespaces, dependencies, dependency_maxima = nil)
       namespace_columns = [4, 5, 6, 7, 8, 9]

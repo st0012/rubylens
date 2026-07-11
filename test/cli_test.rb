@@ -99,4 +99,18 @@ class CLITest < Minitest::Test
     assert_equal(0, status)
     assert_equal("/tmp/boundaries.yml", received.fetch(:config))
   end
+
+  def test_showcase_forwards_configuration_options
+    received = nil
+    showcase_generator = lambda do |**options|
+      received = options
+      RubyLens::Result.new(output_path: "/tmp/showcase.html", counts: {}, warnings: [])
+    end
+
+    status = RubyLens::CLI.new(stdout: StringIO.new, stderr: StringIO.new, showcase_generator: showcase_generator)
+      .run(["showcase", ".", "--config", "/tmp/boundaries.yml"])
+
+    assert_equal(0, status)
+    assert_equal("/tmp/boundaries.yml", received.fetch(:config))
+  end
 end

@@ -106,8 +106,9 @@ class RubydexAdapterTest < Minitest::Test
       refute_includes(serialized, "ownership.rb")
       refute_includes(serialized, "file://")
 
-      error = assert_raises(RubyLens::Error) { RubyLens::ArtModelBuilder.new(seed: 12).build(first) }
-      assert_equal("configured boundary snapshots require rubylens.art.v8", error.message)
+      art = RubyLens::ArtModelBuilder.new(seed: 12).build(first)
+      assert_equal("rubylens.art.v8", art.fetch("schema"))
+      assert_equal(first.fetch("namespaces").length, art.dig("totals", "renderedNamespaces"))
     end
   end
 

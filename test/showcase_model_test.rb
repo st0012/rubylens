@@ -46,10 +46,41 @@ class ShowcaseModelTest < Minitest::Test
     assert_equal("showcase model rows must contain only numbers", error.message)
   end
 
+  def test_projects_configured_groups_as_anonymous_numeric_structure
+    private_value = "Acme Foundation apps/* /private/config.yml"
+    model = minimal_model.merge(
+      "schema" => "rubylens.art.v8",
+      "totals" => minimal_model.fetch("totals").merge("renderedNamespaces" => 1, "groups" => 1),
+      "groupNames" => [private_value],
+      "groups" => [[0, 1, 0, 0, 0, 1, 0, 2, 3, 0, 0, 0, 0]],
+      "groupRanges" => [[0, 1]],
+      "groupAnchors" => [[-12, 0, 12]],
+      "namespaceNames" => ["Acme::Private"],
+      "packageNames" => ["private-package"],
+    )
+
+    showcase = RubyLens::ShowcaseModel.new.call(model)
+    encoded = JSON.generate(showcase)
+
+    assert_equal("rubylens.showcase.v2", showcase.fetch("schema"))
+    assert_equal(
+      %w[categoryStats dependencyStars domains groupAnchors groupRanges groups namespaces packages projectName schema totals],
+      showcase.keys.sort,
+    )
+    assert_equal([[0, 1, 0, 0, 0, 1, 0, 2, 3, 0, 0, 0, 0]], showcase.fetch("groups"))
+    refute_includes(encoded, private_value)
+    refute_includes(encoded, "Acme::Private")
+    refute_includes(encoded, "private-package")
+    refute_includes(encoded, "groupNames")
+    refute_includes(encoded, "namespaceNames")
+    refute_includes(encoded, "packageNames")
+  end
+
   private
 
   def minimal_model
     {
+      "schema" => "rubylens.art.v7",
       "projectName" => "Synthetic App",
       "totals" => { "namespaces" => 1, "packages" => 0, "dependencyStars" => 0, "renderedDependencyStars" => 0 },
       "domains" => RubyLens::ArtModelBuilder::SIGNAL_FIELDS.to_h { |field| [field, 0] },
