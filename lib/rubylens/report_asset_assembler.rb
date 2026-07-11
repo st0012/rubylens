@@ -10,14 +10,19 @@ module RubyLens
     def initialize(
       shell_path: File.expand_path("../../assets/shells/report.html", __dir__),
       stylesheet_path: File.expand_path("../../assets/styles/report.css", __dir__),
-      runtime_paths: [
-        File.expand_path("../../assets/runtime/point_renderer.js", __dir__),
-        File.expand_path("../../assets/runtime/report.js", __dir__),
-      ]
+      runtime_path: nil,
+      runtime_paths: nil
     )
       @shell_path = shell_path
       @stylesheet_path = stylesheet_path
-      @runtime_paths = runtime_paths
+      @runtime_paths = runtime_paths || if runtime_path
+        [runtime_path]
+      else
+        [
+          File.expand_path("../../assets/runtime/point_renderer.js", __dir__),
+          File.expand_path("../../assets/runtime/report.js", __dir__),
+        ]
+      end
     end
 
     def assemble
