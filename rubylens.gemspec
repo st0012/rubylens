@@ -11,7 +11,7 @@ Gem::Specification.new do |specification|
     RubyLens uses Rubydex to index Ruby semantics and generate private, local-first
     data for interactive whole-codebase visualizations.
   DESCRIPTION
-  specification.required_ruby_version = ">= 3.2.0"
+  specification.required_ruby_version = ">= 3.2.0", "< 4.1.dev"
 
   specification.files = [
     "README.md",

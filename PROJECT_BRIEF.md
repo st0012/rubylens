@@ -14,7 +14,7 @@ Accuracy note: this brief uses the preferred narrative spelling **RubyDex**. The
 
 ## Decisions made
 
-- Implement the product and extractor in Ruby, supporting Ruby 3.2 and newer while using Ruby 4.0.5 for local development.
+- Implement the product and extractor in Ruby, supporting Ruby 3.2 through 4.0 while using Ruby 4.0.5 for local development.
 - Start as a CLI that generates an offline, private-by-default report; defer hosting.
 - Keep browser renderer assets local. Opening a generated report must require neither Node nor internet access at runtime.
 - Do not use Figma or a subscription design tool. Review the appearance first in a no-dependency, self-contained HTML visual design sheet showing representative default and selected states, without production interactions. Turn the approved direction into an interactive HTML/JS spike afterward.
@@ -73,7 +73,7 @@ The current bare `index_workspace` research mode and upstream MCP indexer can in
 
 ## Local setup
 
-- Ruby 3.2 is the supported runtime floor. [Ruby 4.0.5](https://www.ruby-lang.org/en/news/2026/05/20/ruby-4-0-5-released/) is installed locally, pinned in `.ruby-version` as `ruby-4.0.5`, and verified through chruby.
+- Ruby 3.2 is the supported runtime floor and Ruby 4.0 is the current ceiling inherited from pinned Rubydex 0.2.9. [Ruby 4.0.5](https://www.ruby-lang.org/en/news/2026/05/20/ruby-4-0-5-released/) is installed locally, pinned in `.ruby-version` as `ruby-4.0.5`, and verified through chruby.
 - Verified interpreter: `ruby 4.0.5 (2026-05-20 revision 64336ffd0e) +PRISM [arm64-darwin24]` through chruby.
 - The project is a local Git repository on `main`; the initial Rubydex research and visual prototype are committed separately from the gem implementation.
 - A Ruby research harness, sanitized snapshots, MCP probes, dependency overlays, post-processing analyzer, installable gem, private manifest, bounded local model adapter, CLI, and local report writer now exist.

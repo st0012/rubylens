@@ -2,7 +2,7 @@
 
 RubyLens turns a Ruby codebase into a private, interactive stellar artwork. It uses Rubydex internally to map Ruby code, then writes one self-contained offline HTML report.
 
-This is an early local prototype. RubyLens 0.1 supports Ruby 3.2 and newer and pins Rubydex 0.2.9 while its API is pre-1.0.
+This is an early local prototype. RubyLens 0.1 supports Ruby 3.2 through 4.0 and pins Rubydex 0.2.9 while its API is pre-1.0.
 
 ## Build a report
 
@@ -29,7 +29,7 @@ The report is fully local: it makes no network requests and needs neither Node n
 
 ## Development
 
-RubyLens supports Ruby 3.2 and newer. Contributors can activate the repository's pinned development Ruby before every Ruby command:
+RubyLens supports Ruby 3.2 through 4.0. Contributors can activate the repository's pinned development Ruby before every Ruby command:
 
 ```sh
 source /opt/homebrew/share/chruby/chruby.sh

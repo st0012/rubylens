@@ -14,10 +14,12 @@ class PackageTest < Minitest::Test
     refute_includes(specification.files, "lib/rubylens/extractor.rb")
   end
 
-  def test_gem_supports_ruby_3_2_and_newer
+  def test_gem_supports_the_rubydex_ruby_range
     specification = Gem::Specification.load(File.expand_path("../rubylens.gemspec", __dir__))
 
     assert(specification.required_ruby_version.satisfied_by?(Gem::Version.new("3.2.0")))
+    assert(specification.required_ruby_version.satisfied_by?(Gem::Version.new("4.0.5")))
     refute(specification.required_ruby_version.satisfied_by?(Gem::Version.new("3.1.9")))
+    refute(specification.required_ruby_version.satisfied_by?(Gem::Version.new("4.1.0")))
   end
 end
