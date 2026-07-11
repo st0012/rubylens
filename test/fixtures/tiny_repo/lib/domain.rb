@@ -14,9 +14,12 @@ module Demo
     extend Trackable
 
     TOTAL = 1
+    @class_state = :ready
 
     def total
-      Helper.calculate(TOTAL)
+      @total = Helper.calculate(TOTAL)
+      @total ||= Helper.calculate(TOTAL)
+      @read_only
     end
   end
 

@@ -19,12 +19,7 @@
     .masthead { position: fixed; top: 28px; left: 32px; z-index: 2; pointer-events: none; max-width: 760px; }
     .eyebrow { margin: 0 0 10px; color: #b6a9c9; font-size: 11px; font-weight: 750; letter-spacing: .18em; text-transform: uppercase; }
     h1 { margin: 0; font: 500 clamp(28px, 4vw, 54px)/.95 ui-serif, Georgia, serif; letter-spacing: -.045em; }
-    .overview { display: flex; flex-wrap: wrap; gap: 10px 24px; margin: 18px 0 0; }
-    .overview div { display: grid; grid-template-columns: auto auto; align-items: baseline; gap: 7px; }
-    .overview dt, .overview dd { margin: 0; }
-    .overview dt { color: #918a9e; font-size: 11px; }
-    .overview dd { color: #f3edf9; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
-    .coverage { margin: 9px 0 0; color: #7f788b; font-size: 10px; }
+    .coverage { margin: 12px 0 0; color: #7f788b; font-size: 10px; }
     .status { display: inline-block; margin: 10px 0 0; border: 1px solid rgba(255, 198, 105, .22); border-radius: 999px; padding: 5px 8px; background: rgba(255, 184, 77, .07); color: #c9a96f; font-size: 10px; }
     .status[hidden] { display: none; }
     .panel { position: fixed; z-index: 3; top: 20px; right: 20px; width: min(348px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow: auto; border: 1px solid rgba(255,255,255,.1); border-radius: 18px; background: rgba(9, 9, 18, .82); box-shadow: 0 24px 80px rgba(0,0,0,.4); backdrop-filter: blur(18px); transition: width 180ms cubic-bezier(.16, 1, .3, 1); }
@@ -53,6 +48,11 @@
     .section-note { margin: -4px 0 13px; color: #756e7e; font-size: 9px; line-height: 1.4; }
     .section-body { padding: 0 18px 16px; }
     .section-actions { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+    .ruby-breakdown { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; margin: 0 0 14px; padding: 10px 0; border-block: 1px solid rgba(255,255,255,.08); }
+    .ruby-breakdown div { min-width: 0; }
+    .ruby-breakdown dt, .ruby-breakdown dd { margin: 0; }
+    .ruby-breakdown dt { color: #837c8d; font-size: 9px; }
+    .ruby-breakdown dd { margin-top: 2px; color: #f3edf9; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
     .section-actions button[aria-pressed="true"] { border-color: rgba(216,200,255,.36); background: rgba(216,200,255,.14); color: #fff; }
     .visibility { display: inline-flex; align-items: center; gap: 7px; margin-right: auto; color: #b8b1c0; font-size: 11px; cursor: pointer; }
     .visibility input { width: 15px; height: 15px; margin: 0; accent-color: #d8c8ff; }
@@ -95,24 +95,23 @@
   </style>
 </head>
 <body>
-  <canvas id="cosmos" tabindex="0" aria-label="Interactive three-dimensional stellar artwork generated from RubyDex codebase signals. Hover or tap stars for declaration details."></canvas>
+  <canvas id="cosmos" tabindex="0" aria-label="Interactive three-dimensional stellar artwork. Hover class and module stars for Ruby code details or gem clouds for package summaries."></canvas>
   <header class="masthead">
     <p class="eyebrow">RubyLens · local report</p>
     <h1>Ruby project</h1>
-    <dl class="overview" id="overview"></dl>
     <p class="coverage" id="coverage"></p>
     <p class="status" id="status" hidden></p>
   </header>
   <aside class="panel" id="panel" aria-label="Explore this codebase">
     <div class="panel-header">
-      <div><h2>Explore this codebase</h2><p>Show a system, focus its stars, or jump to a standout declaration.</p></div>
+      <div><h2>Explore this codebase</h2><p>Show a system, focus its stars, or fly to a Ruby code highlight.</p></div>
       <div class="panel-header-actions"><button type="button" id="panel-toggle" aria-expanded="true" aria-controls="panel-body">Hide</button></div>
     </div>
     <div id="panel-body"><div id="controls"></div>
-    <div class="foot">Double-click a gem cloud, press Enter or F on a selected gem star, or tap that star again to spread its plotted declarations. Escape or Reset view exits. This owner-only report embeds declaration and gem names for hover details. Source, comments, and paths are excluded. Do not share the HTML unless you intend to disclose codebase structure.</div></div>
+    <div class="foot">Double-click a gem cloud, press Enter or F on a selected gem marker, or tap that marker again to spread its cloud stars. Escape or Reset view exits. This owner-only report embeds class, module, and gem names for hover details; dependency stars remain anonymous. Source, comments, and paths are excluded. Do not share the HTML unless you intend to disclose codebase structure.</div></div>
   </aside>
   <div class="toolbar"><button type="button" id="motion" aria-pressed="false">Pause drift</button><button type="button" id="pan-mode" aria-label="Pan mode" aria-keyshortcuts="P" aria-pressed="false">Pan</button><button type="button" id="zoom-out" aria-label="Zoom out">−</button><output class="zoom-level" id="zoom-level" aria-label="Zoom level">100%</output><button type="button" id="zoom-in" aria-label="Zoom in">+</button><button type="button" id="view">Reset view</button></div>
-  <div class="hint">Double-click gem clouds · drag to orbit · Shift-drag/Pan to move · scroll at cursor to zoom</div>
+  <div class="hint">Double-click gem clouds · drag to orbit · Shift-drag/Pan to move · arrow keys move view · scroll at cursor to zoom</div>
   <aside class="tooltip" id="tooltip" role="status" hidden><p class="tooltip-category" id="tooltip-category"></p><p class="tooltip-name" id="tooltip-name"></p><p class="tooltip-context" id="tooltip-context"></p><dl class="tooltip-metrics" id="tooltip-metrics"></dl></aside>
   <script>
     "use strict";
@@ -128,19 +127,23 @@
     const tooltipContext = document.getElementById("tooltip-context");
     const tooltipMetrics = document.getElementById("tooltip-metrics");
     const fields = ["ancestorDepth", "definitionSites", "reopenings", "descendants", "references", "members"];
+    const rubyMetricLabels = ["Classes", "Modules", "Methods", "Constants"];
     const signalWeights = {
       core: { ancestorDepth: .28, definitionSites: .2, reopenings: .18, descendants: .72, references: .82, members: .7 },
       tests: { ancestorDepth: .18, definitionSites: .25, reopenings: .18, descendants: .42, references: .85, members: .55 },
       dependencies: { ancestorDepth: .12, definitionSites: .35, reopenings: .2, descendants: .32, references: .48, members: .4 },
     };
-    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit";
+    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null;
     const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35;
+    const TOP_DOWN_PITCH = Math.PI / 2;
+    const contextVisibility = { selection: .75, category: .16, package: .75 };
     const pointers = new Map();
     const visibleCategories = { core: true, tests: true, dependencies: true };
     const visibilityInputs = {};
     const focusButtons = {};
     const excludedTriviaNames = new Set(["Object", "Kernel", "BasicObject"]);
-    let drifting = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let drifting = !reducedMotionQuery.matches;
     const colours = { core: [244, 82, 132], tests: [87, 204, 255], dependencies: [255, 184, 77] };
 
     const hash = (seed, channel = 0) => {
@@ -202,36 +205,161 @@
 
     function buildPoints() {
       const points = [];
+      const interactivePoints = [];
+      const dependencyHubs = [];
+      const addPoint = (point, interactive = true) => {
+        points.push(point);
+        if (interactive) interactivePoints.push(point);
+        if (point.hub) dependencyHubs.push(point);
+      };
       model.namespaces.forEach((row, index) => {
         const category = row[3] === 1 ? "tests" : "core";
         const values = row.slice(4, 10);
-        points.push({ category, name: model.namespaceNames[index], kind: row[2] === 0 ? "Class" : "Module", scope: row[3] === 1 ? "Test" : row[3] === 2 ? "Core and test" : "Core", seed: row[0], position: category === "tests" ? testPosition(row[0]) : corePosition(row[0]), values, normalized: normalizedSignals(values), base: category === "core" ? .82 : .68 });
+        const rubyCounts = row.slice(10, 14);
+        addPoint({ category, name: model.namespaceNames[index], kind: row[2] === 0 ? "Class" : "Module", rubyCounts, instanceVariableCount: row[14] || 0, seed: row[0], position: category === "tests" ? testPosition(row[0]) : corePosition(row[0]), values, signal: weightedSignal(normalizedSignals(values), category), base: category === "core" ? .82 : .68 });
       });
-      model.dependencyDeclarations.forEach((row, index) => {
-        const values = row.slice(3, 9);
-        points.push({ category: "dependencies", packageIndex: row[1], name: model.dependencyDeclarationNames[index], packageName: model.packageNames[row[1]], kind: row[2] === 0 ? "Class" : row[2] === 1 ? "Module" : "Member", seed: row[0], position: dependencyPosition(row[0], row[1]), values, normalized: normalizedSignals(values), base: .45, declaration: true });
+      model.dependencyStars.forEach(row => {
+        const values = row.slice(2, 8);
+        addPoint({ category: "dependencies", packageIndex: row[1], seed: row[0], position: dependencyPosition(row[0], row[1]), signal: weightedSignal(normalizedSignals(values), "dependencies"), base: .45 }, false);
       });
       packageAnchors.forEach((anchor, index) => {
         const packageRow = model.packages[index];
-        const values = [0, packageRow[3], 0, 0, 0, 0];
-        points.push({ category: "dependencies", packageIndex: index, name: model.packageNames[index], packageRole: packageRow[1] === 0 ? "Direct dependency" : "Transitive dependency", packageLocation: packageRow[2] === 0 ? "Workspace package" : "External gem", indexedDeclarations: packageRow[3], seed: packageRow[0], position: anchor.slice(0, 3), values, normalized: normalizedSignals(values), base: 1.8, hub: true });
+        const rubyCounts = packageRow.slice(4, 8);
+        const visualValues = [0, packageRow[3], 0, 0, 0, 0];
+        addPoint({ category: "dependencies", packageIndex: index, name: model.packageNames[index], packageRole: packageRow[1] === 0 ? "Direct dependency" : "Transitive dependency", packageLocation: packageRow[2] === 0 ? "Workspace package" : "External gem", rubyCounts, seed: packageRow[0], position: anchor.slice(0, 3), signal: weightedSignal(normalizedSignals(visualValues), "dependencies"), base: 1.8, hub: true });
       });
-      return points;
+      return { points, interactivePoints, dependencyHubs };
     }
-    const points = buildPoints();
+    const { points, interactivePoints, dependencyHubs } = buildPoints();
     const totals = model.totals;
-    const renderedDependencyDeclarations = model.totals.renderedDependencyDeclarations;
+    const renderedDependencyStars = model.totals.renderedDependencyStars;
     const directGemCount = model.packages.filter(row => row[1] === 0).length;
     const transitiveGemCount = totals.packages - directGemCount;
+    const allRubyMetricIndexes = [0, 1, 2, 3];
+    const testRubyMetricIndexes = [0, 2];
+    const dependencyRubyCounts = model.packages.reduce(
+      (counts, row) => counts.map((count, index) => count + Number(row[index + 4] || 0)),
+      [0, 0, 0, 0],
+    );
     const categoryMeta = {
-      core: { title: "Core code", count: totals.scopes[0] + totals.scopes[2], countLabel: "namespaces", note: `${totals.scopes[0].toLocaleString()} source-only · ${totals.scopes[2].toLocaleString()} also defined in tests`, focusZoom: 2.8 },
-      tests: { title: "Tests", count: totals.scopes[1], countLabel: "test-only namespaces", note: "Shown as the cyan outer structure", focusZoom: 1.35 },
-      dependencies: { title: "Gems", count: totals.packages, countLabel: "dependency gems", note: `${directGemCount.toLocaleString()} direct · ${transitiveGemCount.toLocaleString()} transitive`, focusZoom: .72 },
+      core: { title: "Core code", rubyCounts: model.categoryStats.core, metricIndexes: allRubyMetricIndexes, focusZoom: 2.8 },
+      tests: { title: "Tests", rubyCounts: model.categoryStats.tests, metricIndexes: testRubyMetricIndexes, focusZoom: 1.35 },
+      dependencies: { title: "Gems", summary: `${totals.packages.toLocaleString()} dependency gems`, rubyCounts: dependencyRubyCounts, metricIndexes: allRubyMetricIndexes, note: `${directGemCount.toLocaleString()} direct · ${transitiveGemCount.toLocaleString()} transitive`, focusZoom: .72 },
     };
 
-    function updateSignals() {
-      for (const point of points) {
-        point.signal = weightedSignal(point.normalized, point.category);
+    function applyCameraTarget(target) {
+      yaw = target.yaw;
+      pitch = target.pitch;
+      zoom = clamp(target.zoom, MIN_ZOOM, MAX_ZOOM);
+      panX = target.panX;
+      panY = target.panY;
+    }
+
+    function cameraTargetForPoint(point, targetZoom = point.hub ? 4 : point.category === "dependencies" ? 5 : 7) {
+      const [x, y, z] = point.position;
+      return {
+        yaw: Math.atan2(x, z),
+        pitch: clamp(Math.atan2(y, Math.hypot(x, z)), -.95, .95),
+        zoom: targetZoom,
+        panX: 0,
+        panY: 0,
+      };
+    }
+
+    function topDownCameraTargetForPoint(point, targetZoom = point.hub ? 4 : point.category === "dependencies" ? 5 : 7) {
+      const targetYaw = yaw;
+      const [x, y, z] = point.position;
+      const cy = Math.cos(targetYaw), sy = Math.sin(targetYaw);
+      const cp = Math.cos(TOP_DOWN_PITCH), sp = Math.sin(TOP_DOWN_PITCH);
+      const x1 = x * cy - z * sy;
+      const z1 = x * sy + z * cy;
+      const y2 = y * cp - z1 * sp;
+      const z2 = y * sp + z1 * cp;
+      const perspective = 440 / (270 - z2) * targetZoom;
+      return {
+        yaw: targetYaw,
+        pitch: TOP_DOWN_PITCH,
+        zoom: targetZoom,
+        panX: -x1 * perspective,
+        panY: -y2 * perspective,
+      };
+    }
+
+    function cancelCameraFlight() {
+      if (!cameraFlight) return false;
+      cameraFlight = null;
+      canvas.removeAttribute("aria-busy");
+      requestRender();
+      return true;
+    }
+
+    function completeCameraFlight() {
+      if (!cameraFlight) return false;
+      const target = cameraFlight.target;
+      cameraFlight = null;
+      applyCameraTarget(target);
+      canvas.removeAttribute("aria-busy");
+      requestRender();
+      return true;
+    }
+
+    function smootherstep(progress) {
+      return progress * progress * progress * (progress * (progress * 6 - 15) + 10);
+    }
+
+    function flyCamera(target) {
+      cancelCameraFlight();
+      cancelPendingHover();
+      const yawDelta = Math.atan2(Math.sin(target.yaw - yaw), Math.cos(target.yaw - yaw));
+      const resolvedTarget = { ...target, yaw: yaw + yawDelta };
+      tooltip.hidden = true;
+      if (reducedMotionQuery.matches) {
+        applyCameraTarget(resolvedTarget);
+        canvas.removeAttribute("aria-busy");
+        requestRender();
+        return;
+      }
+
+      const angularDistance = Math.hypot(yawDelta, resolvedTarget.pitch - pitch);
+      const zoomStops = Math.abs(Math.log2(resolvedTarget.zoom / zoom));
+      const panDistance = Math.hypot(resolvedTarget.panX - panX, resolvedTarget.panY - panY);
+      if (angularDistance < .001 && zoomStops < .01 && panDistance < .5) {
+        applyCameraTarget(resolvedTarget);
+        canvas.removeAttribute("aria-busy");
+        requestRender();
+        return;
+      }
+      const minimumZoom = Math.min(zoom, resolvedTarget.zoom);
+      const cruiseZoom = Math.min(2.5, minimumZoom);
+      cameraFlight = {
+        start: { yaw, pitch, zoom, panX, panY },
+        target: resolvedTarget,
+        startTime: null,
+        duration: clamp(440 + angularDistance * 60 + zoomStops * 20, 440, 540),
+        pullback: angularDistance > .35 && minimumZoom > cruiseZoom
+          ? Math.log(minimumZoom / cruiseZoom) * .72
+          : 0,
+      };
+      canvas.setAttribute("aria-busy", "true");
+      requestRender();
+    }
+
+    function updateCameraFlight(timestamp) {
+      if (!cameraFlight) return;
+      if (cameraFlight.startTime === null) cameraFlight.startTime = timestamp;
+      const progress = clamp((timestamp - cameraFlight.startTime) / cameraFlight.duration, 0, 1);
+      const eased = smootherstep(progress);
+      const { start, target } = cameraFlight;
+      yaw = start.yaw + (target.yaw - start.yaw) * eased;
+      pitch = start.pitch + (target.pitch - start.pitch) * eased;
+      panX = start.panX + (target.panX - start.panX) * eased;
+      panY = start.panY + (target.panY - start.panY) * eased;
+      const pullback = Math.sin(Math.PI * progress) ** 2 * cameraFlight.pullback;
+      zoom = Math.exp(Math.log(start.zoom) + (Math.log(target.zoom) - Math.log(start.zoom)) * eased - pullback);
+      if (progress >= 1) {
+        cameraFlight = null;
+        applyCameraTarget(target);
+        canvas.removeAttribute("aria-busy");
       }
     }
 
@@ -243,30 +371,41 @@
       tooltipMetrics.append(term, detail);
     }
 
+    function addRubyMetrics(rubyCounts, metricIndexes) {
+      metricIndexes.forEach(index => addTooltipMetric(rubyMetricLabels[index], rubyCounts[index] || 0));
+    }
+
+    function addCoreTooltipMetrics(point) {
+      addTooltipMetric("Ancestors", point.values[0]);
+      addTooltipMetric("Descendants", point.values[3]);
+      if (point.kind === "Class") addTooltipMetric("Instance variables", point.instanceVariableCount);
+      addTooltipMetric("Methods", point.rubyCounts[2]);
+      addTooltipMetric("References", point.values[4]);
+    }
+
     function updateTooltipContent(point) {
       tooltipMetrics.textContent = "";
-      tooltipCategory.textContent = point.hub ? "Gem" : point.category === "dependencies" ? "Gem declaration" : `${point.scope} namespace`;
-      tooltipName.textContent = point.name || "Unnamed declaration";
+      tooltipCategory.textContent = point.hub ? "Gem" : point.category === "tests" ? "Tests" : "Core code";
+      tooltipName.textContent = point.name || "Unnamed Ruby item";
       if (point.hub) {
-        const expanded = expandedPackageIndex === point.packageIndex ? " · Expanded plotted declarations · Escape to exit" : "";
+        const expanded = expandedPackageIndex === point.packageIndex ? " · Expanded gem cloud · Escape to exit" : "";
         tooltipContext.textContent = `${point.packageRole} · ${point.packageLocation}${expanded}`;
-        addTooltipMetric("Indexed declarations", point.indexedDeclarations);
+        addRubyMetrics(point.rubyCounts, allRubyMetricIndexes);
         return;
       }
-      const expanded = expandedPackageIndex === point.packageIndex ? " · Expanded gem system" : "";
-      tooltipContext.textContent = point.packageName ? `${point.kind} · ${point.packageName}${expanded}` : point.kind;
-      addTooltipMetric("Ancestors", point.values[0]);
-      addTooltipMetric("Definition sites", point.values[1]);
-      addTooltipMetric("Reopenings", point.values[2]);
-      addTooltipMetric("Transitive descendants", point.values[3]);
-      addTooltipMetric("RubyDex references", point.values[4]);
-      addTooltipMetric("Members", point.values[5]);
+      tooltipContext.textContent = point.kind;
+      if (point.category === "core") addCoreTooltipMetrics(point);
+      else addRubyMetrics(point.rubyCounts, testRubyMetricIndexes);
     }
 
     function positionTooltip(point) {
-      if (!point?.screen) { tooltip.hidden = true; return; }
+      if (cameraFlight || !point?.screen) { tooltip.hidden = true; return; }
       tooltip.hidden = false;
       const bounds = tooltip.getBoundingClientRect();
+      if (bounds.width === 0 || bounds.height === 0) {
+        requestAnimationFrame(() => { if (selectedPoint === point) positionTooltip(point); });
+        return;
+      }
       const preferredX = point.screen[0] + 16;
       const leftOfPoint = point.screen[0] - bounds.width - 16;
       const fitsRight = preferredX + bounds.width <= sceneRight - 12;
@@ -293,7 +432,7 @@
     function hitTest(x, y) {
       let nearest = null;
       let nearestDistance = Infinity;
-      for (const point of points) {
+      for (const point of interactivePoints) {
         if (!point.screen) continue;
         if (focusedCategory && point.category !== focusedCategory) continue;
         if (expandedPackageIndex !== null && (point.category !== "dependencies" || point.packageIndex !== expandedPackageIndex)) continue;
@@ -309,14 +448,13 @@
       return nearest;
     }
 
-    function dependencyPackageAt(x, y) {
-      const exact = hitTest(x, y);
-      if (exact) return exact.category === "dependencies" ? exact : null;
+    function dependencyPackageAt(x, y, exact = hitTest(x, y)) {
+      if (exact) return exact.hub ? exact : null;
 
       let nearestHub = null;
       let nearestRatio = Infinity;
-      for (const point of points) {
-        if (!point.hub || !point.screen || !point.cloudScreenRadius) continue;
+      for (const point of dependencyHubs) {
+        if (!point.screen || !point.cloudScreenRadius) continue;
         if (expandedPackageIndex !== null && point.packageIndex !== expandedPackageIndex) continue;
         const distance = Math.hypot(point.screen[0] - x, point.screen[1] - y);
         const ratio = distance / point.cloudScreenRadius;
@@ -328,17 +466,28 @@
       return nearestHub;
     }
 
+    function hoverTargetAt(x, y) {
+      const exact = hitTest(x, y);
+      return exact || dependencyPackageAt(x, y, exact);
+    }
+
     function queueHover(x, y) {
-      if (selectionLocked || dragging || pointers.size > 0) return;
+      if (cameraFlight || selectionLocked || dragging || pointers.size > 0) return;
       pendingHover = [x, y];
       if (hoverFrame) return;
       hoverFrame = requestAnimationFrame(() => {
         hoverFrame = 0;
         if (!pendingHover) return;
-        const point = hitTest(pendingHover[0], pendingHover[1]);
+        const point = hoverTargetAt(pendingHover[0], pendingHover[1]);
         pendingHover = null;
         if (point !== selectedPoint) selectPoint(point);
       });
+    }
+
+    function cancelPendingHover() {
+      pendingHover = null;
+      if (hoverFrame) cancelAnimationFrame(hoverFrame);
+      hoverFrame = 0;
     }
 
     function setPanelCollapsed(collapsed) {
@@ -365,26 +514,42 @@
     }
 
     function factsFor(category) {
-      const declarations = points.filter(point => point.category === category && !point.hub && !excludedTriviaNames.has(point.name));
-      const metricFact = (title, index) => {
-        const result = maxPoint(declarations, point => point.values[index]);
-        return result && { title, ...result };
-      };
       if (category === "dependencies") {
-        const largestGem = maxPoint(points.filter(point => point.hub), point => point.indexedDeclarations);
+        const gemMetricFact = (title, index) => {
+          const result = maxPoint(dependencyHubs, point => point.rubyCounts[index]);
+          return result && result.value > 0 && { title, ...result };
+        };
         return [
-          largestGem && { title: "Largest gem", ...largestGem },
-          metricFact("Most RubyDex references · plotted", 4),
-          metricFact("Most indexed members · plotted", 5),
-          metricFact("Deepest ancestor chain · plotted", 0),
+          gemMetricFact("Most classes", 0),
+          gemMetricFact("Most modules", 1),
+          gemMetricFact("Most methods", 2),
+          gemMetricFact("Most constants", 3),
         ].filter(Boolean);
       }
-      return [
-        metricFact("Widest transitive descendant reach", 3),
-        metricFact("Most RubyDex references", 4),
-        metricFact("Most indexed members", 5),
-        metricFact("Deepest resolved ancestor chain", 0),
-      ].filter(Boolean);
+      const namespacePoints = interactivePoints.filter(point => point.category === category && !point.hub && !excludedTriviaNames.has(point.name));
+      const metricFact = (title, index) => {
+        const result = maxPoint(namespacePoints, point => point.rubyCounts[index]);
+        return result && result.value > 0 && { title, ...result };
+      };
+      return category === "tests"
+        ? [metricFact("Most methods", 2)].filter(Boolean)
+        : [metricFact("Most methods", 2), metricFact("Most constants", 3)].filter(Boolean);
+    }
+
+    function createRubyBreakdown(title, rubyCounts, metricIndexes) {
+      const breakdown = document.createElement("dl");
+      breakdown.className = "ruby-breakdown";
+      breakdown.setAttribute("aria-label", `${title} breakdown`);
+      for (const index of metricIndexes) {
+        const metric = document.createElement("div");
+        const term = document.createElement("dt");
+        const detail = document.createElement("dd");
+        term.textContent = rubyMetricLabels[index];
+        detail.textContent = Number(rubyCounts[index] || 0).toLocaleString();
+        metric.append(term, detail);
+        breakdown.append(metric);
+      }
+      return breakdown;
     }
 
     function clearActiveFact() {
@@ -405,6 +570,7 @@
     }
 
     function clearExplorationFocus() {
+      cancelCameraFlight();
       clearActiveFact();
       clearCategoryFocus();
       clearExpandedPackage();
@@ -432,17 +598,16 @@
       focusButtons[category].setAttribute("aria-pressed", "true");
       focusButtons[category].textContent = "Focused";
       setDrifting(false);
-      panX = 0;
-      panY = 0;
-      yaw = -.36;
-      pitch = .34;
-      zoom = categoryMeta[category].focusZoom;
-      requestRender();
+      flyCamera({ yaw: -.36, pitch: .34, zoom: categoryMeta[category].focusZoom, panX: 0, panY: 0 });
     }
 
     function focusPoint(point, button) {
       if (activeFactButton === button) {
         clearExplorationFocus();
+        return;
+      }
+      if (point.hub) {
+        focusDependencyPackage(point.packageIndex, button);
         return;
       }
       setCategoryVisible(point.category, true);
@@ -452,35 +617,29 @@
       activeFactButton.setAttribute("aria-pressed", "true");
       clearCategoryFocus();
       setDrifting(false);
-      const [x, y, z] = point.position;
-      panX = 0;
-      panY = 0;
-      yaw = Math.atan2(x, z);
-      pitch = clamp(Math.atan2(y, Math.hypot(x, z)), -.95, .95);
-      zoom = point.hub ? 4 : point.category === "dependencies" ? 5 : 7;
       selectedPoint = null;
       selectionLocked = false;
       selectPoint(point, true);
+      flyCamera(topDownCameraTargetForPoint(point));
     }
 
-    function focusDependencyPackage(packageIndex) {
-      const hub = points.find(point => point.hub && point.packageIndex === packageIndex);
+    function focusDependencyPackage(packageIndex, button = null) {
+      const hub = dependencyHubs.find(point => point.packageIndex === packageIndex);
       if (!hub) return false;
 
       setCategoryVisible("dependencies", true);
       clearActiveFact();
+      if (button) {
+        activeFactButton = button;
+        activeFactButton.setAttribute("aria-pressed", "true");
+      }
       clearCategoryFocus();
       expandedPackageIndex = packageIndex;
       setDrifting(false);
-      panX = 0;
-      panY = 0;
-      const [x, y, z] = hub.position;
-      yaw = Math.atan2(x, z);
-      pitch = clamp(Math.atan2(y, Math.hypot(x, z)), -.95, .95);
-      zoom = 4;
       selectedPoint = null;
       selectionLocked = false;
       selectPoint(hub, true);
+      flyCamera(button ? topDownCameraTargetForPoint(hub, 4) : cameraTargetForPoint(hub, 4));
       return true;
     }
 
@@ -498,9 +657,12 @@
         heading.className = "section-heading";
         const title = document.createElement("strong");
         title.textContent = meta.title;
-        const count = document.createElement("small");
-        count.textContent = `${meta.count.toLocaleString()} ${meta.countLabel}`;
-        heading.append(title, count);
+        heading.append(title);
+        if (meta.summary) {
+          const summaryText = document.createElement("small");
+          summaryText.textContent = meta.summary;
+          heading.append(summaryText);
+        }
         summary.append(swatch, heading);
 
         const body = document.createElement("div");
@@ -527,16 +689,10 @@
         focus.addEventListener("click", () => focusCategory(category));
         actions.append(visibility, focus);
 
-        const sectionNote = document.createElement("p");
-        sectionNote.className = "section-note";
-        sectionNote.textContent = meta.note;
-
-        const factLabel = document.createElement("p");
-        factLabel.className = "fact-label";
-        factLabel.textContent = category === "dependencies" ? "One exact gem fact, then standouts among plotted declarations" : "Exact standouts from RubyDex's code knowledge";
+        const categoryFacts = factsFor(category);
         const facts = document.createElement("div");
         facts.className = "facts";
-        for (const fact of factsFor(category)) {
+        for (const fact of categoryFacts) {
           const button = document.createElement("button");
           button.type = "button";
           button.className = "fact";
@@ -548,7 +704,7 @@
           factTitleText.textContent = fact.title;
           const factScope = document.createElement("span");
           factScope.className = "fact-scope";
-          factScope.textContent = fact.point.hub ? "Gem" : fact.point.scope || fact.point.kind;
+          factScope.textContent = fact.point.hub ? "Gem" : fact.point.kind;
           factTitle.append(factTitleText, factScope);
           const factName = document.createElement("span");
           factName.className = "fact-name";
@@ -560,7 +716,19 @@
           button.addEventListener("click", () => focusPoint(fact.point, button));
           facts.append(button);
         }
-        body.append(actions, sectionNote, factLabel, facts);
+        body.append(actions, createRubyBreakdown(meta.title, meta.rubyCounts, meta.metricIndexes));
+        if (meta.note) {
+          const sectionNote = document.createElement("p");
+          sectionNote.className = "section-note";
+          sectionNote.textContent = meta.note;
+          body.append(sectionNote);
+        }
+        if (categoryFacts.length) {
+          const factLabel = document.createElement("p");
+          factLabel.className = "fact-label";
+          factLabel.textContent = "Ruby code highlights";
+          body.append(factLabel, facts);
+        }
         details.append(summary, body);
         container.append(details);
       }
@@ -598,6 +766,27 @@
       panY += dy;
     }
 
+    function isEditableTarget(target) {
+      if (!(target instanceof Element)) return false;
+      if (target.isContentEditable || target.matches("textarea, select")) return true;
+      return target.matches("input") && !["checkbox", "radio", "button", "submit", "reset"].includes(target.type);
+    }
+
+    function moveViewWithArrow(event) {
+      if (!event.key.startsWith("Arrow") || pointers.size > 0) return false;
+      if (event.metaKey || event.ctrlKey || event.altKey || isEditableTarget(event.target)) return false;
+      cancelCameraFlight();
+      const distance = event.shiftKey ? 96 : 32;
+      if (event.key === "ArrowLeft") panBy(distance, 0);
+      else if (event.key === "ArrowRight") panBy(-distance, 0);
+      else if (event.key === "ArrowUp") panBy(0, distance);
+      else if (event.key === "ArrowDown") panBy(0, -distance);
+      else return false;
+      event.preventDefault();
+      requestRender();
+      return true;
+    }
+
     function resetCamera() {
       yaw = -.36;
       pitch = .34;
@@ -633,8 +822,9 @@
       return [sceneCenterX + panX + x1 * perspective, sceneCenterY + panY + y2 * perspective, perspective];
     }
 
-    function render() {
+    function render(timestamp) {
       animationFrame = 0;
+      updateCameraFlight(timestamp);
       document.getElementById("zoom-level").value = `${Math.round(zoom * 100)}%`;
       context.globalCompositeOperation = "source-over";
       context.fillStyle = "#03040a";
@@ -659,8 +849,8 @@
         const alpha = clamp(.14 + signal * .105, .12, point.hub ? .86 : .7);
         const focusedPackagePoint = expandedPackageIndex !== null && point.category === "dependencies" && point.packageIndex === expandedPackageIndex;
         const emphasis = expandedPackageIndex !== null
-          ? (focusedPackagePoint ? 1 : .06)
-          : selectedPoint ? (point === selectedPoint ? 1 : .12) : focusedCategory && point.category !== focusedCategory ? .16 : 1;
+          ? (focusedPackagePoint ? 1 : contextVisibility.package)
+          : selectionLocked && selectedPoint ? (point === selectedPoint ? 1 : contextVisibility.selection) : focusedCategory && point.category !== focusedCategory ? contextVisibility.category : 1;
         const visibleAlpha = focusedPackagePoint ? Math.max(.34, alpha) : alpha * emphasis;
         const colour = colours[point.category];
         point.screen = [x, y, size];
@@ -668,7 +858,7 @@
           const expansion = expandedPackageIndex === point.packageIndex ? DEPENDENCY_EXPANSION : 1;
           point.cloudScreenRadius = Math.max(12, packageAnchors[point.packageIndex][3] * perspective * expansion * 1.2);
         }
-        const detailedPoint = emphasis >= .1;
+        const detailedPoint = expandedPackageIndex !== null ? focusedPackagePoint : emphasis >= .1;
         if (size > 1.35 && detailedPoint) {
           const glowScale = focusedPackagePoint ? 2.2 - deepDetail * .8 : 3.4 - deepDetail * 1.3;
           context.beginPath(); context.arc(x, y, size * glowScale, 0, Math.PI * 2);
@@ -689,8 +879,12 @@
         }
       }
       context.globalCompositeOperation = "source-over";
-      if (selectedPoint) positionTooltip(selectedPoint);
-      if (drifting && !dragging && !selectedPoint) { yaw += .00055; requestRender(); }
+      if (selectedPoint) {
+        if (cameraFlight) tooltip.hidden = true;
+        else positionTooltip(selectedPoint);
+      }
+      if (cameraFlight) requestRender();
+      else if (drifting && !dragging && !selectedPoint) { yaw += .00055; requestRender(); }
     }
 
     function requestRender() {
@@ -698,6 +892,7 @@
     }
 
     function setDrifting(next) {
+      if (next) cancelCameraFlight();
       drifting = next;
       const motion = document.getElementById("motion");
       motion.textContent = drifting ? "Pause drift" : "Resume drift";
@@ -723,6 +918,7 @@
       requestRender();
     };
     canvas.addEventListener("pointerdown", event => {
+      cancelCameraFlight();
       canvas.focus({ preventScroll: true });
       const firstPointer = pointers.size === 0;
       pointers.set(event.pointerId, [event.clientX, event.clientY]);
@@ -762,7 +958,7 @@
       if (gesture.mode === "pan") panBy(dx, dy);
       else {
         yaw += dx * .006;
-        pitch = clamp(pitch + dy * .004, -.95, .95);
+        pitch = clamp(pitch + dy * .004, -TOP_DOWN_PITCH, TOP_DOWN_PITCH);
       }
       gesture.lastX = event.clientX;
       gesture.lastY = event.clientY;
@@ -776,7 +972,7 @@
       dragging = pointers.size > 0;
       canvas.classList.remove("is-dragging-pan");
       if (wasTap) {
-        const point = hitTest(event.clientX, event.clientY);
+        const point = hoverTargetAt(event.clientX, event.clientY);
         clearActiveFact();
         clearCategoryFocus();
         if (point?.category === "dependencies" && selectionLocked && selectedPoint === point) focusDependencyPackage(point.packageIndex);
@@ -794,6 +990,7 @@
     canvas.addEventListener("wheel", event => {
       event.preventDefault();
       if (pointers.size > 0) return;
+      cancelCameraFlight();
       const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? height : 1);
       zoomBetween(zoom * Math.exp(-delta * .0012), event.clientX, event.clientY);
       requestRender();
@@ -805,34 +1002,33 @@
         focusDependencyPackage(dependency.packageIndex);
         return;
       }
+      cancelCameraFlight();
       zoomBetween(zoom * 2, event.clientX, event.clientY);
       requestRender();
     });
     canvas.addEventListener("keydown", event => {
       if (pointers.size > 0) return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
-      if (event.key === "+" || event.key === "=") zoomBetween(zoom * ZOOM_STEP, sceneCenterX, sceneCenterY);
-      else if (event.key === "-") zoomBetween(zoom / ZOOM_STEP, sceneCenterX, sceneCenterY);
-      else if (event.key === "0") resetCamera();
-      else if (event.key.toLowerCase() === "p") setNavigationMode(navigationMode === "pan" ? "orbit" : "pan");
+      if (event.key === "+" || event.key === "=") { cancelCameraFlight(); zoomBetween(zoom * ZOOM_STEP, sceneCenterX, sceneCenterY); }
+      else if (event.key === "-") { cancelCameraFlight(); zoomBetween(zoom / ZOOM_STEP, sceneCenterX, sceneCenterY); }
+      else if (event.key === "0") { cancelCameraFlight(); resetCamera(); }
+      else if (event.key.toLowerCase() === "p") { cancelCameraFlight(); setNavigationMode(navigationMode === "pan" ? "orbit" : "pan"); }
       else if ((event.key === "Enter" || event.key.toLowerCase() === "f") && selectedPoint?.category === "dependencies") focusDependencyPackage(selectedPoint.packageIndex);
-      else if (event.key.startsWith("Arrow")) {
-        const distance = event.shiftKey ? 96 : 32;
-        if (event.key === "ArrowLeft") panBy(-distance, 0);
-        else if (event.key === "ArrowRight") panBy(distance, 0);
-        else if (event.key === "ArrowUp") panBy(0, -distance);
-        else if (event.key === "ArrowDown") panBy(0, distance);
-      } else return;
+      else return;
       event.preventDefault();
       requestRender();
     });
-    window.addEventListener("keydown", event => { if (event.key === "Escape") clearExplorationFocus(); });
+    window.addEventListener("keydown", event => {
+      if (event.key === "Escape") clearExplorationFocus();
+      else moveViewWithArrow(event);
+    });
     window.addEventListener("resize", resize);
     document.getElementById("motion").addEventListener("click", () => setDrifting(!drifting));
-    document.getElementById("pan-mode").addEventListener("click", () => setNavigationMode(navigationMode === "pan" ? "orbit" : "pan"));
-    document.getElementById("zoom-in").addEventListener("click", () => { if (pointers.size === 0) zoomBetween(zoom * ZOOM_STEP, sceneCenterX, sceneCenterY); requestRender(); });
-    document.getElementById("zoom-out").addEventListener("click", () => { if (pointers.size === 0) zoomBetween(zoom / ZOOM_STEP, sceneCenterX, sceneCenterY); requestRender(); });
+    document.getElementById("pan-mode").addEventListener("click", () => { cancelCameraFlight(); setNavigationMode(navigationMode === "pan" ? "orbit" : "pan"); });
+    document.getElementById("zoom-in").addEventListener("click", () => { if (pointers.size === 0) { cancelCameraFlight(); zoomBetween(zoom * ZOOM_STEP, sceneCenterX, sceneCenterY); } requestRender(); });
+    document.getElementById("zoom-out").addEventListener("click", () => { if (pointers.size === 0) { cancelCameraFlight(); zoomBetween(zoom / ZOOM_STEP, sceneCenterX, sceneCenterY); } requestRender(); });
     document.getElementById("view").addEventListener("click", () => {
+      cancelCameraFlight();
       resetCamera();
       setNavigationMode("orbit");
       for (const category of Object.keys(visibleCategories)) setCategoryVisible(category, true);
@@ -840,29 +1036,22 @@
       requestRender();
     });
     panelToggle.addEventListener("click", () => setPanelCollapsed(panelToggle.getAttribute("aria-expanded") === "true"));
+    panel.addEventListener("transitionend", event => { if (event.propertyName === "width") { updateSceneViewport(); requestRender(); } });
+    reducedMotionQuery.addEventListener("change", event => {
+      if (!event.matches) return;
+      completeCameraFlight();
+      setDrifting(false);
+    });
 
-    function addOverviewMetric(label, value) {
-      const group = document.createElement("div");
-      const term = document.createElement("dt");
-      const detail = document.createElement("dd");
-      term.textContent = label;
-      detail.textContent = value.toLocaleString();
-      group.append(term, detail);
-      document.getElementById("overview").append(group);
-    }
-    addOverviewMetric("core namespaces", categoryMeta.core.count);
-    addOverviewMetric("test-only namespaces", categoryMeta.tests.count);
-    addOverviewMetric("gems", categoryMeta.dependencies.count);
-    const plottedPercent = totals.dependencyDeclarations === 0 ? 100 : renderedDependencyDeclarations / totals.dependencyDeclarations * 100;
-    document.getElementById("coverage").textContent = `${renderedDependencyDeclarations.toLocaleString()} of ${totals.dependencyDeclarations.toLocaleString()} gem declarations plotted (${plottedPercent.toFixed(1)}%)`;
+    document.getElementById("coverage").textContent = `${renderedDependencyStars.toLocaleString()} dependency stars shown`;
     const warningTotal = Object.values(model.warningCounts).reduce((sum, count) => sum + count, 0);
     if (warningTotal > 0) { const status = document.getElementById("status"); status.hidden = false; status.textContent = `${warningTotal.toLocaleString()} partial-index warning${warningTotal === 1 ? "" : "s"}`; }
     setDrifting(drifting);
     setNavigationMode(navigationMode);
     document.querySelector("h1").textContent = model.projectName;
     document.title = `RubyLens · ${model.projectName}`;
-    canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover or tap stars for RubyDex declaration details. Double-click a gem cloud, press Enter or F on a selected gem star, or tap that star again to expand its plotted declarations. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, and use arrow keys to pan. Escape exits a focused gem system.`);
-    updateSignals(); createExplorer(); setPanelCollapsed(window.matchMedia("(max-width: 760px)").matches); resize();
+    canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class and module stars for Ruby code details or gem clouds for package summaries. Sidebar highlights open a top-down view. Double-click a gem cloud, press Enter or F on a selected gem marker, or tap that marker again to expand its stars. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, and use arrow keys to move the view. Escape exits a focused gem system.`);
+    createExplorer(); setPanelCollapsed(window.matchMedia("(max-width: 760px)").matches); resize();
   </script>
 </body>
 </html>

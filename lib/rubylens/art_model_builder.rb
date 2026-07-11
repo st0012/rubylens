@@ -20,12 +20,13 @@ module RubyLens
       package_index = package_order.each_with_index.to_h
       packages = package_order.map do |old_index|
         package = snapshot.fetch("packages").fetch(old_index)
+        declarations = package.fetch("declarations")
         [
           random.rand(0..0xffff_ffff),
           package.fetch("role"),
           package.fetch("location"),
-          package.fetch("declarations").length,
-          package.fetch("declarations").empty? ? 0 : 1,
+          declarations.length,
+          *package.fetch("ruby_counts"),
         ]
       end
       package_names = package_order.map { |old_index| snapshot.fetch("packages").fetch(old_index).fetch("name") }
@@ -34,7 +35,6 @@ module RubyLens
       end
       render_target = [18_000, indexed_dependency_count].min
       dependencies = []
-      dependency_names = []
       package_order.each do |old_index|
         declarations = snapshot.fetch("packages").fetch(old_index).fetch("declarations").shuffle(random: random)
         quota = if declarations.empty?
@@ -46,33 +46,27 @@ module RubyLens
           dependencies << [
             random.rand(0..0xffff_ffff),
             package_index.fetch(old_index),
-            *declaration.fetch("signals"),
+            *declaration.fetch("signals").drop(1),
           ]
-          dependency_names << declaration.fetch("name")
         end
       end
-      scope_counts = [0, 1, 2].map { |scope| namespaces.count { |row| row[3] == scope } }
-
       {
-        "schema" => "rubylens.art.v2",
+        "schema" => "rubylens.art.v5",
         "projectName" => snapshot.fetch("project_name"),
         "totals" => {
           "namespaces" => namespaces.length,
-          "classes" => namespaces.count { |row| row[2].zero? },
-          "modules" => namespaces.count { |row| row[2] == 1 },
-          "scopes" => scope_counts,
           "packages" => packages.length,
-          "dependencyDeclarations" => indexed_dependency_count,
-          "renderedDependencyDeclarations" => dependencies.length,
+          "dependencyStars" => indexed_dependency_count,
+          "renderedDependencyStars" => dependencies.length,
         },
         "domains" => signal_domains(namespaces, dependencies),
         "componentCounts" => snapshot.fetch("components"),
+        "categoryStats" => snapshot.fetch("category_stats"),
         "namespaceNames" => namespace_names,
         "namespaces" => namespaces,
         "packageNames" => package_names,
         "packages" => packages,
-        "dependencyDeclarationNames" => dependency_names,
-        "dependencyDeclarations" => dependencies,
+        "dependencyStars" => dependencies,
         "warningCounts" => snapshot.fetch("warning_counts"),
       }
     end
@@ -81,7 +75,7 @@ module RubyLens
 
     def signal_domains(namespaces, dependencies)
       namespace_columns = [4, 5, 6, 7, 8, 9]
-      dependency_columns = [3, 4, 5, 6, 7, 8]
+      dependency_columns = [2, 3, 4, 5, 6, 7]
       namespace_domains = namespace_columns.map { |column| maximum(namespaces, column) }
       dependency_domains = dependency_columns.map { |column| maximum(dependencies, column) }
       SIGNAL_FIELDS.each_with_index.to_h do |field, index|
@@ -92,5 +86,6 @@ module RubyLens
     def maximum(rows, column)
       rows.map { |row| row[column].to_i }.max || 0
     end
+
   end
 end

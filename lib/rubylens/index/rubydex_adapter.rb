@@ -28,6 +28,7 @@ module RubyLens
           "components" => workspace.fetch(:component_counts),
           "namespace_names" => workspace.fetch(:records).map { |declaration, _definitions| declaration.name },
           "namespaces" => build_workspace_rows(workspace, inbound_references, manifest),
+          "category_stats" => workspace_constructs(declarations, manifest),
           "packages" => build_package_rows(declarations, manifest),
           "warning_counts" => {
             "manifest" => manifest.warnings.length,
@@ -66,25 +67,29 @@ module RubyLens
       def build_workspace_rows(workspace, inbound_references, manifest)
         workspace.fetch(:records).each_with_index.map do |(declaration, definitions), index|
           sites = definitions.map { |definition| site_key(definition.location) }.uniq.length
+          scope = scope_for(definitions, manifest)
           descendants = declaration.descendants.count do |descendant|
             descendant.name != declaration.name && workspace.fetch(:ordinal_by_name).key?(descendant.name)
           end
           [
             workspace.fetch(:component_ids).fetch(workspace.fetch(:components)[index]),
             declaration.is_a?(Rubydex::Class) ? 0 : 1,
-            scope_for(definitions, manifest),
+            scope,
             [declaration.ancestors.count - 1, 0].max,
             sites,
             [sites - 1, 0].max,
             descendants,
             inbound_references.fetch(index, 0),
             workspace_member_count(declaration, manifest),
+            *namespace_ruby_counts(declaration, manifest),
+            namespace_instance_variable_count(declaration, manifest, scope),
           ]
         end
       end
 
       def build_package_rows(declarations, manifest)
         declaration_rows = Array.new(manifest.packages.length) { [] }
+        ruby_counts = Array.new(manifest.packages.length) { Array.new(4, 0) }
         declarations.each do |declaration|
           grouped = declaration.definitions.group_by do |definition|
             manifest.package_index_for(location_path(definition.location))
@@ -108,6 +113,8 @@ module RubyLens
               namespace?(declaration) ? safe_length(declaration, :members) : 0,
             ],
           }
+          construct_index = ruby_construct_index(declaration)
+          ruby_counts.fetch(package_index)[construct_index] += 1 if construct_index
         end
 
         manifest.packages.each_with_index.map do |package, index|
@@ -115,6 +122,7 @@ module RubyLens
             "name" => package.name,
             "role" => package.role == "direct" ? 0 : 1,
             "location" => package.location == "workspace" ? 0 : 1,
+            "ruby_counts" => ruby_counts.fetch(index),
             "declarations" => declaration_rows.fetch(index),
           }
         end
@@ -141,6 +149,55 @@ module RubyLens
         end
       rescue StandardError
         0
+      end
+
+      def namespace_ruby_counts(declaration, manifest)
+        counts = Array.new(4, 0)
+        own_construct = ruby_construct_index(declaration)
+        counts[own_construct] += 1 if own_construct == 0 || own_construct == 1
+
+        members = declaration.members.to_a
+        members.concat(declaration.singleton_class.members.to_a) if declaration.singleton_class
+        members.uniq(&:name).each do |member|
+          construct_index = ruby_construct_index(member)
+          next unless construct_index && construct_index >= 2
+          next unless member.definitions.any? { |definition| workspace_location?(definition.location, manifest) }
+
+          counts[construct_index] += 1
+        end
+        counts
+      rescue StandardError
+        counts || Array.new(4, 0)
+      end
+
+      def namespace_instance_variable_count(declaration, manifest, scope)
+        return 0 unless declaration.is_a?(Rubydex::Class) && scope != 1
+
+        declaration.members.to_a.uniq(&:name).count do |member|
+          member.is_a?(Rubydex::InstanceVariable) &&
+            member.definitions.any? { |definition| workspace_location?(definition.location, manifest) }
+        end
+      rescue StandardError
+        0
+      end
+
+      def workspace_constructs(declarations, manifest)
+        stats = { "core" => Array.new(4, 0), "tests" => Array.new(4, 0) }
+        declarations.each do |declaration|
+          construct_index = ruby_construct_index(declaration)
+          next unless construct_index
+
+          definitions = declaration.definitions.select do |definition|
+            workspace_location?(definition.location, manifest)
+          end
+          next if definitions.empty?
+
+          category = scope_for(definitions, manifest) == 1 ? "tests" : "core"
+          stats.fetch(category)[construct_index] += 1
+        rescue StandardError
+          next
+        end
+        stats
       end
 
       def workspace_location?(location, manifest)
@@ -193,6 +250,16 @@ module RubyLens
         when Rubydex::Class then 0
         when Rubydex::Module then 1
         else 2
+        end
+      end
+
+      def ruby_construct_index(declaration)
+        case declaration
+        when Rubydex::SingletonClass then nil
+        when Rubydex::Class then 0
+        when Rubydex::Module then 1
+        when Rubydex::Method then 2
+        when Rubydex::Constant, Rubydex::ConstantAlias then 3
         end
       end
 

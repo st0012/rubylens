@@ -9,14 +9,16 @@ class ArtModelBuilderTest < Minitest::Test
       "components" => [2],
       "namespace_names" => ["Demo::Core", "Demo::TestCase"],
       "namespaces" => [
-        [0, 0, 0, 3, 1, 0, 2, 4, 5],
-        [0, 1, 1, 1, 2, 1, 0, 3, 2],
+        [0, 0, 0, 3, 1, 0, 2, 4, 5, 1, 0, 3, 2, 4],
+        [0, 1, 1, 1, 2, 1, 0, 3, 2, 0, 1, 1, 0, 0],
       ],
+      "category_stats" => { "core" => [1, 1, 4, 2], "tests" => [0, 1, 1, 0] },
       "packages" => [
         {
           "name" => "example-gem",
           "role" => 0,
           "location" => 1,
+          "ruby_counts" => [2, 1, 4, 3],
           "declarations" => [{ "name" => "Example::Client", "signals" => [0, 2, 1, 0, 1, 3, 4] }],
         },
       ],
@@ -28,17 +30,48 @@ class ArtModelBuilderTest < Minitest::Test
     second = builder.build(snapshot)
 
     assert_equal(first, second)
-    assert_equal("rubylens.art.v2", first.fetch("schema"))
+    assert_equal("rubylens.art.v5", first.fetch("schema"))
     assert_equal("Demo", first.fetch("projectName"))
     assert_equal(2, first.dig("totals", "namespaces"))
-    assert_equal(1, first.dig("totals", "dependencyDeclarations"))
-    assert_equal(1, first.dig("totals", "renderedDependencyDeclarations"))
-    assert_equal([1, 1, 0], first.dig("totals", "scopes"))
+    assert_equal(1, first.dig("totals", "dependencyStars"))
+    assert_equal(1, first.dig("totals", "renderedDependencyStars"))
+    assert_equal({ "core" => [1, 1, 4, 2], "tests" => [0, 1, 1, 0] }, first.fetch("categoryStats"))
     assert_equal(["Demo::Core", "Demo::TestCase"].sort, first.fetch("namespaceNames").sort)
     assert_equal(["example-gem"], first.fetch("packageNames"))
-    assert_equal(["Example::Client"], first.fetch("dependencyDeclarationNames"))
-    assert(first.fetch("namespaces").all? { |row| row.length == 10 && row.all?(Integer) })
-    assert(first.fetch("dependencyDeclarations").all? { |row| row.length == 9 && row.all?(Integer) })
+    assert_equal([0, 1, 1, 2, 1, 4, 3], first.fetch("packages").first.drop(1))
+    refute(first.key?("dependencyDeclarationNames"))
+    refute(first.key?("dependencyDeclarations"))
+    refute_includes(JSON.generate(first), "Example::Client")
+    assert(first.fetch("namespaces").all? { |row| row.length == 15 && row.all?(Integer) })
+    assert_equal(4, first.fetch("namespaces").find { |row| row[2].zero? }.last)
+    assert(first.fetch("dependencyStars").all? { |row| row.length == 8 && row.all?(Integer) })
+  end
+
+  def test_preserves_package_ruby_construct_counts
+    snapshot = {
+      "project_name" => "Aggregate Demo",
+      "components" => [],
+      "namespace_names" => [],
+      "namespaces" => [],
+      "category_stats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
+      "packages" => [
+        {
+          "name" => "example-gem",
+          "role" => 0,
+          "location" => 1,
+          "ruby_counts" => [4, 5, 6, 7],
+          "declarations" => [
+            { "name" => "Example::One", "signals" => [0, 2, 3, 1, 4, 5, 6] },
+            { "name" => "Example::Two", "signals" => [1, 1, 7, 2, 3, 4, 2] },
+          ],
+        },
+      ],
+      "warning_counts" => { "manifest" => 0, "index" => 0, "integrity" => 0 },
+    }
+
+    model = RubyLens::ArtModelBuilder.new(seed: 12).build(snapshot)
+
+    assert_equal([0, 1, 2, 4, 5, 6, 7], model.fetch("packages").first.drop(1))
   end
 
   def test_samples_dependency_identity_before_serialization
@@ -50,14 +83,17 @@ class ArtModelBuilderTest < Minitest::Test
       "components" => [],
       "namespace_names" => [],
       "namespaces" => [],
-      "packages" => [{ "name" => "large-gem", "role" => 1, "location" => 1, "declarations" => declarations }],
+      "category_stats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
+      "packages" => [{ "name" => "large-gem", "role" => 1, "location" => 1, "ruby_counts" => [1, 1, 18_020, 100], "declarations" => declarations }],
       "warning_counts" => { "manifest" => 0, "index" => 0, "integrity" => 0 },
     }
 
     model = RubyLens::ArtModelBuilder.new(seed: 12).build(snapshot)
 
-    assert_equal(18_020, model.dig("totals", "dependencyDeclarations"))
-    assert_equal(18_000, model.dig("totals", "renderedDependencyDeclarations"))
-    assert_equal(18_000, model.fetch("dependencyDeclarationNames").length)
+    assert_equal(18_020, model.dig("totals", "dependencyStars"))
+    assert_equal(18_000, model.dig("totals", "renderedDependencyStars"))
+    assert_equal(8, model.fetch("packages").first.length)
+    assert_equal([1, 1, 18_020, 1, 1, 18_020, 100], model.fetch("packages").first.drop(1))
+    refute(model.key?("dependencyDeclarationNames"))
   end
 end
