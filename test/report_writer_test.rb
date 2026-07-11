@@ -5,6 +5,28 @@ require "open3"
 require_relative "test_helper"
 
 class ReportWriterTest < Minitest::Test
+  def test_accepts_a_legacy_full_template_path
+    Dir.mktmpdir("rubylens-report-") do |directory|
+      template = File.join(directory, "legacy.html")
+      output = File.join(directory, "report.html")
+      File.write(template, '<meta name="generator" content="RubyLens"><script>atob("{{MODEL_BASE64}}")</script>')
+
+      RubyLens::ReportWriter.new(template_path: template).write({ "projectName" => "Legacy" }, output: output)
+
+      html = File.read(output)
+      encoded = html.match(/atob\("([A-Za-z0-9+\/=]+)"\)/).captures.first
+      assert_equal({ "projectName" => "Legacy" }, JSON.parse(Base64.strict_decode64(encoded)))
+    end
+  end
+
+  def test_rejects_a_template_path_with_an_asset_assembler
+    error = assert_raises(ArgumentError) do
+      RubyLens::ReportWriter.new(template_path: "report.html", asset_assembler: Object.new)
+    end
+
+    assert_equal("provide template_path or asset_assembler, not both", error.message)
+  end
+
   def test_can_be_required_and_constructed_directly
     lib = File.expand_path("../lib", __dir__)
     _output, error, status = Open3.capture3(
