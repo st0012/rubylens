@@ -78,7 +78,7 @@ begin
       sleep 0.05
     end
     result = browser.evaluate("window.benchmarkResult")
-    raise "100k WebGL CPU projection is not bounded" if count == 100_000 && result.fetch("cpuProjectedPoints") > 512
+    raise "100k synthetic scene CPU projection is not bounded" if count == 100_000 && result.fetch("cpuProjectedPoints") > 512
     browser.screenshot(path: File.join(output, "webgl2-#{count}.png"), full: false)
     result
   end
