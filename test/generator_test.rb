@@ -3,6 +3,28 @@
 require_relative "test_helper"
 
 class GeneratorTest < Minitest::Test
+  def test_generation_pipeline_builds_the_model_and_shared_warnings
+    manifest = Struct.new(:warnings).new(["manifest warning"])
+    manifest_builder = Object.new
+    manifest_builder.define_singleton_method(:build) { |root:, lockfile:| manifest }
+    adapter = Object.new
+    adapter.define_singleton_method(:index) do |_manifest|
+      { "warning_counts" => { "index" => 2, "integrity" => 1 } }
+    end
+    model_builder = Object.new
+    model_builder.define_singleton_method(:build) { |_snapshot| { "totals" => { "namespaces" => 3 } } }
+
+    model, warnings = RubyLens::GenerationPipeline.new(manifest_builder:, adapter:, model_builder:)
+      .call(root: "/tmp/project", lockfile: "/tmp/Gemfile.lock")
+
+    assert_equal({ "totals" => { "namespaces" => 3 } }, model)
+    assert_equal(
+      ["manifest warning", "Rubydex reported 2 indexing error(s).", "Rubydex reported 1 integrity issue(s)."],
+      warnings,
+    )
+    assert_predicate(warnings, :frozen?)
+  end
+
   def test_default_output_is_root_level_and_locally_excluded
     with_repository do |directory|
       result = generator.call(path: directory)

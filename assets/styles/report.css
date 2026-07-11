@@ -13,12 +13,6 @@
     .coverage { margin: 12px 0 0; color: #7f788b; font-size: 10px; }
     .status { display: inline-block; margin: 10px 0 0; border: 1px solid rgba(255, 198, 105, .22); border-radius: 999px; padding: 5px 8px; background: rgba(255, 184, 77, .07); color: #c9a96f; font-size: 10px; }
     .status[hidden] { display: none; }
-    .cinema-stats { display: none; grid-template-columns: repeat(4, minmax(72px, auto)); gap: 10px 24px; margin: 20px 0 0; }
-    .cinema-stats div { min-width: 0; }
-    .cinema-stats dt, .cinema-stats dd { margin: 0; }
-    .cinema-stats dt { color: #8e8799; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
-    .cinema-stats dd { margin-top: 3px; color: #f5eff9; font-size: 15px; font-weight: 720; font-variant-numeric: tabular-nums; }
-    .cinema-secondary { display: none; margin: 14px 0 0; color: #91899b; font-size: 10px; letter-spacing: .025em; }
     .panel { position: fixed; z-index: 3; top: 20px; right: 20px; width: min(348px, calc(100vw - 40px)); max-height: calc(100vh - 40px); overflow: auto; border: 1px solid rgba(255,255,255,.1); border-radius: 18px; background: rgba(9, 9, 18, .82); box-shadow: 0 24px 80px rgba(0,0,0,.4); backdrop-filter: blur(18px); transition: width 180ms cubic-bezier(.16, 1, .3, 1); }
     .panel.is-collapsed { width: 190px; overflow: hidden; }
     .panel-header { position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; gap: 16px; align-items: start; padding: 18px 18px 14px; border-bottom: 1px solid rgba(255,255,255,.08); background: rgba(9, 9, 18, .92); }
@@ -75,13 +69,6 @@
     .tooltip-metrics { display: grid; grid-template-columns: 1fr auto; gap: 5px 16px; margin: 11px 0 0; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.08); color: #a9a2b1; font-size: 10px; }
     .tooltip-metrics dt, .tooltip-metrics dd { margin: 0; }
     .tooltip-metrics dd { color: #f3edf9; font-variant-numeric: tabular-nums; text-align: right; }
-    body.is-capture canvas { cursor: default; }
-    body.is-capture .masthead { top: 40px; left: 44px; max-width: calc(100vw - 88px); text-shadow: 0 2px 14px #03040a, 0 0 4px #03040a; }
-    body.is-capture .eyebrow { color: #c2b3d4; }
-    body.is-capture h1 { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; font-size: clamp(38px, 5.4vw, 72px); -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-    body.is-capture .coverage, body.is-capture .status, body.is-capture .panel, body.is-capture .toolbar, body.is-capture .hint, body.is-capture .tooltip { display: none !important; }
-    body.is-capture .cinema-stats { display: grid; }
-    body.is-capture .cinema-secondary { display: block; }
     @media (max-width: 1080px) and (min-width: 761px) {
       .masthead { max-width: calc(100vw - 420px); }
       h1 { font-size: clamp(28px, 4vw, 42px); }

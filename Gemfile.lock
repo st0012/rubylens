@@ -3,39 +3,23 @@ PATH
   specs:
     rubylens (0.1.0)
       base64 (>= 0.2)
-      ferrum (= 0.17.2)
       rubydex (= 0.2.9)
 
 GEM
   remote: https://rubygems.org/
   specs:
-    addressable (2.9.0)
-      public_suffix (>= 2.0.2, < 8.0)
     base64 (0.3.0)
-    concurrent-ruby (1.3.7)
     drb (2.2.3)
-    ferrum (0.17.2)
-      addressable (~> 2.5)
-      base64 (~> 0.2)
-      concurrent-ruby (~> 1.1)
-      webrick (~> 1.7)
-      websocket-driver (~> 0.7)
     minitest (6.0.6)
       drb (~> 2.0)
       prism (~> 1.5)
     prism (1.9.0)
-    public_suffix (7.0.5)
     rake (13.4.2)
     rubydex (0.2.9)
     rubydex (0.2.9-aarch64-linux)
     rubydex (0.2.9-arm64-darwin)
     rubydex (0.2.9-x86_64-darwin)
     rubydex (0.2.9-x86_64-linux)
-    webrick (1.9.2)
-    websocket-driver (0.8.2)
-      base64
-      websocket-extensions (>= 0.1.0)
-    websocket-extensions (0.1.5)
 
 PLATFORMS
   aarch64-linux
@@ -50,14 +34,10 @@ DEPENDENCIES
   rubylens!
 
 CHECKSUMS
-  addressable (2.9.0) sha256=7fdf6ac3660f7f4e867a0838be3f6cf722ace541dd97767fa42bc6cfa980c7af
   base64 (0.3.0) sha256=27337aeabad6ffae05c265c450490628ef3ebd4b67be58257393227588f5a97b
-  concurrent-ruby (1.3.7) sha256=4412caec3a5ea2e5fdc52076724c071a81f2c0593d83b2ac8cbb8ca63b3151b0
   drb (2.2.3) sha256=0b00d6fdb50995fe4a45dea13663493c841112e4068656854646f418fda13373
-  ferrum (0.17.2) sha256=2c2540a850b211a46f4d81de21bfd62048f507e4c327d1807225c3823c17e6ee
   minitest (6.0.6) sha256=153ea36d1d987a62942382b61075745042a2b3123b1cd48f4c3675af9cc7d6f1
   prism (1.9.0) sha256=7b530c6a9f92c24300014919c9dcbc055bf4cdf51ec30aed099b06cd6674ef85
-  public_suffix (7.0.5) sha256=1a8bb08f1bbea19228d3bed6e5ed908d1cb4f7c2726d18bd9cadf60bc676f623
   rake (13.4.2) sha256=cb825b2bd5f1f8e91ca37bddb4b9aaf345551b4731da62949be002fa89283701
   rubydex (0.2.9) sha256=c4c0f707586c01e59926b62a8193df38b5d00b7c35d35677dab1fb059903e289
   rubydex (0.2.9-aarch64-linux) sha256=74391fd22c4b4ccca1b695d634daad13326e7cc81567e96549da17c5031265bb
@@ -65,9 +45,6 @@ CHECKSUMS
   rubydex (0.2.9-x86_64-darwin) sha256=000df1723b090d9176dbceb8e291b72f93931cc3c7782f32287e0db6c20c1dd7
   rubydex (0.2.9-x86_64-linux) sha256=f500e843d285def8fc799e0f9a989b9ba2b01b9372bde6ab0a6831738b3f6956
   rubylens (0.1.0)
-  webrick (1.9.2) sha256=beb4a15fc474defed24a3bda4ffd88a490d517c9e4e6118c3edce59e45864131
-  websocket-driver (0.8.2) sha256=97c556b019bf3410b4961002ac501621e9322d3f8a7bc02161a09301cc4c4146
-  websocket-extensions (0.1.5) sha256=1c6ba63092cda343eb53fc657110c71c754c56484aad42578495227d717a8241
 
 BUNDLED WITH
   4.0.10

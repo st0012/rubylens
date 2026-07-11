@@ -1,7 +1,7 @@
     "use strict";
     const model = JSON.parse(atob("{{MODEL_BASE64}}"));
-    const captureMode = new URLSearchParams(window.location.search).get("capture") === "1";
-    if (captureMode) document.body.classList.add("is-capture");
+    const showcaseMode = document.body.dataset.rubylensMode === "showcase";
+    const interactiveMode = !showcaseMode;
     const canvas = document.getElementById("cosmos");
     const context = canvas.getContext("2d", { alpha: false });
     const panel = document.getElementById("panel");
@@ -19,9 +19,10 @@
       tests: { ancestorDepth: .18, definitionSites: .25, reopenings: .18, descendants: .42, references: .85, members: .55 },
       dependencies: { ancestorDepth: .12, definitionSites: .35, reopenings: .2, descendants: .32, references: .48, members: .4 },
     };
-    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null;
-    const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35, CAPTURE_POINT_LIMIT = 50_000;
-    const CAPTURE_CAMERA = Object.freeze({ turns: 1, referenceWidth: 720, referenceHeight: 405, centerX: .52, centerY: .60, startYaw: -.36, pitch: .40, pitchSway: .09, zoom: 1.05, zoomBreath: .035 });
+    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null;
+    const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35, SHOWCASE_POINT_LIMIT = 50_000;
+    const SHOWCASE_DURATION_MS = 60_000;
+    const SHOWCASE_CAMERA = Object.freeze({ turns: 1, referenceWidth: 1920, referenceHeight: 1080, referenceRadius: 150, centerX: .49, centerY: .67, startYaw: -54 * Math.PI / 180, pitch: -25 * Math.PI / 180, pitchSway: 1.5 * Math.PI / 180, zoom: 1.6 });
     const TOP_DOWN_PITCH = Math.PI / 2;
     const contextVisibility = { selection: .75, category: .16, package: .75 };
     const pointers = new Map();
@@ -30,7 +31,7 @@
     const focusButtons = {};
     const excludedTriviaNames = new Set(["Object", "Kernel", "BasicObject"]);
     const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    let drifting = !captureMode && !reducedMotionQuery.matches;
+    let drifting = interactiveMode && !reducedMotionQuery.matches;
     const colours = { core: [244, 82, 132], tests: [87, 204, 255], dependencies: [255, 184, 77] };
 
     const hash = (seed, channel = 0) => {
@@ -96,7 +97,7 @@
       const dependencyHubs = [];
       const addPoint = (point, interactive = true) => {
         points.push(point);
-        if (interactive && !captureMode) interactivePoints.push(point);
+        if (interactive && interactiveMode) interactivePoints.push(point);
         if (point.hub) dependencyHubs.push(point);
       };
       model.namespaces.forEach((row, index) => {
@@ -104,7 +105,7 @@
         const values = row.slice(4, 10);
         const rubyCounts = row.slice(10, 14);
         const point = { category, seed: row[0], position: category === "tests" ? testPosition(row[0]) : corePosition(row[0]), signal: weightedSignal(normalizedSignals(values), category), base: category === "core" ? .82 : .68 };
-        if (!captureMode) Object.assign(point, { name: model.namespaceNames[index], kind: row[2] === 0 ? "Class" : "Module", rubyCounts, instanceVariableCount: row[14] || 0, values });
+        if (interactiveMode) Object.assign(point, { name: model.namespaceNames[index], kind: row[2] === 0 ? "Class" : "Module", rubyCounts, instanceVariableCount: row[14] || 0, values });
         addPoint(point);
       });
       model.dependencyStars.forEach(row => {
@@ -116,21 +117,32 @@
         const rubyCounts = packageRow.slice(4, 8);
         const visualValues = [0, packageRow[3], 0, 0, 0, 0];
         const point = { category: "dependencies", packageIndex: index, seed: packageRow[0], position: anchor.slice(0, 3), signal: weightedSignal(normalizedSignals(visualValues), "dependencies"), base: 1.8, hub: true };
-        if (!captureMode) Object.assign(point, { name: model.packageNames[index], packageRole: packageRow[1] === 0 ? "Direct dependency" : "Transitive dependency", packageLocation: packageRow[2] === 0 ? "Workspace package" : "External gem", rubyCounts });
+        if (interactiveMode) Object.assign(point, { name: model.packageNames[index], packageRole: packageRow[1] === 0 ? "Direct dependency" : "Transitive dependency", packageLocation: packageRow[2] === 0 ? "Workspace package" : "External gem", rubyCounts });
         addPoint(point);
       });
       return { points, interactivePoints, dependencyHubs };
     }
     const { points, interactivePoints, dependencyHubs } = buildPoints();
-    function capturePointSample() {
-      if (!captureMode || points.length <= CAPTURE_POINT_LIMIT) return points;
+    const showcaseSceneRadius = points.reduce(
+      (radius, point) => Math.max(radius, Math.hypot(point.position[0], point.position[1], point.position[2])),
+      18,
+    );
+    function showcasePointSample() {
+      if (!showcaseMode || points.length <= SHOWCASE_POINT_LIMIT) return points;
       const hubs = points.filter(point => point.hub);
-      const available = Math.max(0, CAPTURE_POINT_LIMIT - hubs.length);
-      const candidates = points.filter(point => !point.hub).map(point => [hash(point.seed, 73), point.seed, point]);
+      const rank = point => [hash(point.seed, 73), point.seed, point];
+      if (hubs.length >= SHOWCASE_POINT_LIMIT) {
+        return hubs.map(rank)
+          .sort((left, right) => left[0] - right[0] || left[1] - right[1])
+          .slice(0, SHOWCASE_POINT_LIMIT)
+          .map(candidate => candidate[2]);
+      }
+      const available = Math.max(0, SHOWCASE_POINT_LIMIT - hubs.length);
+      const candidates = points.filter(point => !point.hub).map(rank);
       candidates.sort((left, right) => left[0] - right[0] || left[1] - right[1]);
       return candidates.slice(0, available).map(candidate => candidate[2]).concat(hubs);
     }
-    const renderPoints = capturePointSample();
+    const renderPoints = showcasePointSample();
     const totals = model.totals;
     const renderedDependencyStars = model.totals.renderedDependencyStars;
     const directGemCount = model.packages.filter(row => row[1] === 0).length;
@@ -146,10 +158,8 @@
       tests: { title: "Tests", rubyCounts: model.categoryStats.tests, metricIndexes: testRubyMetricIndexes, focusZoom: 1.35 },
       dependencies: { title: "Gems", summary: `${totals.packages.toLocaleString()} dependency gems`, rubyCounts: dependencyRubyCounts, metricIndexes: allRubyMetricIndexes, note: `${directGemCount.toLocaleString()} direct · ${transitiveGemCount.toLocaleString()} transitive`, focusZoom: .72 },
     };
-    if (captureMode) {
-      model.namespaceNames = [];
+    if (showcaseMode) {
       model.namespaces = [];
-      model.packageNames = [];
       model.packages = [];
       model.dependencyStars = [];
     }
@@ -647,15 +657,16 @@
       canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
       updateSceneViewport();
+      if (showcaseMode && reducedMotionQuery.matches) applyShowcaseCamera(0);
       requestRender();
     }
 
     function updateSceneViewport() {
-      if (captureMode) {
+      if (showcaseMode) {
         sceneRight = width;
         sceneBottom = height;
-        sceneCenterX = width * CAPTURE_CAMERA.centerX;
-        sceneCenterY = height * CAPTURE_CAMERA.centerY;
+        sceneCenterX = width * SHOWCASE_CAMERA.centerX;
+        sceneCenterY = height * SHOWCASE_CAMERA.centerY;
         return;
       }
       const panelBounds = panel.getBoundingClientRect();
@@ -739,7 +750,7 @@
     function render(timestamp) {
       animationFrame = 0;
       updateCameraFlight(timestamp);
-      document.getElementById("zoom-level").value = `${Math.round(zoom * 100)}%`;
+      if (interactiveMode) document.getElementById("zoom-level").value = `${Math.round(zoom * 100)}%`;
       context.globalCompositeOperation = "source-over";
       context.fillStyle = "#03040a";
       context.fillRect(0, 0, width, height);
@@ -798,39 +809,49 @@
         else positionTooltip(selectedPoint);
       }
       if (cameraFlight) requestRender();
-      else if (drifting && !dragging && !selectedPoint) { yaw += .00055; requestRender(); }
+      else if (interactiveMode && drifting && !dragging && !selectedPoint) { yaw += .00055; requestRender(); }
     }
 
     function requestRender() {
       if (!animationFrame) animationFrame = requestAnimationFrame(render);
     }
 
-    function renderCaptureFrame(index, total) {
-      if (!captureMode) throw new Error("RubyLens capture mode is not active");
-      if (!Number.isInteger(index) || !Number.isInteger(total) || total < 1) throw new Error("Invalid capture frame");
-      if (animationFrame) cancelAnimationFrame(animationFrame);
-      animationFrame = 0;
-      cameraFlight = null;
-      cancelPendingHover();
-      selectedPoint = null;
-      selectionLocked = false;
-      focusedCategory = null;
-      expandedPackageIndex = null;
-      tooltip.hidden = true;
-      Object.keys(visibleCategories).forEach(category => { visibleCategories[category] = true; });
-      const progress = ((index % total) + total) % total / total;
-      const phase = progress * Math.PI * 2 * CAPTURE_CAMERA.turns;
-      const viewportScale = Math.min(width / CAPTURE_CAMERA.referenceWidth, height / CAPTURE_CAMERA.referenceHeight);
-      yaw = CAPTURE_CAMERA.startYaw + phase;
-      pitch = CAPTURE_CAMERA.pitch + Math.sin(phase) * CAPTURE_CAMERA.pitchSway;
-      zoom = (CAPTURE_CAMERA.zoom + (1 - Math.cos(phase)) * CAPTURE_CAMERA.zoomBreath) * viewportScale;
+    function applyShowcaseCamera(progress) {
+      const phase = progress * Math.PI * 2 * SHOWCASE_CAMERA.turns;
+      const viewportScale = Math.min(width / SHOWCASE_CAMERA.referenceWidth, height / SHOWCASE_CAMERA.referenceHeight);
+      const sceneScale = clamp(SHOWCASE_CAMERA.referenceRadius / showcaseSceneRadius, .75, 5);
+      yaw = SHOWCASE_CAMERA.startYaw + phase;
+      pitch = SHOWCASE_CAMERA.pitch + Math.sin(phase) * SHOWCASE_CAMERA.pitchSway;
+      zoom = SHOWCASE_CAMERA.zoom * viewportScale * sceneScale;
       panX = 0;
       panY = 0;
-      render(performance.now());
-      return { index, total, yaw, pitch, zoom, viewportScale, renderedPoints: renderPoints.length };
     }
 
-    function populateCaptureStats() {
+    function renderShowcase(timestamp) {
+      showcaseStartedAt ??= timestamp;
+      const progress = ((timestamp - showcaseStartedAt) % SHOWCASE_DURATION_MS) / SHOWCASE_DURATION_MS;
+      applyShowcaseCamera(progress);
+      render(timestamp);
+      document.documentElement.dataset.showcaseReady = "true";
+      if (!reducedMotionQuery.matches) animationFrame = requestAnimationFrame(renderShowcase);
+    }
+
+    function startShowcase() {
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      animationFrame = 0;
+      showcaseStartedAt = null;
+      if (reducedMotionQuery.matches) {
+        applyShowcaseCamera(0);
+        render(performance.now());
+        document.documentElement.dataset.showcaseReady = "true";
+        document.documentElement.dataset.showcaseMotion = "reduced";
+      } else {
+        document.documentElement.dataset.showcaseMotion = "active";
+        animationFrame = requestAnimationFrame(renderShowcase);
+      }
+    }
+
+    function populateShowcaseStats() {
       const core = model.categoryStats?.core || [0, 0, 0, 0];
       const tests = model.categoryStats?.tests || [0, 0, 0, 0];
       const format = value => Number(value || 0).toLocaleString("en-US");
@@ -867,6 +888,7 @@
       canvas.classList.remove("is-dragging-pan");
       requestRender();
     };
+    if (interactiveMode) {
     canvas.addEventListener("pointerdown", event => {
       cancelCameraFlight();
       canvas.focus({ preventScroll: true });
@@ -972,7 +994,6 @@
       if (event.key === "Escape") clearExplorationFocus();
       else moveViewWithArrow(event);
     });
-    window.addEventListener("resize", resize);
     document.getElementById("motion").addEventListener("click", () => setDrifting(!drifting));
     document.getElementById("pan-mode").addEventListener("click", () => { cancelCameraFlight(); setNavigationMode(navigationMode === "pan" ? "orbit" : "pan"); });
     document.getElementById("zoom-in").addEventListener("click", () => { if (pointers.size === 0) { cancelCameraFlight(); zoomBetween(zoom * ZOOM_STEP, sceneCenterX, sceneCenterY); } requestRender(); });
@@ -992,30 +1013,25 @@
       completeCameraFlight();
       setDrifting(false);
     });
+    }
 
-    document.getElementById("coverage").textContent = `${renderedDependencyStars.toLocaleString()} dependency stars shown`;
-    const warningTotal = Object.values(model.warningCounts).reduce((sum, count) => sum + count, 0);
-    if (warningTotal > 0) { const status = document.getElementById("status"); status.hidden = false; status.textContent = `${warningTotal.toLocaleString()} partial-index warning${warningTotal === 1 ? "" : "s"}`; }
-    setDrifting(drifting);
-    setNavigationMode(navigationMode);
+    window.addEventListener("resize", resize);
     document.querySelector("h1").textContent = model.projectName;
-    document.title = `RubyLens · ${model.projectName}`;
-    canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class and module stars for Ruby code details or gem clouds for package summaries. Sidebar highlights open a top-down view. Double-click a gem cloud, press Enter or F on a selected gem marker, or tap that marker again to expand its stars. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, and use arrow keys to move the view. Escape exits a focused gem system.`);
-    if (captureMode) {
-      document.querySelector(".eyebrow").textContent = "RubyLens · codebase galaxy";
-      populateCaptureStats();
+    if (showcaseMode) {
+      document.title = `${model.projectName} · RubyLens showcase`;
+      canvas.setAttribute("aria-label", `Autonomous stellar artwork of ${model.projectName}, completing one slow rotation each minute.`);
+      populateShowcaseStats();
+      reducedMotionQuery.addEventListener("change", startShowcase);
       resize();
-      renderCaptureFrame(0, 1);
-      window.RubyLensCapture = Object.freeze({
-        ready: true,
-        renderFrame: renderCaptureFrame,
-        renderedPoints: renderPoints.length,
-        totalPoints: points.length,
-        renderedGemHubs: renderPoints.filter(point => point.hub).length,
-        totalGemHubs: dependencyHubs.length,
-      });
-      document.documentElement.dataset.captureReady = "true";
+      startShowcase();
     } else {
+      document.title = `RubyLens · ${model.projectName}`;
+      canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class and module stars for Ruby code details or gem clouds for package summaries. Sidebar highlights open a top-down view. Double-click a gem cloud, press Enter or F on a selected gem marker, or tap that marker again to expand its stars. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, and use arrow keys to move the view. Escape exits a focused gem system.`);
+      document.getElementById("coverage").textContent = `${renderedDependencyStars.toLocaleString()} dependency stars shown`;
+      const warningTotal = Object.values(model.warningCounts).reduce((sum, count) => sum + count, 0);
+      if (warningTotal > 0) { const status = document.getElementById("status"); status.hidden = false; status.textContent = `${warningTotal.toLocaleString()} partial-index warning${warningTotal === 1 ? "" : "s"}`; }
+      setDrifting(drifting);
+      setNavigationMode(navigationMode);
       createExplorer();
       setPanelCollapsed(window.matchMedia("(max-width: 760px)").matches);
       resize();
