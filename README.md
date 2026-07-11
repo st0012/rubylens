@@ -31,6 +31,10 @@ The report is fully local: it makes no network requests and needs neither Node n
 
 RubyLens can index a target and render its locally generated model as a fixed, seamless galaxy loop:
 
+![RubyLens cinematic export of Rails, showing a dense pink Core system, a cyan Test halo, amber dependency systems, and aggregate Ruby statistics during a smooth orbit.](docs/assets/rubylens-rails-galaxy.gif)
+
+*[Rails](https://github.com/rails/rails) rendered locally as a shortened RubyLens galaxy preview. Default exports are 20-second loops. The GIF contains no source text, file paths, declaration names, or gem names.*
+
 ```sh
 bundle exec rubylens gif .
 ```

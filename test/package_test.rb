@@ -13,6 +13,7 @@ class PackageTest < Minitest::Test
     assert_includes(specification.files, "lib/rubylens/gif_generator.rb")
     assert_includes(specification.files, "lib/rubylens/gif_writer.rb")
     assert_includes(specification.files, "lib/rubylens/index/rubydex_adapter.rb")
+    refute(specification.files.any? { |path| path.start_with?("docs/assets/") })
     refute(specification.files.any? { |path| path.start_with?("prototype/") })
     refute(specification.files.any? { |path| path.start_with?("generated/") })
     refute_includes(specification.files, "lib/rubylens/extractor.rb")

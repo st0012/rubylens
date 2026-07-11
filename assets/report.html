@@ -963,11 +963,11 @@
       const core = model.categoryStats?.core || [0, 0, 0, 0];
       const tests = model.categoryStats?.tests || [0, 0, 0, 0];
       const format = value => Number(value || 0).toLocaleString("en-US");
-      const counted = (value, singular) => `${format(value)} ${singular}${Number(value || 0) === 1 ? "" : "s"}`;
+      const counted = (value, singular, plural) => `${format(value)} ${Number(value || 0) === 1 ? singular : plural}`;
       ["classes", "modules", "methods", "constants"].forEach((metric, index) => {
         document.getElementById(`cinema-${metric}`).textContent = format(core[index]);
       });
-      document.getElementById("cinema-secondary").textContent = `Tests · ${counted(tests[0], "class")} · ${counted(tests[2], "method")}   ·   ${counted(totals.packages, "dependency gem")} in orbit`;
+      document.getElementById("cinema-secondary").textContent = `Tests · ${counted(tests[0], "class", "classes")} · ${counted(tests[2], "method", "methods")}   ·   ${counted(totals.packages, "dependency gem", "dependency gems")} in orbit`;
     }
 
     function setDrifting(next) {
