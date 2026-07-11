@@ -1,6 +1,6 @@
 # Multi-core monorepo boundary design
 
-RubyLens should treat a large monorepo as a galaxy of first-class Core systems rather than one undifferentiated Core cloud. A repository such as Shopify Core can configure `apps/*`, `components/*`, and shared infrastructure as separate systems while preserving Tests and Gems as visual roles.
+RubyLens should treat a large monorepo as a galaxy of first-class Core systems rather than one undifferentiated Core cloud. A repository can configure `apps/*`, `components/*`, and shared infrastructure as separate systems while preserving Tests and Gems as visual roles.
 
 The configuration and Git-selected manifest plumbing described below are implemented. Namespace ownership, group aggregates, and scene behavior remain staged design work.
 
@@ -48,7 +48,7 @@ Rules use normalized, workspace-relative paths from the existing Git-selected ma
 - IDs are stable, normalized identifiers used by the compact model. Labels are user-facing text.
 - Unmatched files belong to `Other` by default. `ungrouped.mode: error` supports repositories that require complete coverage.
 - Do not initially support silently dropping unmatched source.
-- Group ownership is independent of Core/Test role. `components/payments/test/...` belongs to Payments and remains cyan Test code.
+- Group ownership is independent of Core/Test role. `components/acme-foundation/test/...` belongs to Acme Foundation and remains cyan Test code.
 - YAML aliases, object tags, duplicate mapping keys, unknown keys, duplicate or colliding group IDs, absolute paths, `..`, and unsupported glob syntax are rejected.
 - `each` groups expand only from directories proven by the existing Git-selected workspace manifest. Ignored, untracked, and direct child files cannot create groups.
 
@@ -98,7 +98,7 @@ Reference-route aggregation is intentionally outside the first boundary implemen
 
 ## Galaxy layout
 
-The overview is a clustered, compound graph whose primary objects are systems—not 100,000 individual declarations.
+The overview is a clustered, compound graph whose primary objects are systems—not every individual declaration. Synthetic scale tests cover up to 100,000 namespaces without implying the shape of any real repository.
 
 - Give every group a stable 3D anchor derived from its ID.
 - Size its local system by `sqrt(namespace_count)`.
@@ -117,10 +117,10 @@ Showcase should frame the bounding volume of all configured systems rather than 
 
 The default share overlay should say `Core systems · N` alongside repository-wide Ruby counts. Configured group labels can reveal internal product names, so they stay out of the Showcase payload and pixels. A later system-flyover preset can visit selected groups, but the first implementation should remain one stable overview loop.
 
-## Shopify-scale safeguards
+## Large-monorepo safeguards
 
 - Separate indexed namespace totals from plotted namespace points, matching the existing dependency-star contract.
-- Start hierarchical overview mode around 25,000–30,000 workspace stars, then tune from real profiling rather than treating the threshold as permanent.
+- Use 25,000–30,000 workspace stars as a provisional synthetic-test threshold, then tune with profiling from representative public or user-authorized repositories.
 - Give each nonempty group a minimum point quota; distribute the remaining budget proportional to `sqrt(group_size)`.
 - Always retain group hubs, high-signal namespaces, explorer-highlight winners, and cross-group namespaces before deterministic sampling.
 - Store each group's plotted namespaces contiguously and expose `groupRanges`, so focus and hit testing do not scan every point.
@@ -133,6 +133,6 @@ The default share overlay should say `Core systems · N` alongside repository-wi
 1. Strict configuration loader, safe glob matcher, discovery/CLI plumbing, group ownership, and `snapshot.v5`.
 2. `art.v8` group metadata, deterministic anchors, overview level of detail, and smooth group focus.
 3. Workspace-star sampling, contiguous group ranges, explorer search/virtualization, and mobile group selection.
-4. Synthetic 100k-namespace/1k-group tests plus a real Shopify-scale benchmark and visual tuning.
+4. Synthetic 100,000-namespace/1,000-group tests plus profiling against a representative public or user-authorized large monorepo and visual tuning.
 
 Each batch needs path-leak tests, deterministic ordering tests, owner-only report checks, and desktop/mobile screenshot review.
