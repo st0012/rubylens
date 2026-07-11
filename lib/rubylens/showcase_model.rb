@@ -10,6 +10,8 @@ module RubyLens
     CATEGORY_FIELDS = %w[core tests].freeze
 
     def call(model)
+      return configured_model(model) if model["schema"] == "rubylens.art.v8"
+
       {
         "schema" => "rubylens.showcase.v1",
         "projectName" => model.fetch("projectName"),
@@ -25,6 +27,27 @@ module RubyLens
     end
 
     private
+
+    def configured_model(model)
+      {
+        "schema" => "rubylens.showcase.v2",
+        "projectName" => model.fetch("projectName"),
+        "totals" => project_hash(
+          model.fetch("totals"),
+          %w[namespaces renderedNamespaces groups packages dependencyStars renderedDependencyStars],
+        ),
+        "domains" => project_hash(model.fetch("domains"), SIGNAL_FIELDS),
+        "categoryStats" => CATEGORY_FIELDS.to_h do |category|
+          [category, numeric_row(model.fetch("categoryStats").fetch(category), 4)]
+        end,
+        "groups" => model.fetch("groups").map { |row| numeric_row(row, 13) },
+        "groupRanges" => model.fetch("groupRanges").map { |row| numeric_row(row, 2) },
+        "groupAnchors" => model.fetch("groupAnchors").map { |row| numeric_row(row, 3) },
+        "namespaces" => model.fetch("namespaces").map { |row| numeric_row(row, 15) },
+        "packages" => model.fetch("packages").map { |row| numeric_row(row, 8) },
+        "dependencyStars" => model.fetch("dependencyStars").map { |row| numeric_row(row, 8) },
+      }
+    end
 
     def project_hash(source, fields)
       fields.to_h { |field| [field, Integer(source.fetch(field))] }

@@ -3,12 +3,65 @@
 require_relative "test_helper"
 
 class ArtModelBuilderTest < Minitest::Test
-  def test_rejects_configured_snapshot_until_art_v8_exists
+  def test_builds_configured_art_v8_with_explicit_budget_and_contiguous_ranges
+    snapshot = configured_snapshot
+    builder = RubyLens::ArtModelBuilder.new(seed: 12, namespace_budget: 3)
+    model = builder.build(snapshot)
+    reordered = snapshot.merge(
+      "namespace_names" => snapshot.fetch("namespace_names").reverse,
+      "namespaces" => snapshot.fetch("namespaces").reverse,
+    )
+
+    assert_equal(model, builder.build(reordered))
+    assert_equal("rubylens.art.v8", model.fetch("schema"))
+    assert_equal(4, model.dig("totals", "namespaces"))
+    assert_equal(3, model.dig("totals", "renderedNamespaces"))
+    assert_equal(2, model.dig("totals", "groups"))
+    assert_equal([[0, 2], [2, 1]], model.fetch("groupRanges"))
+    assert_equal(["System Alpha", "System Beta"], model.fetch("groupNames"))
+    assert(model.fetch("groups").all? { |row| row.length == 13 && row.all?(Integer) })
+    assert(model.fetch("groupAnchors").all? { |row| row.length == 3 && row.all?(Integer) })
+    refute(model.key?("componentCounts"))
+    model.fetch("groupRanges").each_with_index do |(first, length), group_index|
+      assert(model.fetch("namespaces").slice(first, length).all? { |row| row.fetch(1) == group_index })
+    end
+    private_name_rank = Digest::SHA256.digest("rubylens.namespace\0#{12}\0Alpha::One").unpack1("N")
+    private_group_seed = snapshot.fetch("groups").first.fetch("anchor_seed")
+    refute_includes(model.fetch("namespaces").map(&:first), private_name_rank)
+    refute_includes(model.fetch("groups").flatten, private_group_seed)
+    serialized = JSON.generate(model)
+    refute_includes(serialized, "private-alpha")
+    refute_includes(serialized, "apps/alpha/**")
+  end
+
+  def test_uses_exact_namespace_signal_domains_at_every_explicit_budget
+    snapshot = configured_snapshot
+    snapshot.fetch("namespace_names") << "Beta::Outlier"
+    snapshot.fetch("namespaces") << [1, 0, 0, 99, 98, 97, 96, 95, 94, 1, 0, 0, 0, 0]
+    snapshot.fetch("components")[1] += 1
+    snapshot.fetch("groups")[1].fetch("namespace_counts")[0] += 1
+
+    one = RubyLens::ArtModelBuilder.new(seed: 12, namespace_budget: 2).build(snapshot)
+    all = RubyLens::ArtModelBuilder.new(seed: 12, namespace_budget: 5).build(snapshot)
+
+    expected = RubyLens::ArtModelBuilder::SIGNAL_FIELDS.zip([99, 98, 97, 96, 95, 94]).to_h
+    assert_equal(expected, one.fetch("domains"))
+    assert_equal(expected, all.fetch("domains"))
+  end
+
+  def test_rejects_configured_dependency_rows_above_the_bounded_snapshot_contract
+    snapshot = configured_snapshot
+    snapshot["packages"] = [{
+      "name" => "synthetic-package", "role" => 1, "location" => 1,
+      "declaration_count" => 50_000, "ruby_counts" => [0, 0, 50_000, 0],
+      "declarations" => Array.new(18_001) { [2, 0, 1, 0, 0, 0, 0] },
+    }]
+
     error = assert_raises(RubyLens::Error) do
-      RubyLens::ArtModelBuilder.new.build("schema" => "rubylens.snapshot.v6")
+      RubyLens::ArtModelBuilder.new(seed: 12, namespace_budget: 3).build(snapshot)
     end
 
-    assert_equal("configured boundary snapshots require rubylens.art.v8", error.message)
+    assert_equal("configured dependency rows exceed the bounded snapshot contract", error.message)
   end
 
   def test_builds_a_deterministic_local_art_contract_with_hover_identity
@@ -38,6 +91,10 @@ class ArtModelBuilderTest < Minitest::Test
     second = builder.build(snapshot)
 
     assert_equal(first, second)
+    assert_equal(
+      "836e963fd7d1b593276605a78a807d0950837a937ff68670ab77e7629f04a1c6",
+      Digest::SHA256.hexdigest(JSON.generate(first)),
+    )
     assert_equal("rubylens.art.v7", first.fetch("schema"))
     assert_equal("Demo", first.fetch("projectName"))
     assert_equal(2, first.dig("totals", "namespaces"))
@@ -157,5 +214,40 @@ class ArtModelBuilderTest < Minitest::Test
         "references" => 95, "members" => 94 },
       model.fetch("domains")
     )
+  end
+
+  private
+
+  def configured_snapshot
+    {
+      "schema" => "rubylens.snapshot.v6",
+      "project_name" => "Synthetic Systems",
+      "components" => [3, 1],
+      "namespace_names" => %w[Alpha::One Alpha::Two Alpha::Test Beta::One],
+      "namespaces" => [
+        [0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0],
+        [0, 1, 0, 1, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0],
+        [0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0],
+        [1, 0, 0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0],
+      ],
+      "category_stats" => { "core" => [2, 1, 0, 0], "tests" => [1, 0, 0, 0] },
+      "dependency_signal_maxima" => [0, 0, 0, 0, 0, 0],
+      "groups" => [
+        {
+          "id" => "private-alpha", "name" => "System Alpha", "anchor_seed" => 111,
+          "namespace_counts" => [2, 1, 0],
+          "ruby_counts" => { "core" => [1, 1, 0, 0], "tests" => [1, 0, 0, 0] },
+          "cross_group_namespaces" => 1,
+        },
+        {
+          "id" => "private-beta", "name" => "System Beta", "anchor_seed" => 222,
+          "namespace_counts" => [1, 0, 0],
+          "ruby_counts" => { "core" => [1, 0, 0, 0], "tests" => [0, 0, 0, 0] },
+          "cross_group_namespaces" => 0,
+        },
+      ],
+      "packages" => [],
+      "warning_counts" => { "manifest" => 0, "index" => 0, "integrity" => 0 },
+    }
   end
 end
