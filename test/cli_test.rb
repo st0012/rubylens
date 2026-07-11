@@ -18,7 +18,10 @@ class CLITest < Minitest::Test
       .run(["report", ".", "--output", "/tmp/report.html", "--lockfile", "/tmp/Gemfile.lock"])
 
     assert_equal(0, status)
-    assert_equal({ path: ".", output: "/tmp/report.html", lockfile: "/tmp/Gemfile.lock" }, received)
+    assert_equal(
+      { path: ".", output: "/tmp/report.html", lockfile: "/tmp/Gemfile.lock", config: nil, no_config: false },
+      received,
+    )
     assert_equal("/tmp/report.html", JSON.parse(output.string).fetch("output"))
     assert_includes(errors.string, "private codebase structure")
   end
@@ -49,7 +52,10 @@ class CLITest < Minitest::Test
       .run(["showcase", ".", "--output", "/tmp/showcase.html", "--lockfile", "/tmp/Gemfile.lock"])
 
     assert_equal(0, status)
-    assert_equal({ path: ".", output: "/tmp/showcase.html", lockfile: "/tmp/Gemfile.lock" }, received)
+    assert_equal(
+      { path: ".", output: "/tmp/showcase.html", lockfile: "/tmp/Gemfile.lock", config: nil, no_config: false },
+      received,
+    )
     assert_equal("/tmp/showcase.html", JSON.parse(output.string).fetch("output"))
     assert_includes(errors.string, "Share them intentionally")
   end

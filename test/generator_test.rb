@@ -6,7 +6,7 @@ class GeneratorTest < Minitest::Test
   def test_generation_pipeline_builds_the_model_and_shared_warnings
     manifest = Struct.new(:warnings).new(["manifest warning"])
     manifest_builder = Object.new
-    manifest_builder.define_singleton_method(:build) { |root:, lockfile:| manifest }
+    manifest_builder.define_singleton_method(:build) { |root:, lockfile:, configuration:| manifest }
     adapter = Object.new
     adapter.define_singleton_method(:index) do |_manifest|
       { "warning_counts" => { "index" => 2, "integrity" => 1 } }
