@@ -1,12 +1,14 @@
 # frozen_string_literal: true
 
+require "digest"
 require_relative "test_helper"
 
 class ReportAssetAssemblerTest < Minitest::Test
   def test_assembles_the_extracted_assets_byte_for_byte
-    expected = File.binread(File.expand_path("../assets/report.html", __dir__))
-
-    assert_equal(expected, RubyLens::ReportAssetAssembler.new.assemble.b)
+    assert_equal(
+      "b5469adb1b773a164150a8a50c149f8d1fd4706de8b1638cafde8ce81d66f21c",
+      Digest::SHA256.hexdigest(RubyLens::ReportAssetAssembler.new.assemble)
+    )
   end
 
   def test_requires_each_asset_placeholder_exactly_once
