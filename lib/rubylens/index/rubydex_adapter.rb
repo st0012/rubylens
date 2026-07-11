@@ -2,6 +2,7 @@
 
 require "rubydex"
 require "uri"
+require_relative "../model/dependency_aggregation"
 
 module RubyLens
   module Index
@@ -19,18 +20,19 @@ module RubyLens
         index_errors = Array(graph.index_all(manifest.files))
         graph.resolve
         integrity_failures = Array(graph.check_integrity)
-        declarations = graph.declarations.to_a
-        workspace = workspace_namespaces(declarations, manifest)
+        collected = collect_declarations(graph.declarations, manifest)
+        workspace = workspace_namespaces(collected.fetch(:workspace_records), manifest)
         inbound_references = inbound_workspace_references(graph, manifest, workspace.fetch(:ordinal_by_name))
 
         {
-          "schema" => "rubylens.snapshot.v4",
+          "schema" => "rubylens.snapshot.v5",
           "project_name" => project_name(manifest),
           "components" => workspace.fetch(:component_counts),
           "namespace_names" => workspace.fetch(:records).map { |declaration, _definitions| declaration.name },
           "namespaces" => build_workspace_rows(workspace, inbound_references, manifest),
-          "category_stats" => workspace_constructs(declarations, manifest),
-          "packages" => build_package_rows(declarations, manifest),
+          "category_stats" => collected.fetch(:category_stats),
+          "dependency_signal_maxima" => collected.fetch(:dependency_aggregation).signal_maxima,
+          "packages" => build_package_rows(collected.fetch(:dependency_aggregation), manifest),
           "warning_counts" => {
             "manifest" => manifest.warnings.length,
             "index" => index_errors.length,
@@ -44,17 +46,26 @@ module RubyLens
 
       private
 
-      def workspace_namespaces(declarations, manifest)
-        records = declarations.filter_map do |declaration|
-          next unless namespace?(declaration)
+      def collect_declarations(declarations, manifest)
+        records = []
+        category_stats = { "core" => Array.new(4, 0), "tests" => Array.new(4, 0) }
+        aggregation = Model::DependencyAggregation.new(package_count: manifest.packages.length)
 
-          definitions = declaration.definitions.select do |definition|
-            canonical_namespace_definition?(declaration, definition) && workspace_location?(definition.location, manifest)
+        declarations.each do |declaration|
+          if namespace?(declaration)
+            definitions = declaration.definitions.select do |definition|
+              canonical_namespace_definition?(declaration, definition) && workspace_location?(definition.location, manifest)
+            end
+            records << [declaration, definitions] unless definitions.empty?
           end
-          next if definitions.empty?
-
-          [declaration, definitions]
+          collect_category_stat(category_stats, declaration, manifest)
+          collect_dependency_declaration(aggregation, declaration, manifest)
         end
+
+        { workspace_records: records, category_stats:, dependency_aggregation: aggregation }
+      end
+
+      def workspace_namespaces(records, manifest)
         ordinal_by_name = records.each_with_index.to_h { |(declaration, _definitions), index| [declaration.name, index] }
         components = records.map { |_declaration, definitions| component_for(definitions, manifest) }
         component_ids = components.uniq.sort.each_with_index.to_h
@@ -91,36 +102,36 @@ module RubyLens
         end
       end
 
-      def build_package_rows(declarations, manifest)
-        declaration_rows = Array.new(manifest.packages.length) { [] }
-        ruby_counts = Array.new(manifest.packages.length) { Array.new(4, 0) }
-        declarations.each do |declaration|
-          package_index, definitions = dominant_package_definitions(declaration, manifest)
-          next unless package_index
-
-          sites = definitions.map { |definition| site_key(definition.location) }.uniq.length
-          declaration_rows.fetch(package_index) << [
-            namespace_kind(declaration),
-            namespace?(declaration) ? [declaration.ancestors.count - 1, 0].max : 0,
-            sites,
-            [sites - 1, 0].max,
-            namespace?(declaration) ? [declaration.descendants.count - 1, 0].max : 0,
-            safe_length(declaration, :references),
-            namespace?(declaration) ? safe_length(declaration, :members) : 0,
-          ]
-          construct_index = ruby_construct_index(declaration)
-          ruby_counts.fetch(package_index)[construct_index] += 1 if construct_index
-        end
-
+      def build_package_rows(aggregation, manifest)
+        aggregates = aggregation.packages
         manifest.packages.each_with_index.map do |package, index|
+          aggregate = aggregates.fetch(index)
           {
             "name" => package.name,
             "role" => package.role == "direct" ? 0 : 1,
             "location" => package.location == "workspace" ? 0 : 1,
-            "ruby_counts" => ruby_counts.fetch(index),
-            "declarations" => declaration_rows.fetch(index),
+            "declaration_count" => aggregate.fetch(:declaration_count),
+            "ruby_counts" => aggregate.fetch(:ruby_counts),
+            "declarations" => aggregate.fetch(:declarations),
           }
         end
+      end
+
+      def collect_dependency_declaration(aggregation, declaration, manifest)
+        package_index, definitions = dominant_package_definitions(declaration, manifest)
+        return unless package_index
+
+        sites = definitions.map { |definition| site_key(definition.location) }.uniq.length
+        row = [
+          namespace_kind(declaration),
+          namespace?(declaration) ? [declaration.ancestors.count - 1, 0].max : 0,
+          sites,
+          [sites - 1, 0].max,
+          namespace?(declaration) ? [declaration.descendants.count - 1, 0].max : 0,
+          safe_length(declaration, :references),
+          namespace?(declaration) ? safe_length(declaration, :members) : 0,
+        ]
+        aggregation.add(package_index:, row:, construct_index: ruby_construct_index(declaration))
       end
 
       def inbound_workspace_references(graph, manifest, ordinal_by_name)
@@ -139,14 +150,17 @@ module RubyLens
 
       def dominant_package_definitions(declaration, manifest)
         grouped = declaration.definitions.group_by do |definition|
-          manifest.package_index_for(location_path(definition.location))
-        rescue StandardError
-          nil
+          package_index_for_location(definition.location, manifest)
         end
         grouped.reject { |index, _records| index.nil? }
           .max_by { |index, records| [records.length, -index] }
-      rescue StandardError
-        nil
+      end
+
+      def package_index_for_location(location, manifest)
+        uri_string = location.uri
+        return nil unless URI.parse(uri_string).scheme == "file"
+
+        manifest.package_index_for(location_path(location, uri_string))
       end
 
       def workspace_member_count(declaration, manifest)
@@ -189,23 +203,19 @@ module RubyLens
         0
       end
 
-      def workspace_constructs(declarations, manifest)
-        stats = { "core" => Array.new(4, 0), "tests" => Array.new(4, 0) }
-        declarations.each do |declaration|
-          construct_index = ruby_construct_index(declaration)
-          next unless construct_index
+      def collect_category_stat(stats, declaration, manifest)
+        construct_index = ruby_construct_index(declaration)
+        return unless construct_index
 
-          definitions = declaration.definitions.select do |definition|
-            workspace_location?(definition.location, manifest)
-          end
-          next if definitions.empty?
-
-          category = scope_for(definitions, manifest) == 1 ? "tests" : "core"
-          stats.fetch(category)[construct_index] += 1
-        rescue StandardError
-          next
+        definitions = declaration.definitions.select do |definition|
+          workspace_location?(definition.location, manifest)
         end
-        stats
+        return if definitions.empty?
+
+        category = scope_for(definitions, manifest) == 1 ? "tests" : "core"
+        stats.fetch(category)[construct_index] += 1
+      rescue StandardError
+        nil
       end
 
       def workspace_location?(location, manifest)
