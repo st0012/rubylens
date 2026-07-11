@@ -13,7 +13,6 @@ class ArtModelBuilderTest < Minitest::Test
         [0, 1, 1, 1, 2, 1, 0, 3, 2, 0, 1, 1, 0, 0],
       ],
       "category_stats" => { "core" => [1, 1, 4, 2], "tests" => [0, 1, 1, 0] },
-      "reference_routes" => [[0, 0, 1, 3], [1, 1, 0, 2]],
       "packages" => [
         {
           "name" => "example-gem",
@@ -31,7 +30,7 @@ class ArtModelBuilderTest < Minitest::Test
     second = builder.build(snapshot)
 
     assert_equal(first, second)
-    assert_equal("rubylens.art.v6", first.fetch("schema"))
+    assert_equal("rubylens.art.v7", first.fetch("schema"))
     assert_equal("Demo", first.fetch("projectName"))
     assert_equal(2, first.dig("totals", "namespaces"))
     assert_equal(1, first.dig("totals", "dependencyStars"))
@@ -39,17 +38,6 @@ class ArtModelBuilderTest < Minitest::Test
     assert_equal({ "core" => [1, 1, 4, 2], "tests" => [0, 1, 1, 0] }, first.fetch("categoryStats"))
     assert_equal(["Demo::Core", "Demo::TestCase"].sort, first.fetch("namespaceNames").sort)
     assert_equal(["example-gem"], first.fetch("packageNames"))
-    route_map = first.fetch("referenceRoutes").to_h do |source, target_kind, target, count|
-      target_name = target_kind.zero? ? first.fetch("namespaceNames").fetch(target) : first.fetch("packageNames").fetch(target)
-      [[first.fetch("namespaceNames").fetch(source), target_kind, target_name], count]
-    end
-    assert_equal(
-      {
-        ["Demo::Core", 0, "Demo::TestCase"] => 3,
-        ["Demo::TestCase", 1, "example-gem"] => 2,
-      },
-      route_map,
-    )
     assert_equal([0, 1, 1, 2, 1, 4, 3], first.fetch("packages").first.drop(1))
     refute(first.key?("dependencyDeclarationNames"))
     refute(first.key?("dependencyDeclarations"))
@@ -57,7 +45,6 @@ class ArtModelBuilderTest < Minitest::Test
     assert(first.fetch("namespaces").all? { |row| row.length == 15 && row.all?(Integer) })
     assert_equal(4, first.fetch("namespaces").find { |row| row[2].zero? }.last)
     assert(first.fetch("dependencyStars").all? { |row| row.length == 8 && row.all?(Integer) })
-    assert(first.fetch("referenceRoutes").all? { |row| row.length == 4 && row.all?(Integer) })
   end
 
   def test_preserves_package_ruby_construct_counts

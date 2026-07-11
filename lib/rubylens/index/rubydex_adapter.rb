@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "rubydex"
-require "set"
 require "uri"
 
 module RubyLens
@@ -22,16 +21,14 @@ module RubyLens
         integrity_failures = Array(graph.check_integrity)
         declarations = graph.declarations.to_a
         workspace = workspace_namespaces(declarations, manifest)
-        reference_data = workspace_reference_data(graph, declarations, manifest, workspace.fetch(:ordinal_by_name))
+        inbound_references = inbound_workspace_references(graph, manifest, workspace.fetch(:ordinal_by_name))
 
         {
-          "schema" => "rubylens.snapshot.v3",
+          "schema" => "rubylens.snapshot.v4",
           "project_name" => project_name(manifest),
           "components" => workspace.fetch(:component_counts),
           "namespace_names" => workspace.fetch(:records).map { |declaration, _definitions| declaration.name },
-          "namespaces" => build_workspace_rows(workspace, reference_data.fetch(:inbound), manifest),
-          "reference_routes" => reference_data.fetch(:routes),
-          "reference_route_counts" => reference_data.fetch(:counts),
+          "namespaces" => build_workspace_rows(workspace, inbound_references, manifest),
           "category_stats" => workspace_constructs(declarations, manifest),
           "packages" => build_package_rows(declarations, manifest),
           "warning_counts" => {
@@ -126,145 +123,18 @@ module RubyLens
         end
       end
 
-      def workspace_reference_data(graph, declarations, manifest, ordinal_by_name)
-        source_ranges = workspace_source_ranges(declarations, manifest, ordinal_by_name)
-        inbound = Hash.new(0)
-        route_counts = Hash.new(0)
-        occurrences_by_uri = Hash.new { |hash, uri| hash[uri] = Set.new }
-        counts = Hash.new(0)
-        target_cache = {}
-
-        graph.constant_references.each do |reference|
+      def inbound_workspace_references(graph, manifest, ordinal_by_name)
+        graph.constant_references.each_with_object(Hash.new(0)) do |reference, counts|
           next unless reference.respond_to?(:declaration)
 
-          location = reference.location
-          next unless workspace_location?(location, manifest)
+          next unless workspace_location?(reference.location, manifest)
 
-          target_declaration = reference.declaration
-          uri = location.uri
-          span = location_span(location)
-
-          counts["resolved_workspace"] += 1
-          target_name = target_declaration.name
-          inbound_ordinal = ordinal_by_name[target_name]
-          inbound[inbound_ordinal] += 1 if inbound_ordinal
-
-          source_ordinal = source_namespace_ordinal(uri, span, source_ranges)
-          unless source_ordinal
-            counts["unmapped_source"] += 1
-            next
-          end
-
-          target_key = [target_declaration.class.name, target_name]
-          target = target_cache.fetch(target_key) do
-            target_cache[target_key] = route_target(target_declaration, manifest, ordinal_by_name)
-          end
-          unless target
-            counts["unmapped_target"] += 1
-            next
-          end
-
-          target_kind, target_ordinal = target
-          occurrence = [source_ordinal, target_kind, target_ordinal, *span]
-          unless occurrences_by_uri[uri].add?(occurrence)
-            counts["deduplicated"] += 1
-            next
-          end
-
-          if target_kind.zero? && source_ordinal == target_ordinal
-            counts["self"] += 1
-            next
-          end
-
-          route_counts[[source_ordinal, target_kind, target_ordinal]] += 1
+          target = reference.declaration
+          ordinal = ordinal_by_name[target.name]
+          counts[ordinal] += 1 if ordinal
         rescue StandardError
           next
         end
-
-        routes = route_counts.sort_by { |(source, kind, target), _count| [source, kind, target] }
-          .map { |(source, kind, target), count| [source, kind, target, count] }
-        counts["routed_occurrences"] = route_counts.values.sum
-        counts["routes"] = routes.length
-
-        { inbound:, routes:, counts: counts.sort.to_h }
-      end
-
-      def workspace_source_ranges(declarations, manifest, ordinal_by_name)
-        ranges = Hash.new { |hash, uri| hash[uri] = [] }
-        declarations.each do |declaration|
-          declaration.definitions.each do |definition|
-            location = definition.location
-            next unless workspace_location?(location, manifest)
-
-            source = definition.declaration || definition.lexical_owner&.declaration || declaration
-            ordinal = workspace_namespace_ordinal(source, ordinal_by_name)
-            ranges[location.uri] << [*location_span(location), ordinal] if ordinal
-          rescue StandardError
-            next
-          end
-        end
-        ranges
-      end
-
-      def source_namespace_ordinal(uri, span, source_ranges)
-        start_line, start_column, end_line, end_column = span
-        best_ordinal = nil
-        best_start_line = nil
-        best_start_column = nil
-        best_end_line = nil
-        best_end_column = nil
-        source_ranges.fetch(uri, []).each do |range_start_line, range_start_column, range_end_line, range_end_column, ordinal|
-          next if range_start_line > start_line ||
-            (range_start_line == start_line && range_start_column > start_column)
-          next if range_end_line < end_line ||
-            (range_end_line == end_line && range_end_column < end_column)
-
-          better = best_start_line.nil? ||
-            range_start_line > best_start_line ||
-            (range_start_line == best_start_line && range_start_column > best_start_column) ||
-            (range_start_line == best_start_line && range_start_column == best_start_column && range_end_line < best_end_line) ||
-            (range_start_line == best_start_line && range_start_column == best_start_column && range_end_line == best_end_line && range_end_column < best_end_column)
-          next unless better
-
-          best_start_line = range_start_line
-          best_start_column = range_start_column
-          best_end_line = range_end_line
-          best_end_column = range_end_column
-          best_ordinal = ordinal
-        end
-        best_ordinal
-      end
-
-      def route_target(declaration, manifest, ordinal_by_name)
-        normalized = normalize_singleton_class(declaration)
-        workspace_ordinal = workspace_namespace_ordinal(normalized, ordinal_by_name)
-        return [0, workspace_ordinal] if workspace_ordinal
-
-        package_index, = dominant_package_definitions(declaration, manifest)
-        package_index, = dominant_package_definitions(normalized, manifest) unless package_index || normalized.equal?(declaration)
-        package_index ? [1, package_index] : nil
-      end
-
-      def workspace_namespace_ordinal(declaration, ordinal_by_name)
-        current = normalize_singleton_class(declaration)
-        seen = Set.new
-        while current
-          identity = [current.class.name, current.name]
-          break unless seen.add?(identity)
-
-          return ordinal_by_name[current.name] if namespace?(current) && ordinal_by_name.key?(current.name)
-
-          current = normalize_singleton_class(current.owner)
-        end
-        nil
-      rescue StandardError
-        nil
-      end
-
-      def normalize_singleton_class(declaration)
-        declaration.is_a?(Rubydex::SingletonClass) ? declaration.attached_class : declaration
-      rescue StandardError
-        declaration
       end
 
       def dominant_package_definitions(declaration, manifest)
@@ -375,11 +245,7 @@ module RubyLens
       end
 
       def site_key(location)
-        [location_path(location), *location_span(location)]
-      end
-
-      def location_span(location)
-        [location.start_line, location.start_column, location.end_line, location.end_column]
+        [location_path(location), location.start_line, location.start_column, location.end_line, location.end_column]
       end
 
       def namespace?(declaration)
