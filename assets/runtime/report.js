@@ -16,6 +16,11 @@
         context = canvas.getContext("2d", { alpha: false });
       }
     }
+    canvas.addEventListener("rubylensrendererfailure", () => {
+      const url = new URL(window.location.href);
+      url.searchParams.set("renderer", "canvas");
+      window.location.replace(url.href);
+    });
     const panel = document.getElementById("panel");
     const panelBody = document.getElementById("panel-body");
     const panelToggle = document.getElementById("panel-toggle");
@@ -144,6 +149,7 @@
     }
     const renderPoints = capturePointSample();
     if (pointRenderer) pointRenderer.sync(renderPoints);
+    const interactionProjectionPoints = [...new Set([...interactivePoints, ...dependencyHubs])];
     const rendererMetrics = { cpuProjectedPoints: 0, cpuProjectionMilliseconds: 0, frameMilliseconds: 0 };
     const totals = model.totals;
     const renderedDependencyStars = model.totals.renderedDependencyStars;
@@ -753,10 +759,8 @@
 
     function updateInteractionProjection(matrix) {
       const started = performance.now();
-      const candidates = new Set([...interactivePoints, ...dependencyHubs]);
-      if (selectedPoint) candidates.add(selectedPoint);
       let projectedCount = 0;
-      for (const point of candidates) {
+      for (const point of interactionProjectionPoints) {
         point.screen = null;
         if (point.hub) point.cloudScreenRadius = null;
         if (!visibleCategories[point.category]) continue;
@@ -783,7 +787,8 @@
       document.getElementById("zoom-level").value = `${Math.round(zoom * 100)}%`;
       const matrix = [Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch)];
       if (pointRenderer) {
-        pointRenderer.draw({ matrix, width, height, panX, panY, sceneCenterX, sceneCenterY, zoom, visibleCategories, focusedCategory, expandedPackageIndex, expandedAnchor: expandedPackageIndex === null ? null : packageAnchors[expandedPackageIndex], selectedPoint, selectionLocked });
+        const rendered = pointRenderer.draw({ matrix, width, height, dpr, sceneRight, sceneBottom, panX, panY, sceneCenterX, sceneCenterY, zoom, visibleCategories, focusedCategory, expandedPackageIndex, expandedAnchor: expandedPackageIndex === null ? null : packageAnchors[expandedPackageIndex], selectedPoint, selectionLocked });
+        if (!rendered) return;
         updateInteractionProjection(matrix);
         if (selectedPoint) {
           if (cameraFlight) tooltip.hidden = true;
@@ -1084,4 +1089,14 @@
         const point = interactivePoints.find(candidate => candidate.screen);
         return point ? { x: point.screen[0], y: point.screen[1], size: point.screen[2], category: point.category } : null;
       },
+      selectSample: () => {
+        const point = interactivePoints.find(candidate => candidate.screen);
+        if (point) selectPoint(point, true);
+      },
+      focusCategory: category => focusCategory(category),
+      expandSamplePackage: () => {
+        const hub = dependencyHubs.find(candidate => candidate.screen);
+        if (hub) focusDependencyPackage(hub.packageIndex);
+      },
+      loseContext: () => pointRenderer?.loseContextForDebug(),
     });
