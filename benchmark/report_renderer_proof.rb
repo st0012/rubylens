@@ -25,7 +25,7 @@ begin
       browser.evaluate("(()=>{const p=#{JSON.generate(sample)};return document.getElementById('cosmos').dispatchEvent(new PointerEvent('pointermove',{clientX:p.x,clientY:p.y,pointerType:'mouse'}));})()")
       sleep 0.2
     end
-    browser.screenshot(path: File.join(output, "#{name}-hover.png"), full: false)
+    browser.screenshot(path: File.join(output, "webgl-hover.png"), full: false) if name == "webgl"
     evidence[name] = {info: browser.evaluate("window.RubyLensRendererDebug.info()"), metrics: browser.evaluate("window.RubyLensRendererDebug.metrics()"), sample:}
     next unless name == "webgl"
     browser.evaluate("window.RubyLensRendererDebug.selectSample()")
