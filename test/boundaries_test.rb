@@ -7,22 +7,22 @@ class BoundariesTest < Minitest::Test
     Dir.mktmpdir("rubylens-boundaries-") do |directory|
       root = Pathname(directory)
       workspace_files = [
-        root.join("apps/admin/lib/admin.rb").to_s,
-        root.join("apps/storefront/app/models/cart.rb").to_s,
+        root.join("apps/acme-console/lib/console.rb").to_s,
+        root.join("apps/acme-catalog/app/models/item.rb").to_s,
         root.join("apps/README.rb").to_s,
-        root.join("components/payments/lib/payments.rb").to_s,
+        root.join("components/acme-foundation/lib/foundation.rb").to_s,
       ]
       configuration = configuration_for(root)
 
       boundaries = RubyLens::Index::Boundaries.build(root:, workspace_files:, configuration:)
 
       assert_equal(
-        %w[shared app-admin app-storefront component-payments],
+        %w[shared app-acme-catalog app-acme-console component-acme-foundation],
         boundaries.groups.map(&:id),
       )
       refute_includes(boundaries.groups.map(&:id), "app-readme-rb")
       assert_equal(
-        ["Shared core", "App · admin", "App · storefront", "Component · payments"],
+        ["Shared core", "App · acme-catalog", "App · acme-console", "Component · acme-foundation"],
         boundaries.groups.map(&:label),
       )
     end
@@ -31,13 +31,13 @@ class BoundariesTest < Minitest::Test
   def test_generated_ids_are_collision_checked
     Dir.mktmpdir("rubylens-boundaries-") do |directory|
       root = Pathname(directory)
-      workspace_files = [root.join("apps/Admin/lib/a.rb").to_s, root.join("apps/admin/lib/b.rb").to_s]
+      workspace_files = [root.join("apps/Acme/lib/a.rb").to_s, root.join("apps/acme/lib/b.rb").to_s]
       configuration = configuration_for(root)
 
       error = assert_raises(RubyLens::Error) do
         RubyLens::Index::Boundaries.build(root:, workspace_files:, configuration:)
       end
-      assert_equal("duplicate or colliding boundary group id: app-admin", error.message)
+      assert_equal("duplicate or colliding boundary group id: app-acme", error.message)
     end
   end
 
