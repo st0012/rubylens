@@ -11,6 +11,7 @@ module RubyLens
     def build(snapshot)
       random = Random.new(@seed)
       namespace_order = (0...snapshot.fetch("namespaces").length).to_a.shuffle(random: random)
+      namespace_index = namespace_order.each_with_index.to_h
       namespaces = namespace_order.map do |index|
         row = snapshot.fetch("namespaces").fetch(index)
         [random.rand(0..0xffff_ffff), *row]
@@ -30,6 +31,10 @@ module RubyLens
         ]
       end
       package_names = package_order.map { |old_index| snapshot.fetch("packages").fetch(old_index).fetch("name") }
+      reference_routes = snapshot.fetch("reference_routes", []).map do |source, target_kind, target, count|
+        remapped_target = target_kind.zero? ? namespace_index.fetch(target) : package_index.fetch(target)
+        [namespace_index.fetch(source), target_kind, remapped_target, count]
+      end.sort
       indexed_dependency_count = snapshot.fetch("packages").sum do |package|
         package.fetch("declarations").length
       end
@@ -51,7 +56,7 @@ module RubyLens
         end
       end
       {
-        "schema" => "rubylens.art.v5",
+        "schema" => "rubylens.art.v6",
         "projectName" => snapshot.fetch("project_name"),
         "totals" => {
           "namespaces" => namespaces.length,
@@ -64,6 +69,7 @@ module RubyLens
         "categoryStats" => snapshot.fetch("category_stats"),
         "namespaceNames" => namespace_names,
         "namespaces" => namespaces,
+        "referenceRoutes" => reference_routes,
         "packageNames" => package_names,
         "packages" => packages,
         "dependencyStars" => dependencies,

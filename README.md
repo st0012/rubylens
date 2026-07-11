@@ -12,7 +12,7 @@ Add RubyLens to the bundle of the project you want to visualize, then run:
 bundle exec rubylens build .
 ```
 
-The default report is `rubylens-report.html` in the project root. It contains fully qualified class, module, and gem names for local hover details, but no source text, comments, or paths. Dependency stars remain anonymous and are summarized at the gem level. RubyLens adds that exact default path to Git's local exclude file and writes the report with owner-only permissions, so it stays out of commits without changing the project's `.gitignore`. The model reveals private codebase structure, so keep it local unless you intend to share it.
+The default report is `rubylens-report.html` in the project root. It contains fully qualified class, module, and gem names plus resolved constant-reference relationships for local exploration, but no source text, comments, or paths. Dependency stars remain anonymous and are summarized at the gem level. RubyLens adds that exact default path to Git's local exclude file and writes the report with owner-only permissions, so it stays out of commits without changing the project's `.gitignore`. The model reveals private codebase structure, so keep it local unless you intend to share it.
 
 Ruby API:
 
@@ -25,7 +25,7 @@ puts result.warnings
 
 Passing `output:` selects a custom path. Custom paths are written exactly where requested and are not added to Git's local excludes, so the caller is responsible for keeping them private.
 
-The report is fully local: it makes no network requests and needs neither Node nor a server to open. Drag to orbit, zoom toward the cursor, Shift-drag or use Pan mode to traverse dense clouds, or use the arrow keys to move the view. Show or focus core code, tests, and gems independently; sidebar highlights fly to a top-down view of the relevant star or system. Double-clicking a gem cloud pauses drift and expands that one existing system for a sharper, more separated view without loading another model.
+The report is fully local: it makes no network requests and needs neither Node nor a server to open. Drag to orbit, zoom toward the cursor, Shift-drag or use Pan mode to traverse dense clouds, or use the arrow keys to move the view. Show or focus core code, tests, and gems independently; sidebar highlights fly to a top-down view of the relevant star or system. Selecting a class, module, or gem reveals its strongest incoming and outgoing resolved constant-reference routes, with accessible route buttons for travelling to each destination. The optional All routes mode pauses drift and draws the complete aggregated connection layer at once. These are static reference relationships, not runtime calls. Double-clicking a gem cloud expands that one existing system for a sharper, more separated view without loading another model.
 
 ## Development
 

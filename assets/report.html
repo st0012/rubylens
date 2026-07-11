@@ -27,11 +27,14 @@
     .panel-header { position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; gap: 16px; align-items: start; padding: 18px 18px 14px; border-bottom: 1px solid rgba(255,255,255,.08); background: rgba(9, 9, 18, .92); }
     .panel.is-collapsed .panel-header { align-items: center; padding-block: 13px; border-bottom: 0; }
     .panel.is-collapsed .panel-header p { display: none; }
+    .panel.is-collapsed #all-routes { display: none; }
     .panel-header-actions { display: flex; flex: none; gap: 6px; }
+    .panel-header-actions button[aria-pressed="true"] { border-color: rgba(213,232,255,.38); background: rgba(213,232,255,.13); color: #fff; }
     .panel h2 { margin: 0; font-size: 14px; letter-spacing: -.01em; }
     .panel-header p { margin: 4px 0 0; color: #8d8798; font-size: 11px; line-height: 1.4; }
     button { border: 1px solid rgba(255,255,255,.12); border-radius: 9px; padding: 7px 10px; background: rgba(255,255,255,.06); color: #eeeaf4; font: inherit; font-size: 11px; cursor: pointer; }
     button:hover { background: rgba(255,255,255,.1); }
+    button:disabled { opacity: .45; cursor: not-allowed; }
     button:focus-visible { outline: 2px solid rgba(216, 200, 255, .9); outline-offset: 2px; }
     details { border-bottom: 1px solid rgba(255,255,255,.07); }
     summary { display: flex; align-items: center; gap: 10px; padding: 14px 18px; cursor: pointer; list-style: none; }
@@ -46,6 +49,8 @@
     .section-heading strong { color: #eee9f4; font-size: 12px; }
     .section-heading small { color: #837c8d; font-size: 10px; font-weight: 500; }
     .section-note { margin: -4px 0 13px; color: #756e7e; font-size: 9px; line-height: 1.4; }
+    .route-mode-status { margin: 0; padding: 8px 18px; border-bottom: 1px solid rgba(255,255,255,.07); background: rgba(213,232,255,.045); color: #aebdd0; font-size: 9px; line-height: 1.4; }
+    .route-mode-status[hidden] { display: none; }
     .section-body { padding: 0 18px 16px; }
     .section-actions { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
     .ruby-breakdown { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 18px; margin: 0 0 14px; padding: 10px 0; border-block: 1px solid rgba(255,255,255,.08); }
@@ -65,6 +70,23 @@
     .fact-value { grid-row: 1 / span 2; grid-column: 2; align-self: center; color: #fffafd; font-size: 12px; font-weight: 750; font-variant-numeric: tabular-nums; }
     .fact-name { overflow: hidden; color: #ece6f2; font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
     .fact[aria-pressed="true"] { border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.12); }
+    .route-panel { padding: 15px 18px 17px; border-bottom: 1px solid rgba(255,255,255,.07); }
+    .route-panel[hidden] { display: none; }
+    .route-panel-header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    .route-panel h3, .route-panel h4 { margin: 0; }
+    .route-panel h3 { color: #eee9f4; font-size: 12px; }
+    .route-count { color: #827b8c; font-size: 9px; font-variant-numeric: tabular-nums; }
+    .route-summary { margin: 5px 0 12px; color: #8d8798; font-size: 10px; line-height: 1.45; }
+    .route-groups { display: grid; gap: 12px; }
+    .route-group { display: grid; gap: 5px; }
+    .route-group h4 { color: #756e7e; font-size: 9px; font-weight: 650; }
+    .route-list { display: grid; gap: 3px; }
+    .route-link { display: grid; grid-template-columns: 15px minmax(0, 1fr) auto; gap: 8px; align-items: center; width: 100%; min-height: 38px; padding: 7px 9px; text-align: left; }
+    .route-direction { color: #d9e9ff; font-size: 12px; text-align: center; }
+    .route-identity { min-width: 0; }
+    .route-name { display: block; overflow: hidden; color: #eee9f4; font-size: 10px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+    .route-meta { display: block; margin-top: 2px; color: #817a89; font-size: 9px; }
+    .route-weight { color: #dfeafb; font-size: 10px; font-variant-numeric: tabular-nums; }
     .foot { padding: 15px 18px 17px; color: #7d7788; font-size: 10px; line-height: 1.55; }
     .toolbar { position: fixed; z-index: 2; left: 32px; bottom: 28px; display: flex; gap: 8px; }
     #pan-mode[aria-pressed="true"] { border-color: rgba(216,200,255,.36); background: rgba(216,200,255,.14); color: #fff; }
@@ -91,6 +113,7 @@
       .panel:not(.is-collapsed) ~ .toolbar { bottom: calc(46vh + 28px); }
       .hint { display: none; }
     }
+    @media (pointer: coarse) { .route-link { min-height: 44px; } }
     @media (prefers-reduced-motion: reduce) { .panel, summary::after { transition: none; } }
   </style>
 </head>
@@ -104,14 +127,15 @@
   </header>
   <aside class="panel" id="panel" aria-label="Explore this codebase">
     <div class="panel-header">
-      <div><h2>Explore this codebase</h2><p>Show a system, focus its stars, or fly to a Ruby code highlight.</p></div>
-      <div class="panel-header-actions"><button type="button" id="panel-toggle" aria-expanded="true" aria-controls="panel-body">Hide</button></div>
+      <div><h2>Explore this codebase</h2><p>Show a system, focus its stars, or follow a reference route.</p></div>
+      <div class="panel-header-actions"><button type="button" id="all-routes" aria-label="Show all reference routes" aria-pressed="false">All routes</button><button type="button" id="panel-toggle" aria-expanded="true" aria-controls="panel-body">Hide</button></div>
     </div>
-    <div id="panel-body"><div id="controls"></div>
-    <div class="foot">Double-click a gem cloud, press Enter or F on a selected gem marker, or tap that marker again to spread its cloud stars. Escape or Reset view exits. This owner-only report embeds class, module, and gem names for hover details; dependency stars remain anonymous. Source, comments, and paths are excluded. Do not share the HTML unless you intend to disclose codebase structure.</div></div>
+    <div id="panel-body"><p class="route-mode-status" id="route-mode-status" aria-live="polite" hidden></p><div id="controls"></div>
+    <section class="route-panel" id="route-panel" aria-labelledby="route-heading" hidden><div class="route-panel-header"><h3 id="route-heading">Reference routes</h3><span class="route-count" id="route-count"></span></div><p class="route-summary" id="route-summary" aria-live="polite" tabindex="-1"></p><div class="route-groups" id="route-groups"></div></section>
+    <div class="foot">Select a class, module, or gem to reveal its strongest resolved constant-reference routes, or use All routes for the complete connection layer. Double-click a gem cloud, press Enter or F on a selected gem marker, or tap that marker again to spread its cloud stars. Escape or Reset view exits. This owner-only report embeds class, module, gem, and relationship names; dependency stars remain anonymous. Source, comments, and paths are excluded. Do not share the HTML unless you intend to disclose codebase structure.</div></div>
   </aside>
   <div class="toolbar"><button type="button" id="motion" aria-pressed="false">Pause drift</button><button type="button" id="pan-mode" aria-label="Pan mode" aria-keyshortcuts="P" aria-pressed="false">Pan</button><button type="button" id="zoom-out" aria-label="Zoom out">−</button><output class="zoom-level" id="zoom-level" aria-label="Zoom level">100%</output><button type="button" id="zoom-in" aria-label="Zoom in">+</button><button type="button" id="view">Reset view</button></div>
-  <div class="hint">Double-click gem clouds · drag to orbit · Shift-drag/Pan to move · arrow keys move view · scroll at cursor to zoom</div>
+  <div class="hint">Select to reveal routes · drag to orbit · Shift-drag/Pan to move · arrow keys move view · scroll at cursor to zoom</div>
   <aside class="tooltip" id="tooltip" role="status" hidden><p class="tooltip-category" id="tooltip-category"></p><p class="tooltip-name" id="tooltip-name"></p><p class="tooltip-context" id="tooltip-context"></p><dl class="tooltip-metrics" id="tooltip-metrics"></dl></aside>
   <script>
     "use strict";
@@ -121,11 +145,17 @@
     const panel = document.getElementById("panel");
     const panelBody = document.getElementById("panel-body");
     const panelToggle = document.getElementById("panel-toggle");
+    const allRoutesButton = document.getElementById("all-routes");
+    const routeModeStatus = document.getElementById("route-mode-status");
     const tooltip = document.getElementById("tooltip");
     const tooltipCategory = document.getElementById("tooltip-category");
     const tooltipName = document.getElementById("tooltip-name");
     const tooltipContext = document.getElementById("tooltip-context");
     const tooltipMetrics = document.getElementById("tooltip-metrics");
+    const routePanel = document.getElementById("route-panel");
+    const routeCount = document.getElementById("route-count");
+    const routeSummary = document.getElementById("route-summary");
+    const routeGroups = document.getElementById("route-groups");
     const fields = ["ancestorDepth", "definitionSites", "reopenings", "descendants", "references", "members"];
     const rubyMetricLabels = ["Classes", "Modules", "Methods", "Constants"];
     const signalWeights = {
@@ -133,8 +163,9 @@
       tests: { ancestorDepth: .18, definitionSites: .25, reopenings: .18, descendants: .42, references: .85, members: .55 },
       dependencies: { ancestorDepth: .12, definitionSites: .35, reopenings: .2, descendants: .32, references: .48, members: .4 },
     };
-    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null;
+    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showAllRoutes = false;
     const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35;
+    const ROUTE_LIMIT = 16, COARSE_ROUTE_LIMIT = 8;
     const TOP_DOWN_PITCH = Math.PI / 2;
     const contextVisibility = { selection: .75, category: .16, package: .75 };
     const pointers = new Map();
@@ -143,6 +174,7 @@
     const focusButtons = {};
     const excludedTriviaNames = new Set(["Object", "Kernel", "BasicObject"]);
     const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const coarsePointerQuery = window.matchMedia("(pointer: coarse)");
     let drifting = !reducedMotionQuery.matches;
     const colours = { core: [244, 82, 132], tests: [87, 204, 255], dependencies: [255, 184, 77] };
 
@@ -207,6 +239,7 @@
       const points = [];
       const interactivePoints = [];
       const dependencyHubs = [];
+      const namespacePoints = [];
       const addPoint = (point, interactive = true) => {
         points.push(point);
         if (interactive) interactivePoints.push(point);
@@ -216,7 +249,9 @@
         const category = row[3] === 1 ? "tests" : "core";
         const values = row.slice(4, 10);
         const rubyCounts = row.slice(10, 14);
-        addPoint({ category, name: model.namespaceNames[index], kind: row[2] === 0 ? "Class" : "Module", rubyCounts, instanceVariableCount: row[14] || 0, seed: row[0], position: category === "tests" ? testPosition(row[0]) : corePosition(row[0]), values, signal: weightedSignal(normalizedSignals(values), category), base: category === "core" ? .82 : .68 });
+        const point = { category, name: model.namespaceNames[index], kind: row[2] === 0 ? "Class" : "Module", rubyCounts, instanceVariableCount: row[14] || 0, seed: row[0], position: category === "tests" ? testPosition(row[0]) : corePosition(row[0]), values, signal: weightedSignal(normalizedSignals(values), category), base: category === "core" ? .82 : .68 };
+        namespacePoints[index] = point;
+        addPoint(point);
       });
       model.dependencyStars.forEach(row => {
         const values = row.slice(2, 8);
@@ -228,9 +263,23 @@
         const visualValues = [0, packageRow[3], 0, 0, 0, 0];
         addPoint({ category: "dependencies", packageIndex: index, name: model.packageNames[index], packageRole: packageRow[1] === 0 ? "Direct dependency" : "Transitive dependency", packageLocation: packageRow[2] === 0 ? "Workspace package" : "External gem", rubyCounts, seed: packageRow[0], position: anchor.slice(0, 3), signal: weightedSignal(normalizedSignals(visualValues), "dependencies"), base: 1.8, hub: true });
       });
-      return { points, interactivePoints, dependencyHubs };
+      return { points, interactivePoints, dependencyHubs, namespacePoints };
     }
-    const { points, interactivePoints, dependencyHubs } = buildPoints();
+    const { points, interactivePoints, dependencyHubs, namespacePoints } = buildPoints();
+    const referenceRoutes = (model.referenceRoutes || []).map(row => {
+      const source = namespacePoints[row[0]];
+      const target = row[1] === 0 ? namespacePoints[row[2]] : dependencyHubs[row[2]];
+      return source && target ? { source, target, count: Number(row[3]) || 0 } : null;
+    }).filter(Boolean);
+    const referenceOccurrenceCount = referenceRoutes.reduce((sum, route) => sum + route.count, 0);
+    [...namespacePoints, ...dependencyHubs].forEach(point => {
+      point.incomingRoutes = [];
+      point.outgoingRoutes = [];
+    });
+    referenceRoutes.forEach(route => {
+      route.source.outgoingRoutes.push(route);
+      route.target.incomingRoutes.push(route);
+    });
     const totals = model.totals;
     const renderedDependencyStars = model.totals.renderedDependencyStars;
     const directGemCount = model.packages.filter(row => row[1] === 0).length;
@@ -420,12 +469,111 @@
       }
     }
 
+    function routeCategoryLabel(point) {
+      return point.hub ? "Gem" : point.category === "tests" ? "Tests" : "Core code";
+    }
+
+    function routeVisible(route) {
+      return visibleCategories[route.source.category] && visibleCategories[route.target.category];
+    }
+
+    function compareRouteEntries(left, right) {
+      return right.route.count - left.route.count || left.destination.name.localeCompare(right.destination.name);
+    }
+
+    function routeCollectionsForPoint(point) {
+      const outgoing = (point.outgoingRoutes || []).filter(routeVisible)
+        .map(route => ({ route, direction: "outgoing", destination: route.target }))
+        .sort(compareRouteEntries);
+      const incoming = (point.incomingRoutes || []).filter(routeVisible)
+        .map(route => ({ route, direction: "incoming", destination: route.source }))
+        .sort(compareRouteEntries);
+      return { outgoing, incoming };
+    }
+
+    function routeEntriesForPoint(point) {
+      const limit = coarsePointerQuery.matches ? COARSE_ROUTE_LIMIT : ROUTE_LIMIT;
+      const { outgoing, incoming } = routeCollectionsForPoint(point);
+      if (point.hub) return incoming.slice(0, limit);
+
+      const firstPass = Math.floor(limit / 2);
+      const entries = [...outgoing.slice(0, firstPass), ...incoming.slice(0, firstPass)];
+      const remaining = [...outgoing.slice(firstPass), ...incoming.slice(firstPass)].sort(compareRouteEntries);
+      return [...entries, ...remaining.slice(0, Math.max(0, limit - entries.length))];
+    }
+
+    function createRouteGroup(title, entries) {
+      const group = document.createElement("section");
+      group.className = "route-group";
+      const heading = document.createElement("h4");
+      heading.textContent = title;
+      const list = document.createElement("div");
+      list.className = "route-list";
+      for (const entry of entries) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "route-link";
+        const direction = document.createElement("span");
+        direction.className = "route-direction";
+        direction.textContent = entry.direction === "outgoing" ? "→" : "←";
+        direction.setAttribute("aria-hidden", "true");
+        const identity = document.createElement("span");
+        identity.className = "route-identity";
+        const name = document.createElement("span");
+        name.className = "route-name";
+        name.textContent = entry.destination.name;
+        const meta = document.createElement("span");
+        meta.className = "route-meta";
+        meta.textContent = routeCategoryLabel(entry.destination);
+        identity.append(name, meta);
+        const weight = document.createElement("span");
+        weight.className = "route-weight";
+        weight.textContent = `×${entry.route.count.toLocaleString()}`;
+        const directionLabel = entry.direction === "outgoing" ? "Outgoing to" : "Incoming from";
+        const referenceLabel = entry.route.count === 1 ? "reference" : "references";
+        button.setAttribute("aria-label", `${directionLabel} ${entry.destination.name}, ${routeCategoryLabel(entry.destination)}, ${entry.route.count.toLocaleString()} resolved ${referenceLabel}`);
+        button.append(direction, identity, weight);
+        button.addEventListener("click", () => travelAlongRoute(entry));
+        list.append(button);
+      }
+      group.append(heading, list);
+      return group;
+    }
+
+    function updateRoutePanel() {
+      routeGroups.textContent = "";
+      if (!selectionLocked || !selectedPoint) {
+        routePanel.hidden = true;
+        routeCount.textContent = "";
+        routeSummary.textContent = "";
+        return;
+      }
+
+      const collections = routeCollectionsForPoint(selectedPoint);
+      const entries = routeEntriesForPoint(selectedPoint);
+      const total = collections.outgoing.length + collections.incoming.length;
+      routePanel.hidden = false;
+      routeCount.textContent = total > entries.length ? `${entries.length} of ${total}` : `${total}`;
+      if (!total) {
+        routeSummary.textContent = `No resolved constant-reference routes connect ${selectedPoint.name} to another plotted star or gem.`;
+        return;
+      }
+
+      const shown = total > entries.length ? ` Strongest ${entries.length} shown.` : "";
+      routeSummary.textContent = `${collections.outgoing.length} outgoing · ${collections.incoming.length} incoming for ${selectedPoint.name}.${shown}`;
+      const outgoing = entries.filter(entry => entry.direction === "outgoing");
+      const incoming = entries.filter(entry => entry.direction === "incoming");
+      if (outgoing.length) routeGroups.append(createRouteGroup("Outgoing to", outgoing));
+      if (incoming.length) routeGroups.append(createRouteGroup("Incoming from", incoming));
+    }
+
     function selectPoint(point, locked = false) {
       if (locked && selectionLocked && selectedPoint === point) point = null;
       selectedPoint = point;
       selectionLocked = Boolean(point) && locked;
       if (point) updateTooltipContent(point);
       else tooltip.hidden = true;
+      updateRoutePanel();
       requestRender();
     }
 
@@ -488,6 +636,27 @@
       pendingHover = null;
       if (hoverFrame) cancelAnimationFrame(hoverFrame);
       hoverFrame = 0;
+    }
+
+    function setAllRoutes(next) {
+      showAllRoutes = Boolean(next) && referenceRoutes.length > 0;
+      if (showAllRoutes) {
+        clearCategoryFocus();
+        for (const category of Object.keys(visibleCategories)) setCategoryVisible(category, true);
+      }
+      Object.values(visibilityInputs).forEach(input => { input.disabled = showAllRoutes; });
+      Object.values(focusButtons).forEach(button => { button.disabled = showAllRoutes; });
+      allRoutesButton.setAttribute("aria-pressed", String(showAllRoutes));
+      allRoutesButton.setAttribute("aria-label", showAllRoutes ? "Hide all reference routes" : "Show all reference routes");
+      const routeLabel = referenceRoutes.length === 1 ? "1 directed route" : `${referenceRoutes.length.toLocaleString()} directed routes`;
+      allRoutesButton.title = showAllRoutes ? `Showing all ${routeLabel}` : `Show all ${routeLabel}`;
+      routeModeStatus.hidden = !showAllRoutes;
+      routeModeStatus.textContent = showAllRoutes
+        ? `All ${routeLabel} shown · ${referenceOccurrenceCount.toLocaleString()} resolved constant references`
+        : "";
+      if (!showAllRoutes) canvas.dataset.referenceRoutesDrawn = "0";
+      if (showAllRoutes) setDrifting(false);
+      requestRender();
     }
 
     function setPanelCollapsed(collapsed) {
@@ -581,6 +750,7 @@
       visibleCategories[category] = visible;
       if (visibilityInputs[category]) visibilityInputs[category].checked = visible;
       if (!visible && (selectedPoint?.category === category || focusedCategory === category)) clearExplorationFocus();
+      else updateRoutePanel();
       requestRender();
     }
 
@@ -601,20 +771,22 @@
       flyCamera({ yaw: -.36, pitch: .34, zoom: categoryMeta[category].focusZoom, panX: 0, panY: 0 });
     }
 
-    function focusPoint(point, button) {
-      if (activeFactButton === button) {
+    function focusPoint(point, button = null) {
+      if (button && activeFactButton === button) {
         clearExplorationFocus();
         return;
       }
       if (point.hub) {
-        focusDependencyPackage(point.packageIndex, button);
+        focusDependencyPackage(point.packageIndex, button, Boolean(button));
         return;
       }
       setCategoryVisible(point.category, true);
       clearActiveFact();
       clearExpandedPackage();
-      activeFactButton = button;
-      activeFactButton.setAttribute("aria-pressed", "true");
+      if (button) {
+        activeFactButton = button;
+        activeFactButton.setAttribute("aria-pressed", "true");
+      }
       clearCategoryFocus();
       setDrifting(false);
       selectedPoint = null;
@@ -623,7 +795,7 @@
       flyCamera(topDownCameraTargetForPoint(point));
     }
 
-    function focusDependencyPackage(packageIndex, button = null) {
+    function focusDependencyPackage(packageIndex, button = null, topDown = false) {
       const hub = dependencyHubs.find(point => point.packageIndex === packageIndex);
       if (!hub) return false;
 
@@ -639,8 +811,18 @@
       selectedPoint = null;
       selectionLocked = false;
       selectPoint(hub, true);
-      flyCamera(button ? topDownCameraTargetForPoint(hub, 4) : cameraTargetForPoint(hub, 4));
+      flyCamera((button || topDown) ? topDownCameraTargetForPoint(hub, 4) : cameraTargetForPoint(hub, 4));
       return true;
+    }
+
+    function travelAlongRoute(entry) {
+      const destination = entry.destination;
+      if (destination.hub) focusDependencyPackage(destination.packageIndex, null, true);
+      else focusPoint(destination);
+      requestAnimationFrame(() => {
+        const nextRoute = routeGroups.querySelector(".route-link");
+        (nextRoute || routeSummary).focus({ preventScroll: true });
+      });
     }
 
     function createExplorer() {
@@ -822,6 +1004,151 @@
       return [sceneCenterX + panX + x1 * perspective, sceneCenterY + panY + y2 * perspective, perspective];
     }
 
+    function clipSegmentToScene(start, end, padding = 18) {
+      const xMin = padding, xMax = sceneRight - padding;
+      const yMin = padding, yMax = sceneBottom - padding;
+      const dx = end[0] - start[0], dy = end[1] - start[1];
+      let startTime = 0, endTime = 1;
+      const boundaries = [
+        [-dx, start[0] - xMin],
+        [dx, xMax - start[0]],
+        [-dy, start[1] - yMin],
+        [dy, yMax - start[1]],
+      ];
+      for (const [direction, distance] of boundaries) {
+        if (Math.abs(direction) < 1e-7) {
+          if (distance < 0) return null;
+          continue;
+        }
+        const time = distance / direction;
+        if (direction < 0) {
+          if (time > endTime) return null;
+          startTime = Math.max(startTime, time);
+        } else {
+          if (time < startTime) return null;
+          endTime = Math.min(endTime, time);
+        }
+      }
+      return {
+        start: [start[0] + dx * startTime, start[1] + dy * startTime],
+        end: [start[0] + dx * endTime, start[1] + dy * endTime],
+        startGated: startTime > .001,
+        endGated: endTime < .999,
+      };
+    }
+
+    function referenceRouteGeometry(route, matrix) {
+      const projectedSource = project(route.source, matrix);
+      const projectedTarget = project(route.target, matrix);
+      if (!projectedSource || !projectedTarget) return null;
+      const clipped = clipSegmentToScene(projectedSource, projectedTarget);
+      if (!clipped) return null;
+      const dx = clipped.end[0] - clipped.start[0];
+      const dy = clipped.end[1] - clipped.start[1];
+      const length = Math.hypot(dx, dy);
+      if (length < 4) return null;
+
+      const routeSeed = hash(route.source.seed, route.target.seed ^ 0x51a7);
+      const side = unit(routeSeed, 31) < .5 ? -1 : 1;
+      const bend = Math.min(48, length * (.08 + unit(routeSeed, 32) * .08)) * side;
+      const middleX = (clipped.start[0] + clipped.end[0]) / 2;
+      const middleY = (clipped.start[1] + clipped.end[1]) / 2;
+      const control = [
+        clamp(middleX - dy / length * bend, 12, sceneRight - 12),
+        clamp(middleY + dx / length * bend, 12, sceneBottom - 12),
+      ];
+      return { ...clipped, control };
+    }
+
+    function drawRouteEndpoint(position, point, gated) {
+      const colour = colours[point.category];
+      context.beginPath();
+      context.arc(position[0], position[1], gated ? 3.2 : 2.1, 0, Math.PI * 2);
+      context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},.92)`;
+      context.fill();
+      if (gated) {
+        context.beginPath();
+        context.arc(position[0], position[1], 5.2, 0, Math.PI * 2);
+        context.strokeStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},.48)`;
+        context.lineWidth = 1;
+        context.stroke();
+      }
+    }
+
+    function drawRouteArrow(geometry, width) {
+      const dx = geometry.end[0] - geometry.control[0];
+      const dy = geometry.end[1] - geometry.control[1];
+      const length = Math.hypot(dx, dy);
+      if (length < 1) return;
+      const ux = dx / length, uy = dy / length;
+      const arrowLength = 5.5 + width;
+      const arrowWidth = 3 + width * .45;
+      const backX = geometry.end[0] - ux * arrowLength;
+      const backY = geometry.end[1] - uy * arrowLength;
+      context.beginPath();
+      context.moveTo(geometry.end[0], geometry.end[1]);
+      context.lineTo(backX - uy * arrowWidth, backY + ux * arrowWidth);
+      context.lineTo(backX + uy * arrowWidth, backY - ux * arrowWidth);
+      context.closePath();
+      context.fillStyle = "rgba(225,239,255,.72)";
+      context.fill();
+    }
+
+    function drawAllReferenceRoutes(matrix) {
+      if (!showAllRoutes || !referenceRoutes.length) return;
+      const alpha = clamp(.18 / Math.sqrt(Math.log2(referenceRoutes.length + 1)), .028, .12);
+      const projections = new Map();
+      const projectionFor = point => {
+        if (!projections.has(point)) projections.set(point, project(point, matrix));
+        return projections.get(point);
+      };
+      let drawnRouteCount = 0;
+      context.save();
+      context.globalCompositeOperation = "source-over";
+      context.beginPath();
+      for (const route of referenceRoutes) {
+        const projectedSource = projectionFor(route.source);
+        const projectedTarget = projectionFor(route.target);
+        if (!projectedSource || !projectedTarget) continue;
+        context.moveTo(projectedSource[0], projectedSource[1]);
+        context.lineTo(projectedTarget[0], projectedTarget[1]);
+        drawnRouteCount += 1;
+      }
+      if (drawnRouteCount) {
+        context.strokeStyle = `rgba(203,224,247,${alpha})`;
+        context.lineWidth = .55;
+        context.stroke();
+      }
+      context.restore();
+      canvas.dataset.referenceRoutesDrawn = String(drawnRouteCount);
+    }
+
+    function drawReferenceRoutes(matrix) {
+      if (!selectionLocked || !selectedPoint || cameraFlight) return;
+      const entries = routeEntriesForPoint(selectedPoint);
+      if (!entries.length) return;
+
+      context.save();
+      context.globalCompositeOperation = "source-over";
+      context.lineCap = "round";
+      context.lineJoin = "round";
+      for (const entry of entries) {
+        const geometry = referenceRouteGeometry(entry.route, matrix);
+        if (!geometry) continue;
+        const width = .8 + Math.min(1.4, .35 * Math.log2(entry.route.count + 1));
+        context.beginPath();
+        context.moveTo(geometry.start[0], geometry.start[1]);
+        context.quadraticCurveTo(geometry.control[0], geometry.control[1], geometry.end[0], geometry.end[1]);
+        context.strokeStyle = "rgba(213,232,255,.36)";
+        context.lineWidth = width;
+        context.stroke();
+        drawRouteEndpoint(geometry.start, entry.route.source, geometry.startGated);
+        drawRouteEndpoint(geometry.end, entry.route.target, geometry.endGated);
+        drawRouteArrow(geometry, width);
+      }
+      context.restore();
+    }
+
     function render(timestamp) {
       animationFrame = 0;
       updateCameraFlight(timestamp);
@@ -832,8 +1159,10 @@
       const vignette = context.createRadialGradient(sceneCenterX + panX, sceneCenterY + panY, 0, sceneCenterX + panX, sceneCenterY + panY, Math.max(width, height) * .72);
       vignette.addColorStop(0, "rgba(30,16,45,.18)"); vignette.addColorStop(1, "rgba(0,0,0,.6)");
       context.fillStyle = vignette; context.fillRect(0, 0, width, height);
-      context.globalCompositeOperation = "lighter";
       const matrix = [Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch)];
+      drawAllReferenceRoutes(matrix);
+      drawReferenceRoutes(matrix);
+      context.globalCompositeOperation = "lighter";
       const deepDetail = clamp(Math.log2(Math.max(1, zoom)) / 5, 0, 1);
       for (const point of points) {
         point.screen = null;
@@ -1032,9 +1361,11 @@
       resetCamera();
       setNavigationMode("orbit");
       for (const category of Object.keys(visibleCategories)) setCategoryVisible(category, true);
+      setAllRoutes(false);
       clearExplorationFocus();
       requestRender();
     });
+    allRoutesButton.addEventListener("click", () => setAllRoutes(!showAllRoutes));
     panelToggle.addEventListener("click", () => setPanelCollapsed(panelToggle.getAttribute("aria-expanded") === "true"));
     panel.addEventListener("transitionend", event => { if (event.propertyName === "width") { updateSceneViewport(); requestRender(); } });
     reducedMotionQuery.addEventListener("change", event => {
@@ -1046,11 +1377,13 @@
     document.getElementById("coverage").textContent = `${renderedDependencyStars.toLocaleString()} dependency stars shown`;
     const warningTotal = Object.values(model.warningCounts).reduce((sum, count) => sum + count, 0);
     if (warningTotal > 0) { const status = document.getElementById("status"); status.hidden = false; status.textContent = `${warningTotal.toLocaleString()} partial-index warning${warningTotal === 1 ? "" : "s"}`; }
+    allRoutesButton.disabled = referenceRoutes.length === 0;
+    setAllRoutes(false);
     setDrifting(drifting);
     setNavigationMode(navigationMode);
     document.querySelector("h1").textContent = model.projectName;
     document.title = `RubyLens · ${model.projectName}`;
-    canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class and module stars for Ruby code details or gem clouds for package summaries. Sidebar highlights open a top-down view. Double-click a gem cloud, press Enter or F on a selected gem marker, or tap that marker again to expand its stars. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, and use arrow keys to move the view. Escape exits a focused gem system.`);
+    canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class and module stars for Ruby code details or gem clouds for package summaries. Select a star or gem to reveal its strongest resolved constant-reference routes; route destinations are also available as buttons in the explorer, and the All routes control shows the complete connection layer. Sidebar highlights open a top-down view. Double-click a gem cloud, press Enter or F on a selected gem marker, or tap that marker again to expand its stars. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, and use arrow keys to move the view. Escape exits a focused gem system.`);
     createExplorer(); setPanelCollapsed(window.matchMedia("(max-width: 760px)").matches); resize();
   </script>
 </body>
