@@ -1452,7 +1452,8 @@
         if (x < -cullMargin || x > sceneRight + cullMargin || y < -cullMargin || y > sceneBottom + cullMargin) continue;
         const signal = point.signal;
         const size = clamp(point.base * (.62 + signal * .46) * perspective, .35, point.systemHub ? 8 : point.hub ? 5.2 : 3.2);
-        const alpha = clamp(.14 + signal * .105, .12, point.hub ? .86 : .7) * (groupedMode && point.category === "tests" && !point.systemHub ? .55 : 1);
+        const focusedSystemTest = focusedGroupIndex !== null && point.groupIndex === focusedGroupIndex && point.category === "tests" && !point.systemHub;
+        const alpha = clamp(.14 + signal * .105, .12, point.hub ? .86 : .7) * (focusedSystemTest ? .22 : groupedMode && point.category === "tests" && !point.systemHub ? .55 : 1);
         const focusedPackagePoint = expandedPackageIndex !== null && point.category === "dependencies" && point.packageIndex === expandedPackageIndex;
         const systemEmphasis = focusedGroupIndex !== null && Number.isInteger(point.groupIndex) && point.groupIndex !== focusedGroupIndex
           ? contextVisibility.system
@@ -1471,7 +1472,7 @@
           point.cloudScreenRadius = Math.max(12, packageAnchors[point.packageIndex][3] * perspective * expansion * 1.2);
         }
         const detailedPoint = expandedPackageIndex !== null ? focusedPackagePoint : emphasis >= .1;
-        if (size > 1.35 && detailedPoint) {
+        if (size > 1.35 && detailedPoint && !focusedSystemTest) {
           const glowScale = (focusedPackagePoint ? 2.2 - deepDetail * .8 : 3.4 - deepDetail * 1.3) * (configuredMobile() ? .7 : 1);
           context.beginPath(); context.arc(x, y, size * glowScale, 0, Math.PI * 2);
           context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${visibleAlpha * (focusedPackagePoint ? .045 : .055)})`; context.fill();
