@@ -1,14 +1,14 @@
-# Multi-core monorepo boundary design
+# Multi-core monorepo boundaries
 
-RubyLens should treat a large monorepo as a galaxy of first-class Core systems rather than one undifferentiated Core cloud. A repository can configure `apps/*`, `components/*`, and shared infrastructure as separate systems while preserving Tests and Gems as visual roles.
+RubyLens can present a large monorepo as one coherent association of compact Core systems. A repository can configure `apps/*`, `components/*`, and shared infrastructure as separate systems while Core, Tests, and Gems keep their existing visual roles.
 
-The configuration and Git-selected manifest plumbing described below are implemented. Namespace ownership, group aggregates, and scene behavior remain staged design work.
+Without configuration, RubyLens preserves the existing single-project snapshot, art model, Report, and Showcase behavior. Configured projects use the versioned contracts described below.
 
-## Proposed configuration
+## Configuration
 
-RubyLens discovers `TARGET/.rubylens.yml` by default. `--config FILE` selects another file and `--no-config` preserves today's single-Core behavior.
+RubyLens discovers `TARGET/.rubylens.yml` by default. `--config FILE` selects another file and `--no-config` forces the unchanged single-project behavior.
 
-Precedence is deterministic: `--no-config`, then an explicit `--config FILE`, then `TARGET/.rubylens.yml`, then unchanged single-project behavior when no configuration exists. Passing `--config` and `--no-config` together is an error. Explicit paths are resolved from the invoking process's working directory and must exist; a missing discovered file is not an error.
+Precedence is deterministic: `--no-config`, then an explicit `--config FILE`, then `TARGET/.rubylens.yml`, then unchanged behavior when no configuration exists. Passing `--config` and `--no-config` together is an error. Explicit paths are resolved from the invoking process's working directory and must exist; a missing discovered file is not an error.
 
 ```yaml
 version: 1
@@ -22,7 +22,7 @@ boundaries:
         - lib/**
         - config/**
 
-    # Expand one group for every selected matching directory.
+    # One group for every tracked matching directory.
     - each: apps/*
       id_prefix: app
       label: "App · %{basename}"
@@ -36,108 +36,101 @@ boundaries:
     label: Other
 ```
 
-Rules use normalized, workspace-relative paths from a tracked-only view of the Git manifest. This is deliberately narrower than the existing indexing selection, which continues to include nonignored untracked files. RubyLens must not scan ignored or untracked files to discover groups.
+An Explorer with unusually many systems can opt into the atlas fallback:
 
-## Matching contract
+```yaml
+version: 1
+presentation:
+  explorer_layout: atlas
+boundaries:
+  groups:
+    - each: components/*
+      id_prefix: component
+      label: "Component · %{basename}"
+```
+
+`presentation.explorer_layout` accepts `association` (the default) or `atlas`. Atlas affects only the interactive Report; Showcase always uses the coherent association.
+
+## Matching and safety contract
 
 - Rules are ordered and the first match wins.
 - `paths` creates one explicit group from one or more root-anchored globs.
-- `each` expands the directories matching one root-anchored glob and includes their descendants.
-- Initial glob support is deliberately small: `/`, `*`, and `**` only.
-- Reject absolute paths, `..`, regular expressions, YAML aliases, unknown keys, duplicate IDs, and generated IDs that collide.
-- IDs are stable, normalized identifiers used by the compact model. Labels are user-facing text.
-- Unmatched files belong to `Other` by default. `ungrouped.mode: error` supports repositories that require complete coverage.
-- Do not initially support silently dropping unmatched source.
-- Group ownership is independent of Core/Test role. `components/acme-foundation/test/...` belongs to Acme Foundation and remains cyan Test code.
-- YAML aliases, object tags, duplicate mapping keys, unknown keys, duplicate or colliding group IDs, absolute paths, `..`, and unsupported glob syntax are rejected.
-- `each` groups expand only from directories proven by the tracked-only workspace manifest view. Ignored, untracked, and direct child files cannot create groups, while the broader indexing behavior remains unchanged.
+- `each` expands directories matching one root-anchored glob and includes their descendants.
+- Initial glob support is deliberately small: `/`, `*`, and a final `**` segment only.
+- IDs are stable lowercase dash-separated identifiers. Labels are Report-facing text.
+- Unmatched files belong to `Other` by default. `ungrouped.mode: error` requires complete coverage.
+- Group ownership is independent of Core/Test role. A test path owned by a component remains cyan Test code.
+- The YAML stream must contain exactly one nonempty document. Aliases, object tags, duplicate keys or IDs, unknown keys, absolute or escaping paths, and unsupported globs are rejected.
+- `each` expansion uses only the tracked workspace manifest (`git ls-files --cached`). Ignored and nonignored untracked files cannot create groups. RubyLens's pre-existing indexing selection remains unchanged.
 
-## Namespace ownership
+## Namespace ownership and aggregates
 
-A Ruby class or module can be reopened across files and boundaries. RubyLens keeps one star rather than duplicating it.
-
-Classify every canonical namespace definition by group, then select the visual owner using this deterministic order:
+A Ruby class or module can be reopened across files and boundaries. RubyLens emits one canonical star and selects one deterministic owner:
 
 1. most Core definition sites;
 2. most total definition sites;
 3. earliest matching configuration rule;
 4. lexical group ID.
 
-Group-level namespace counts use the dominant owner, while `cross_group_namespaces` records the exact number of owned namespaces reopened across more than one group. This avoids adding a redundant span value to every namespace row. The namespace's existing Core/Test scope still controls its role and colour.
+`cross_group_namespaces` records the exact number of owned namespaces reopened across multiple systems. Report can expose that aggregate span count without serializing definition sites or duplicating stars. Core/Test scope still controls colour and local morphology.
 
-The adapter already assigns a compact component ordinal to each namespace. The implementation should evolve that latent dimension into configured group ownership rather than adding a second ownership field.
+Configured indexing uses `rubylens.snapshot.v6`. Each group contains its stable ID and name, a derived anchor seed, `[core, tests, mixed]` namespace counts, exact Core/Test `[classes, modules, methods, constants]` counts, and the cross-system namespace count. Namespace rows add only the compact owner ordinal needed for plotting. Paths, patterns, configuration locations, source, comments, and raw definition sites are excluded.
 
-## Proposed model evolution
-
-The first implementation should use new contracts so old reports cannot silently misread group ordinals.
+Configured presentation uses `rubylens.art.v8`:
 
 ```text
-rubylens.snapshot.v6 (configured projects only)
-  groups:
-    [{ id, name, anchor_seed, namespace_counts,
-       ruby_counts: { core, tests }, cross_group_namespaces }]
-  namespaces:
-    [group_ordinal, kind, scope, ..., instance_variables]
-
-rubylens.art.v8 (future scene-metadata checkpoint)
-  groupNames: [label, ...]
-  groups:
-    [seed, core_namespaces, test_namespaces, classes, modules,
-     methods, constants, mixed_namespaces]
-  groupRanges:
-    [first_namespace, length, ...]
-  namespaces:
-    existing compact row with group ordinal
-  totals:
-    namespaces, renderedNamespaces, groups, packages, dependencyStars,
-    renderedDependencyStars
+groupNames:     [Report label, ...]
+groups:         [ordinal, core namespaces, test namespaces, mixed namespaces,
+                 cross-system namespaces, Core Ruby counts..., Test Ruby counts...]
+groupRanges:    [first namespace row, length]
+groupLods:      [mid length, retained length]
+groupAnchors:   [x, y, z]
+groupRadii:     radius in thousandths
+namespaces:     existing compact visual row plus owner ordinal
 ```
 
-`namespace_counts` is `[core, tests, mixed]`. Each `ruby_counts` value is `[classes, modules, methods, constants]`, matching `category_stats`; group values must sum elementwise to the repository totals.
+All plotted namespace rows for a system are contiguous. Report is the only group-identity-bearing surface: it may contain group labels, namespace names, and package names. Showcase still includes the project name by design, but `rubylens.showcase.v2` otherwise retains only numeric rows and aggregate statistics, stripping group IDs and labels, namespace names, package names, and the Explorer layout choice.
 
-Until `art.v8` lands, the art builder rejects configured `snapshot.v6` rather than allowing an `art.v7` report to silently interpret group ordinals as legacy component ordinals.
+## Core-system geometry
 
-Only labels, aggregate values, ordinals, and derived seeds enter the HTML. Do not embed configured patterns, full boundary paths, or the configuration file path.
+Every nonempty boundary receives a stable, noncentral 3D anchor. The active anchors have an empty barycenter and deterministic overlap resolution. Truly empty groups retain only ordinal placeholders and do not change association scale; a Tests-only group remains visible at the minimum system radius. Systems receive restrained deterministic inclinations, but no relationship lines, bridges, shared spiral, route force, independent rotation, or proximity-derived hierarchy.
 
-Reference-route aggregation is intentionally outside the first boundary implementation. If it returns, follow [the archived route design](REFERENCE_ROUTES_FUTURE.md) and attribute each source from its actual reference file rather than the namespace's dominant owner.
+System area represents the exact full canonical Core namespace count (`core + mixed`) rather than the plotted sample or Test count. The model uses one documented transform:
 
-## Galaxy layout
+```text
+radius = clamp(3.5 + 0.55 × sqrt(core + mixed), 4.0, 16.0)
+```
 
-The overview is a clustered, compound graph whose primary objects are systems—not every individual declaration. Synthetic scale tests cover up to 100,000 namespaces without implying the shape of any real repository.
+Pink Core stars form the dense interior. Existing cyan Tests form a lower-density local envelope; RubyLens does not invent Tests for a system that has none. Gold dependency systems are positioned outside the full workspace-system volume and are not assigned to a nearby Core system. Sampling never brightens individual stars to compensate for omitted detail.
 
-- Give every group a stable 3D anchor derived from its ID.
-- Size its local system by `sqrt(namespace_count)`.
-- Resolve overlaps with a fixed, deterministic number of spatial-hash passes. Do not use a route-driven force layout; small semantic changes must not reshuffle the whole galaxy.
-- Render Core as the dense centre of each system and its Tests as a cyan outer halo.
-- Keep Gems as smaller yellow systems around the monorepo as a whole.
-- Communicate boundaries through separation, density, labels, and focus state. Do not invent hundreds of arbitrary group colours.
-- At overview, draw one hub or density mark per group and directly label only the most important systems.
-- Selecting a group uses the existing smooth top-down camera flight. Individual namespace stars become interactive only inside the focused system or above a zoom threshold.
+## Bounded plotting and level of detail
 
-The explorer should show `Core systems · N`, offer search, and virtualize the group list. Desktop keeps the list in the side panel. Mobile portrait defaults to one selected system plus a searchable bottom sheet rather than shrinking the entire monorepo into an unusable view.
+Configured namespace sampling happens before HTML serialization. Report retains at most 100,000 namespace rows and Showcase at most 50,000; dependency hubs and bounded dependency detail are counted separately. These are separate surface caps rather than one universal product budget. The explicit allocator:
 
-## Autonomous Showcase
+1. retains a representative for each nonempty system when the budget permits;
+2. preserves Core and Test category representatives when the budget permits;
+3. distributes remaining capacity by `sqrt(full namespace count)`;
+4. resolves largest-remainder ties by stable lexical group ID;
+5. selects rows by stable hash rank, independent of input order.
 
-Showcase should frame the bounding volume of all configured systems rather than reusing a camera tuned for one Core cloud. Its bounded sample must keep every group hub and a minimum quota from every nonempty group before distributing the remaining points by group size. This prevents a small application or component from disappearing in a large monorepo presentation.
+Each artifact has nested far, mid, and near levels: one aggregate hub per nonempty system; deterministic mid representatives from every visible system; and the full retained contiguous range for the selected system. Overview picking checks system hubs only. Focus picking scans only the selected `groupRanges` slice. Report exposes a narrow numeric `RubyLensCoreSystems` focus/clear/range hook for integration without adding search or a second point model.
 
-The default share overlay should say `Core systems · N` alongside repository-wide Ruby counts. Configured group labels can reveal internal product names, so they stay out of the Showcase payload and pixels. A later system-flyover preset can visit selected groups, but the first implementation should remain one stable overview loop.
+The whole association uses one active renderer, with no per-system canvases, contexts, materials, framebuffers, or animation loops. Showcase uses its existing single WebGL renderer with the existing Canvas 2D fallback; WebGL uploads one immutable packed point buffer and draws contiguous LOD ranges from it. Showcase remains autonomous, anonymous, and noninteractive, with the accepted fixed stage and one-minute camera orbit. On configured mobile views, RubyLens reduces backing render scale, glow, white-core detail, and faint dependency detail before dropping system hubs, Core/Test representatives, system size, or orientation. Unconfigured Showcase pixels and motion do not take these branches.
 
-## Large-monorepo safeguards
+## Synthetic acceptance contract
 
-- Separate indexed namespace totals from plotted namespace points, matching the existing dependency-star contract.
-- Use 25,000–30,000 workspace stars as a provisional synthetic-test threshold, then tune with profiling from representative public or user-authorized repositories.
-- Give each nonempty group a minimum point quota; distribute the remaining budget proportional to `sqrt(group_size)`.
-- Always retain group hubs, high-signal namespaces, explorer-highlight winners, and cross-group namespaces before deterministic sampling.
-- Store each group's plotted namespaces contiguously and expose `groupRanges`, so focus and hit testing do not scan every point.
-- At overview, disable per-star hit testing. Enable it only for the focused group.
-- Suppress most labels when group counts are extreme and require search or focus for detail.
-- Keep Canvas 2D with hierarchical level of detail first. Move plotted marks to WebGL only if profiling shows animated mark throughput—not model construction or payload size—is the remaining bottleneck.
+Generic synthetic fixtures cover 100,000 namespaces and 1,000 groups at explicit 18,000, 50,000, and 100,000 namespace budgets. They must prove:
 
-## Implementation batches
+- exact quota sums and bounds, group/category minimums, and stable reordered-input results;
+- contiguous ranges, nested per-artifact LODs, and direct range slicing;
+- stable anchors, an empty barycenter, no active system at the origin, bounded overlap resolution, and the documented radius transform;
+- exact aggregate reconciliation and privacy separation between Report and Showcase;
+- unchanged unconfigured `snapshot.v5`/`art.v7` digest and presentation behavior;
+- desktop, portrait, landscape, reduced-motion, atlas, WebGL, and Canvas fallback behavior;
+- payload size, model/runtime timing, and peak resident memory at each explicit budget.
 
-1. Strict configuration loader, safe glob matcher, discovery/CLI plumbing, group ownership, and `snapshot.v6`.
-2. `art.v8` group metadata, deterministic anchors, overview level of detail, and smooth group focus.
-3. Workspace-star sampling, contiguous group ranges, explorer search/virtualization, and mobile group selection.
-4. Synthetic 100,000-namespace/1,000-group tests plus profiling against a representative public or user-authorized large monorepo and visual tuning.
+The numeric fixtures are synthetic and are not measurements of any company or private repository. A representative public repository can be generated once only after the synthetic gate passes.
 
-Each batch needs path-leak tests, deterministic ordering tests, owner-only report checks, and desktop/mobile screenshot review.
+## Deferred work
+
+Search and virtualization, a mobile bottom sheet, system camera tours, WebGL picking/readback, reference routes, relationship edges, and new animation presets are outside this slice. The atlas remains an explicit high-group-count Report fallback, not the default Showcase layout.
