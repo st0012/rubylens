@@ -8,6 +8,7 @@ require_relative "model/namespace_allocation"
 module RubyLens
   class ArtModelBuilder
     SIGNAL_FIELDS = %w[ancestorDepth definitionSites reopenings descendants references members].freeze
+    MID_LOD_SQRT_MULTIPLIER = 3
 
     def initialize(seed: 0x51A7_E11A, namespace_budget: nil)
       @seed = seed
@@ -125,7 +126,8 @@ module RubyLens
           selected.any? { |_rank, _name, row| row.fetch(2) != 1 },
           selected.any? { |_rank, _name, row| row.fetch(2) == 1 },
         ].count(true)
-        mid_length = [selected.length, [category_minimum, Math.sqrt(selected.length).ceil].max].min
+        scaled_mid_length = (Math.sqrt(selected.length) * MID_LOD_SQRT_MULTIPLIER).ceil
+        mid_length = [selected.length, [category_minimum, scaled_mid_length].max].min
         group_lods << [mid_length, selected.length]
       end
 

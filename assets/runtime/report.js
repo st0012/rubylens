@@ -186,7 +186,7 @@
         const category = row[3] === 1 ? "tests" : "core";
         const values = row.slice(4, 10);
         const rubyCounts = row.slice(10, 14);
-        const point = { category, groupIndex: groupedMode ? row[1] : null, sourceIndex: index, lod: groupedMode ? namespaceLods[index] : 2, seed: row[0], position: groupedMode ? groupedNamespacePosition(row) : category === "tests" ? testPosition(row[0]) : corePosition(row[0]), signal: weightedSignal(normalizedSignals(values), category), base: category === "core" ? .82 : .68 };
+        const point = { category, groupIndex: groupedMode ? row[1] : null, sourceIndex: index, lod: groupedMode ? namespaceLods[index] : 2, seed: row[0], position: groupedMode ? groupedNamespacePosition(row) : category === "tests" ? testPosition(row[0]) : corePosition(row[0]), signal: weightedSignal(normalizedSignals(values), category), base: category === "core" ? .82 : groupedMode ? .42 : .68 };
         if (interactiveMode) Object.assign(point, { name: model.namespaceNames[index], groupName: groupedMode ? model.groupNames[row[1]] : null, kind: row[2] === 0 ? "Class" : "Module", rubyCounts, instanceVariableCount: row[14] || 0, values });
         namespacePoints.push(point);
         addPoint(point);
@@ -419,6 +419,7 @@
         uniform float u_brightness;
         uniform float u_glow;
         uniform float u_deepDetail;
+        uniform int u_grouped;
         uniform int u_pass;
         out vec3 v_colour;
         out float v_alpha;
@@ -467,6 +468,7 @@
           } else if (u_pass == 1) {
             radius = size < 0.85 ? 0.5 : size;
           } else {
+            if (u_grouped == 1 && a_category >= 0.5 && a_category < 1.5) { hidePoint(); return; }
             if (size <= 1.1) { hidePoint(); return; }
             radius = max(0.45 + u_deepDetail * 0.25, size * (0.24 + u_deepDetail * 0.06));
             alpha = min(0.9, visibleAlpha * 1.25);
@@ -504,7 +506,7 @@
         pointData[offset + 1] = point.position[1];
         pointData[offset + 2] = point.position[2];
         pointData[offset + 3] = point.base * (.62 + point.signal * .46);
-        pointData[offset + 4] = clamp(.14 + point.signal * .105, .12, point.hub ? .86 : .7);
+        pointData[offset + 4] = clamp(.14 + point.signal * .105, .12, point.hub ? .86 : .7) * (groupedMode && point.category === "tests" && !point.systemHub ? .55 : 1);
         pointData[offset + 5] = categoryIndex[point.category];
         pointData[offset + 6] = point.systemHub ? 8 : point.hub ? 5.2 : 3.2;
       });
@@ -535,6 +537,7 @@
         brightness: gl.getUniformLocation(pointProgram, "u_brightness"),
         glow: gl.getUniformLocation(pointProgram, "u_glow"),
         deepDetail: gl.getUniformLocation(pointProgram, "u_deepDetail"),
+        grouped: gl.getUniformLocation(pointProgram, "u_grouped"),
         pass: gl.getUniformLocation(pointProgram, "u_pass"),
       };
       const pointSizeRange = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE);
@@ -573,6 +576,7 @@
           gl.uniform1f(pointUniforms.brightness, SHOWCASE_PRESET.starBrightnessPercent);
           gl.uniform1f(pointUniforms.glow, SHOWCASE_PRESET.pointGlowPercent * (configuredMobile() ? .65 : 1));
           gl.uniform1f(pointUniforms.deepDetail, deepDetail);
+          gl.uniform1i(pointUniforms.grouped, groupedMode ? 1 : 0);
           for (let pass = 0; pass < 3; pass += 1) {
             if (configuredMobile() && pass === 2) continue;
             gl.uniform1i(pointUniforms.pass, pass);
@@ -1390,7 +1394,7 @@
         const [x, y, perspective] = projected;
         if (x < -20 || x > sceneRight + 20 || y < -20 || y > sceneBottom + 20) continue;
         const size = clamp(point.base * (.62 + point.signal * .46) * perspective, .35, point.systemHub ? 8 : point.hub ? 5.2 : 3.2);
-        const alpha = clamp(.14 + point.signal * .105, .12, point.hub ? .86 : .7) * SHOWCASE_PRESET.starBrightnessPercent / 100;
+        const alpha = clamp(.14 + point.signal * .105, .12, point.hub ? .86 : .7) * (groupedMode && point.category === "tests" && !point.systemHub ? .55 : 1) * SHOWCASE_PRESET.starBrightnessPercent / 100;
         const colour = colours[point.category];
         if (size > 1.35) {
           const mobileGlow = configuredMobile() ? .65 : 1;
@@ -1407,7 +1411,7 @@
           context.arc(x, y, size, 0, Math.PI * 2);
           context.fill();
         }
-        if (size > 1.1 && !configuredMobile()) {
+        if (size > 1.1 && !configuredMobile() && !(groupedMode && point.category === "tests")) {
           context.beginPath();
           context.arc(x, y, Math.max(.45 + deepDetail * .25, size * (.24 + deepDetail * .06)), 0, Math.PI * 2);
           context.fillStyle = `rgba(255,248,244,${Math.min(.9, alpha * 1.25)})`;
@@ -1448,7 +1452,7 @@
         if (x < -cullMargin || x > sceneRight + cullMargin || y < -cullMargin || y > sceneBottom + cullMargin) continue;
         const signal = point.signal;
         const size = clamp(point.base * (.62 + signal * .46) * perspective, .35, point.systemHub ? 8 : point.hub ? 5.2 : 3.2);
-        const alpha = clamp(.14 + signal * .105, .12, point.hub ? .86 : .7);
+        const alpha = clamp(.14 + signal * .105, .12, point.hub ? .86 : .7) * (groupedMode && point.category === "tests" && !point.systemHub ? .55 : 1);
         const focusedPackagePoint = expandedPackageIndex !== null && point.category === "dependencies" && point.packageIndex === expandedPackageIndex;
         const systemEmphasis = focusedGroupIndex !== null && Number.isInteger(point.groupIndex) && point.groupIndex !== focusedGroupIndex
           ? contextVisibility.system
@@ -1475,7 +1479,7 @@
         context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${visibleAlpha})`;
         if (!detailedPoint || size < .85) context.fillRect(x, y, 1, 1);
         else { context.beginPath(); context.arc(x, y, size, 0, Math.PI * 2); context.fill(); }
-        if (size > 1.1 && detailedPoint && !configuredMobile()) {
+        if (size > 1.1 && detailedPoint && !configuredMobile() && !(groupedMode && point.category === "tests")) {
           context.beginPath(); context.arc(x, y, Math.max(.45 + deepDetail * .25, size * (.24 + deepDetail * .06)), 0, Math.PI * 2);
           context.fillStyle = `rgba(255,248,244,${Math.min(.9, visibleAlpha * 1.25)})`; context.fill();
         }
