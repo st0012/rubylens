@@ -2,6 +2,8 @@
     const model = JSON.parse(atob("{{MODEL_BASE64}}"));
     const showcaseMode = document.body.dataset.rubylensMode === "showcase";
     const interactiveMode = !showcaseMode;
+    const groupedMode = model.schema === "rubylens.art.v8" || model.schema === "rubylens.showcase.v2";
+    const qaMode = window.__RUBYLENS_QA__ === true;
     const canvas = document.getElementById("cosmos");
     const context = canvas.getContext("2d", { alpha: false });
     const showcaseStage = document.getElementById("showcase-stage");
@@ -94,11 +96,39 @@
       return [Math.cos(theta) * radial, vertical, Math.sin(theta) * radial];
     }
 
+    const GROUPED_WORKSPACE_RADIUS = 42;
+    const groupNamespaceCount = row => Number(row?.[1] || 0) + Number(row?.[2] || 0) + Number(row?.[3] || 0);
+    const rawGroupRadii = groupedMode ? model.groups.map(row => 6 + Math.sqrt(groupNamespaceCount(row)) * .35) : [];
+    const rawWorkspaceRadius = groupedMode ? model.groupAnchors.reduce((radius, anchor, index) => (
+      Math.max(radius, Math.hypot(anchor[0], anchor[1], anchor[2]) + rawGroupRadii[index])
+    ), 0) : 0;
+    const groupedPositionScale = rawWorkspaceRadius > 0 ? GROUPED_WORKSPACE_RADIUS / rawWorkspaceRadius : 1;
+    const groupAnchors = groupedMode ? model.groupAnchors.map(anchor => anchor.map(value => value * groupedPositionScale)) : [];
+    const groupRadii = rawGroupRadii.map(radius => radius * groupedPositionScale);
+    const workspaceSystemRadius = groupedMode ? groupAnchors.reduce((radius, anchor, index) => (
+      Math.max(radius, Math.hypot(anchor[0], anchor[1], anchor[2]) + groupRadii[index])
+    ), 0) : 0;
+
+    function groupedNamespacePosition(row) {
+      const groupIndex = row[1];
+      const anchor = groupAnchors[groupIndex] || [0, 0, 0];
+      const systemRadius = groupRadii[groupIndex] || 1;
+      const tests = row[3] === 1;
+      const local = tests ? testPosition(row[0]) : corePosition(row[0]);
+      const magnitude = Math.max(Math.hypot(local[0], local[1], local[2]), 1e-6);
+      const localRadius = systemRadius * (tests ? .68 + unit(row[0], 31) * .28 : .08 + unit(row[0], 30) * .5);
+      return anchor.map((value, index) => value + local[index] / magnitude * localRadius);
+    }
+
     const packageAnchors = model.packages.map((row, index) => {
-      const seed = row[0], radius = 70 + 72 * Math.pow(unit(seed, 14), .72);
+      const seed = row[0];
+      const cloudRadius = 1.6 + Math.min(9, Math.sqrt(row[3]) * .055);
+      const radius = groupedMode
+        ? workspaceSystemRadius + cloudRadius + 18 + 72 * Math.pow(unit(seed, 14), .72)
+        : 70 + 72 * Math.pow(unit(seed, 14), .72);
       const theta = unit(seed, 15) * Math.PI * 2;
       const vertical = normal(seed, 16) * 24;
-      return [Math.cos(theta) * radius, vertical, Math.sin(theta) * radius, 1.6 + Math.min(9, Math.sqrt(row[3]) * .055), index];
+      return [Math.cos(theta) * radius, vertical, Math.sin(theta) * radius, cloudRadius, index];
     });
 
     function dependencyPosition(seed, packageIndex) {
@@ -127,8 +157,8 @@
         const category = row[3] === 1 ? "tests" : "core";
         const values = row.slice(4, 10);
         const rubyCounts = row.slice(10, 14);
-        const point = { category, seed: row[0], position: category === "tests" ? testPosition(row[0]) : corePosition(row[0]), signal: weightedSignal(normalizedSignals(values), category), base: category === "core" ? .82 : .68 };
-        if (interactiveMode) Object.assign(point, { name: model.namespaceNames[index], kind: row[2] === 0 ? "Class" : "Module", rubyCounts, instanceVariableCount: row[14] || 0, values });
+        const point = { category, groupIndex: groupedMode ? row[1] : null, seed: row[0], position: groupedMode ? groupedNamespacePosition(row) : category === "tests" ? testPosition(row[0]) : corePosition(row[0]), signal: weightedSignal(normalizedSignals(values), category), base: category === "core" ? .82 : .68 };
+        if (interactiveMode) Object.assign(point, { name: model.namespaceNames[index], groupName: groupedMode ? model.groupNames[row[1]] : null, kind: row[2] === 0 ? "Class" : "Module", rubyCounts, instanceVariableCount: row[14] || 0, values });
         addPoint(point);
       });
       model.dependencyStars.forEach(row => {
@@ -147,7 +177,7 @@
     }
     const { points, interactivePoints, dependencyHubs } = buildPoints();
     function showcasePointSample() {
-      if (!showcaseMode || points.length <= SHOWCASE_POINT_LIMIT) return points;
+      if (groupedMode || !showcaseMode || points.length <= SHOWCASE_POINT_LIMIT) return points;
       const hubs = points.filter(point => point.hub);
       const rank = point => [hash(point.seed, 73), point.seed, point];
       if (hubs.length >= SHOWCASE_POINT_LIMIT) {
@@ -162,6 +192,34 @@
       return candidates.slice(0, available).map(candidate => candidate[2]).concat(hubs);
     }
     const renderPoints = showcasePointSample();
+    if (groupedMode && qaMode) {
+      document.documentElement.dataset.rubylensRenderedPoints = String(renderPoints.length);
+      document.documentElement.dataset.rubylensNamespacePoints = String(model.namespaces.length);
+      document.documentElement.dataset.rubylensRangePoints = String(model.groupRanges.reduce((sum, range) => sum + range[1], 0));
+      let minimumCentroidDistance = Infinity;
+      for (let leftIndex = 0; leftIndex < groupAnchors.length; leftIndex += 1) {
+        const left = groupAnchors[leftIndex];
+        for (let rightIndex = leftIndex + 1; rightIndex < groupAnchors.length; rightIndex += 1) {
+          const right = groupAnchors[rightIndex];
+          minimumCentroidDistance = Math.min(minimumCentroidDistance, Math.hypot(left[0] - right[0], left[1] - right[1], left[2] - right[2]));
+        }
+      }
+      const localDistances = { core: { sum: 0, count: 0 }, tests: { sum: 0, count: 0 } };
+      let minimumDependencyRadius = Infinity;
+      for (const point of points) {
+        if (Number.isInteger(point.groupIndex)) {
+          const anchor = groupAnchors[point.groupIndex];
+          localDistances[point.category].sum += Math.hypot(point.position[0] - anchor[0], point.position[1] - anchor[1], point.position[2] - anchor[2]);
+          localDistances[point.category].count += 1;
+        } else if (point.category === "dependencies") {
+          minimumDependencyRadius = Math.min(minimumDependencyRadius, Math.hypot(point.position[0], point.position[1], point.position[2]));
+        }
+      }
+      document.documentElement.dataset.rubylensCentroidSeparation = Number.isFinite(minimumCentroidDistance) ? minimumCentroidDistance.toFixed(3) : "0";
+      document.documentElement.dataset.rubylensCoreMeanRadius = (localDistances.core.sum / Math.max(1, localDistances.core.count)).toFixed(3);
+      document.documentElement.dataset.rubylensTestMeanRadius = (localDistances.tests.sum / Math.max(1, localDistances.tests.count)).toFixed(3);
+      document.documentElement.dataset.rubylensDependencyMargin = Number.isFinite(minimumDependencyRadius) ? (minimumDependencyRadius - workspaceSystemRadius).toFixed(3) : "0";
+    }
 
     function createShowcaseRenderer() {
       const liveCanvas = document.createElement("canvas");
@@ -587,7 +645,7 @@
         addRubyMetrics(point.rubyCounts, allRubyMetricIndexes);
         return;
       }
-      tooltipContext.textContent = point.kind;
+      tooltipContext.textContent = point.groupName ? `${point.kind} · ${point.groupName}` : point.kind;
       if (point.category === "core") addCoreTooltipMetrics(point);
       else addRubyMetrics(point.rubyCounts, testRubyMetricIndexes);
     }
@@ -911,6 +969,30 @@
           facts.append(button);
         }
         body.append(actions, createRubyBreakdown(meta.title, meta.rubyCounts, meta.metricIndexes));
+        if (category === "core" && groupedMode && model.groupNames?.length) {
+          const systems = document.createElement("section");
+          systems.className = "systems-summary";
+          const systemsTitle = document.createElement("h3");
+          systemsTitle.textContent = "Core systems";
+          const systemList = document.createElement("ol");
+          model.groupNames.slice(0, 16).forEach((name, index) => {
+            const row = model.groups[index];
+            const item = document.createElement("li");
+            const label = document.createElement("span");
+            label.textContent = name;
+            const count = document.createElement("small");
+            count.textContent = `${Number(row[1] || 0) + Number(row[3] || 0)} core · ${Number(row[2] || 0)} tests`;
+            item.append(label, count);
+            systemList.append(item);
+          });
+          systems.append(systemsTitle, systemList);
+          if (model.groupNames.length > 16) {
+            const remainder = document.createElement("p");
+            remainder.textContent = `${(model.groupNames.length - 16).toLocaleString()} more systems`;
+            systems.append(remainder);
+          }
+          body.append(systems);
+        }
         if (meta.note) {
           const sectionNote = document.createElement("p");
           sectionNote.className = "section-note";

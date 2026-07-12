@@ -44,6 +44,13 @@
     .ruby-breakdown dt, .ruby-breakdown dd { margin: 0; }
     .ruby-breakdown dt { color: #837c8d; font-size: 9px; }
     .ruby-breakdown dd { margin-top: 2px; color: #f3edf9; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .systems-summary { margin: 0 0 14px; }
+    .systems-summary h3 { margin: 0 0 7px; color: #7f788b; font-size: 10px; font-weight: 500; }
+    .systems-summary ol { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+    .systems-summary li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; color: #e9e3ef; font-size: 10px; }
+    .systems-summary li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .systems-summary li small, .systems-summary p { color: #756e7e; font-size: 9px; font-variant-numeric: tabular-nums; }
+    .systems-summary p { margin: 7px 0 0; }
     .section-actions button[aria-pressed="true"] { border-color: rgba(216,200,255,.36); background: rgba(216,200,255,.14); color: #fff; }
     .visibility { display: inline-flex; align-items: center; gap: 7px; margin-right: auto; color: #b8b1c0; font-size: 11px; cursor: pointer; }
     .visibility input { width: 15px; height: 15px; margin: 0; accent-color: #d8c8ff; }

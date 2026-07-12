@@ -26,6 +26,7 @@ class ShowcaseWriterTest < Minitest::Test
       assert_includes(html, "const SHOWCASE_PRESET = Object.freeze")
       assert_includes(html, '"durationMs": 60000')
       assert_includes(html, "if (hubs.length >= SHOWCASE_POINT_LIMIT)")
+      assert_includes(html, "if (groupedMode || !showcaseMode || points.length <= SHOWCASE_POINT_LIMIT) return points")
       assert_includes(html, 'class="showcase-stage"')
       assert_includes(html, 'dataset.showcaseRenderer = "webgl2"')
       assert_includes(html, "function renderShowcase(timestamp)")
