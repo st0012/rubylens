@@ -25,7 +25,12 @@ module RubyLens
         integrity_failures = Array(graph.check_integrity)
         collected = collect_declarations(graph.declarations, manifest)
         workspace = workspace_namespaces(collected.fetch(:workspace_records), manifest)
-        reference_data = workspace_reference_data(graph, manifest, workspace)
+        reference_data = workspace_reference_data(
+          graph,
+          manifest,
+          workspace,
+          tombstone_definitions: collected.fetch(:workspace_range_tombstones),
+        )
 
         snapshot = {
           "schema" => "rubylens.snapshot.v7",
@@ -59,6 +64,7 @@ module RubyLens
 
       def collect_declarations(declarations, manifest)
         records = []
+        workspace_range_tombstones = []
         category_stats = { "core" => Array.new(4, 0), "tests" => Array.new(4, 0) }
         aggregation = Model::DependencyAggregation.new(package_count: manifest.packages.length)
         group_ruby_counts = if configured_boundaries?(manifest)
@@ -66,6 +72,10 @@ module RubyLens
         end
 
         declarations.each do |declaration|
+          name = declaration.name
+          append_anonymous_workspace_namespace_definitions(workspace_range_tombstones, declaration, manifest, name)
+          next unless model_eligible_declaration?(declaration, name)
+
           if namespace?(declaration)
             definitions = declaration.definitions.select do |definition|
               canonical_namespace_definition?(declaration, definition) && workspace_location?(definition.location, manifest)
@@ -76,7 +86,13 @@ module RubyLens
           collect_dependency_declaration(aggregation, declaration, manifest)
         end
 
-        { workspace_records: records, category_stats:, dependency_aggregation: aggregation, group_ruby_counts: }
+        {
+          workspace_records: records,
+          workspace_range_tombstones:,
+          category_stats:,
+          dependency_aggregation: aggregation,
+          group_ruby_counts:,
+        }
       end
 
       def workspace_namespaces(records, manifest)
@@ -197,9 +213,9 @@ module RubyLens
         aggregation.add(package_index:, row:, construct_index: ruby_construct_index(declaration))
       end
 
-      def workspace_reference_data(graph, manifest, workspace)
+      def workspace_reference_data(graph, manifest, workspace, tombstone_definitions: [])
         ordinal_by_name = workspace.fetch(:ordinal_by_name)
-        source_ranges = workspace_source_ranges(workspace)
+        source_ranges = workspace_source_ranges(workspace, tombstone_definitions)
         inbound = Hash.new(0)
         route_counts = Hash.new(0)
         occurrences_by_uri = Hash.new { |hash, uri| hash[uri] = Set.new }
@@ -241,13 +257,17 @@ module RubyLens
         { inbound:, routes: }
       end
 
-      def workspace_source_ranges(workspace)
+      def workspace_source_ranges(workspace, tombstone_definitions)
         ranges = Hash.new { |hash, uri| hash[uri] = [] }
         workspace.fetch(:records).each_with_index do |(_declaration, definitions), ordinal|
           definitions.each do |definition|
             location = definition.location
             ranges[location.uri] << [*location_span(location), ordinal]
           end
+        end
+        tombstone_definitions.each do |definition|
+          location = definition.location
+          ranges[location.uri] << [*location_span(location), nil]
         end
         ranges.transform_values { |records| index_source_ranges(records) }
       end
@@ -279,7 +299,9 @@ module RubyLens
       def index_source_ranges(ranges)
         indexed = []
         parents = []
-        ranges.sort_by { |start_line, start_column, end_line, end_column, ordinal| [start_line, start_column, -end_line, -end_column, ordinal] }
+        ranges.sort_by do |start_line, start_column, end_line, end_column, ordinal|
+          [start_line, start_column, -end_line, -end_column, ordinal.nil? ? -1 : ordinal]
+        end
           .each do |range|
             parents.pop while parents.any? && !source_range_contains?(indexed.fetch(parents.last), range)
             indexed << [*range, parents.last]
@@ -297,6 +319,8 @@ module RubyLens
       end
 
       def route_target(declaration, manifest, ordinal_by_name)
+        return nil unless model_eligible_declaration?(declaration)
+
         normalized = normalize_singleton_class(declaration)
         workspace_ordinal = workspace_namespace_ordinal(normalized, ordinal_by_name)
         return [0, workspace_ordinal] if workspace_ordinal
@@ -485,6 +509,26 @@ module RubyLens
 
       def namespace?(declaration)
         declaration.is_a?(Rubydex::Namespace)
+      end
+
+      def model_eligible_declaration?(declaration, name = declaration.name)
+        return false if name.nil? || name.empty? || name.include?("<anonymous>")
+        return false if declaration.is_a?(Rubydex::Todo)
+        return true unless declaration.is_a?(Rubydex::SingletonClass)
+
+        !declaration.attached_class.is_a?(Rubydex::SingletonClass)
+      end
+
+      def append_anonymous_workspace_namespace_definitions(tombstones, declaration, manifest, name = declaration.name)
+        return unless name&.include?("<anonymous>")
+        return unless declaration.is_a?(Rubydex::Class) || declaration.is_a?(Rubydex::Module)
+
+        declaration.definitions.each do |definition|
+          next unless canonical_namespace_definition?(declaration, definition)
+          next unless workspace_location?(definition.location, manifest)
+
+          tombstones << definition
+        end
       end
 
       def canonical_namespace_definition?(declaration, definition)
