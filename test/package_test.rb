@@ -12,8 +12,7 @@ class PackageTest < Minitest::Test
     assert_includes(specification.files, "assets/shells/showcase.html")
     assert_includes(specification.files, "assets/styles/report.css")
     assert_includes(specification.files, "assets/styles/showcase.css")
-    assert_includes(specification.files, "docs/MONOREPO_BOUNDARIES.md")
-    assert_includes(specification.files, "docs/REFERENCE_ROUTES_FUTURE.md")
+    assert_includes(specification.files, "LICENSE.txt")
     assert_includes(specification.files, "lib/rubylens/report_asset_assembler.rb")
     assert_includes(specification.files, "lib/rubylens/showcase_generator.rb")
     assert_includes(specification.files, "lib/rubylens/showcase_model.rb")
@@ -22,6 +21,7 @@ class PackageTest < Minitest::Test
     refute(specification.files.any? { |path| path.start_with?("docs/assets/") })
     refute(specification.files.any? { |path| path.start_with?("prototype/") })
     refute(specification.files.any? { |path| path.start_with?("generated/") })
+    refute(specification.files.any? { |path| path.start_with?("docs/") })
     refute_includes(specification.files, "lib/rubylens/extractor.rb")
     refute_includes(specification.files, "assets/report.html")
   end
@@ -40,5 +40,15 @@ class PackageTest < Minitest::Test
     assert(specification.required_ruby_version.satisfied_by?(Gem::Version.new("4.0.5")))
     refute(specification.required_ruby_version.satisfied_by?(Gem::Version.new("3.1.9")))
     refute(specification.required_ruby_version.satisfied_by?(Gem::Version.new("4.1.0")))
+  end
+
+  def test_prerelease_metadata_protects_future_pushes
+    specification = Gem::Specification.load(File.expand_path("../rubylens.gemspec", __dir__))
+
+    assert(specification.version.prerelease?)
+    assert_equal("MIT", specification.license)
+    assert_equal("https://st0012.dev/rails-galaxy/", specification.homepage)
+    assert_equal("https://rubygems.org", specification.metadata["allowed_push_host"])
+    assert_equal("true", specification.metadata["rubygems_mfa_required"])
   end
 end
