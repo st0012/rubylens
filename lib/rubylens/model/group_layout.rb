@@ -137,11 +137,12 @@ module RubyLens
       end
 
       def atlas_anchors
-        side = (@active_indices.length**(1.0 / 3)).ceil
-        side += 1 while side**3 - 1 < @active_indices.length
+        side = Math.sqrt(@active_indices.length + 1).ceil
+        side += 1 if side.even?
+        side += 2 while side**2 - 1 < @active_indices.length
         spacing = (2 * active_radii.max + ASSOCIATION_GAP).ceil
-        center_slot = (side**3) / 2
-        available = (0...(side**3)).reject { |slot| slot == center_slot }
+        center_slot = (side**2) / 2
+        available = (0...(side**2)).reject { |slot| slot == center_slot }
         slots = Array.new(@seeds.length)
         @active_indices.sort_by { |index| [@seeds[index], index] }.each_with_index do |index, rank|
           slots[index] = available.fetch(rank)
@@ -151,12 +152,11 @@ module RubyLens
         @active_indices.each do |index|
           slot = slots[index]
           x = slot % side
-          y = (slot / side) % side
-          z = slot / (side * side)
+          y = slot / side
           anchors[index] = [
             ((x - center) * spacing).round,
             ((y - center) * spacing).round,
-            ((z - center) * spacing).round,
+            0,
           ].freeze
         end
         anchors.freeze

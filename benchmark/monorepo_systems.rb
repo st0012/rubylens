@@ -147,7 +147,8 @@ raise "category representatives were lost" unless ranges.each_with_index.all? do
   source_categories = []
   source_categories << :core if core + mixed > 0
   source_categories << :tests if tests > 0
-  selected_categories = model.fetch("namespaces").slice(first, length).map { |row| row[3] == 1 ? :tests : :core }.uniq
+  mid_length = model.fetch("groupLods").fetch(index).first
+  selected_categories = model.fetch("namespaces").slice(first, mid_length).map { |row| row[3] == 1 ? :tests : :core }.uniq
   (source_categories - selected_categories).empty?
 end
 

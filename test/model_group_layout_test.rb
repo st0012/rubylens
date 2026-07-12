@@ -46,6 +46,7 @@ class ModelGroupLayoutTest < Minitest::Test
 
     assert_equal(27, anchors.uniq.length)
     refute_includes(anchors, [0, 0, 0])
+    assert(anchors.all? { |anchor| anchor[2].zero? })
   end
 
   def test_synthetic_thousand_system_association_stays_centered_noncentral_and_nonoverlapping

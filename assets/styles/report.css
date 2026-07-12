@@ -8,6 +8,7 @@
     canvas.is-pan:active, canvas.is-dragging-pan:active { cursor: grabbing; }
     canvas:focus-visible { outline: 2px solid rgba(216, 200, 255, .85); outline-offset: -4px; }
     .masthead { position: fixed; top: 28px; left: 32px; z-index: 2; pointer-events: none; max-width: 760px; }
+    body.has-core-systems .masthead { text-shadow: 0 2px 14px #03040a, 0 0 8px #03040a; }
     .eyebrow { margin: 0 0 10px; color: #b6a9c9; font-size: 11px; font-weight: 750; letter-spacing: .18em; text-transform: uppercase; }
     h1 { margin: 0; font: 500 clamp(28px, 4vw, 54px)/.95 ui-serif, Georgia, serif; letter-spacing: -.045em; }
     .coverage { margin: 12px 0 0; color: #7f788b; font-size: 10px; }
