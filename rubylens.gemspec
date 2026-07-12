@@ -11,18 +11,21 @@ Gem::Specification.new do |specification|
     RubyLens uses Rubydex to index Ruby semantics and generate private, local-first
     data for local interactive reports and autonomous visual showcases.
   DESCRIPTION
+  specification.homepage = "https://st0012.dev/rails-galaxy/"
+  specification.license = "MIT"
   specification.required_ruby_version = ">= 3.2.0", "< 4.1.dev"
+  specification.metadata["allowed_push_host"] = "https://rubygems.org"
+  specification.metadata["homepage_uri"] = specification.homepage
+  specification.metadata["rubygems_mfa_required"] = "true"
 
   specification.files = [
+    "LICENSE.txt",
     "README.md",
     "assets/runtime/report.js",
     "assets/shells/report.html",
     "assets/shells/showcase.html",
     "assets/styles/report.css",
     "assets/styles/showcase.css",
-    "docs/MONOREPO_BOUNDARIES.md",
-    "docs/PERFORMANCE.md",
-    "docs/REFERENCE_ROUTES_FUTURE.md",
     "exe/rubylens",
     "lib/rubylens.rb",
     *Dir["lib/rubylens/{art_model_builder,cli,errors,generator,git_repository,paths,report_asset_assembler,report_writer,showcase_generator,showcase_model,showcase_writer,version}.rb"],
