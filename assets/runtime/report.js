@@ -3,6 +3,7 @@
     const showcaseMode = document.body.dataset.rubylensMode === "showcase";
     const interactiveMode = !showcaseMode;
     const groupedMode = model.schema === "rubylens.art.v8" || model.schema === "rubylens.showcase.v2";
+    if (groupedMode) document.body.classList.add("has-core-systems");
     const qaMode = window.__RUBYLENS_QA__ === true;
     const canvas = document.getElementById("cosmos");
     const context = canvas.getContext("2d", { alpha: false });
@@ -58,7 +59,7 @@
     const excludedTriviaNames = new Set(["Object", "Kernel", "BasicObject"]);
     const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     const configuredMobile = () => groupedMode && Math.min(window.innerWidth, window.innerHeight) <= 430;
-    let drifting = interactiveMode && !reducedMotionQuery.matches;
+    let drifting = interactiveMode && !reducedMotionQuery.matches && !(groupedMode && model.explorerLayout === "atlas");
     const colours = { core: [244, 82, 132], tests: [87, 204, 255], dependencies: [255, 184, 77] };
 
     const hash = (seed, channel = 0) => {
@@ -98,7 +99,7 @@
       return [Math.cos(theta) * radial, vertical, Math.sin(theta) * radial];
     }
 
-    const GROUPED_WORKSPACE_RADIUS = 42;
+    const GROUPED_WORKSPACE_RADIUS = groupedMode && interactiveMode && model.explorerLayout === "atlas" ? 160 : 42;
     const sourceGroupAnchors = groupedMode && interactiveMode && model.explorerLayout === "atlas"
       ? model.explorerAnchors
       : model.groupAnchors;
@@ -196,7 +197,7 @@
             seed: hash(groupIndex + 1, 34),
             position: groupAnchors[groupIndex],
             signal: .5,
-            base: 1 + Math.min(3.2, groupRadii[groupIndex] * .22),
+            base: 1 + Math.min(3.2, rawGroupRadii[groupIndex] * .22),
             systemHub: true,
             systemRadius: groupRadii[groupIndex],
           };
@@ -251,7 +252,15 @@
     const firstFaintDependency = groupedMode ? renderPoints.findIndex(point => point.lod === 1 && point.category === "dependencies" && !point.hub) : -1;
     const essentialMidPointCount = firstFaintDependency < 0 ? midPointCount : Math.min(midPointCount, firstFaintDependency);
     const groupNearDrawRanges = groupedMode ? model.groups.map(() => [0, 0]) : [];
+    const groupMidDrawRanges = groupedMode ? model.groups.map(() => [0, 0]) : [];
     if (groupedMode) {
+      for (let index = farPointCount; index < midPointCount; index += 1) {
+        const groupIndex = renderPoints[index].groupIndex;
+        if (!Number.isInteger(groupIndex)) continue;
+        const range = groupMidDrawRanges[groupIndex];
+        if (range[1] === 0) range[0] = index;
+        range[1] += 1;
+      }
       for (let index = midPointCount; index < renderPoints.length; index += 1) {
         const groupIndex = renderPoints[index].groupIndex;
         const range = groupNearDrawRanges[groupIndex];
@@ -264,8 +273,9 @@
       if (!groupedMode) return [[0, renderPoints.length]];
       const basePointCount = configuredMobile() ? essentialMidPointCount : midPointCount;
       if (focusedGroupIndex !== null) {
+        const mid = groupMidDrawRanges[focusedGroupIndex] || [0, 0];
         const near = groupNearDrawRanges[focusedGroupIndex] || [0, 0];
-        return near[1] > 0 ? [[0, basePointCount], near] : [[0, basePointCount]];
+        return [[0, farPointCount], mid, near].filter(range => range[1] > 0);
       }
       const overviewCount = interactiveMode && model.explorerLayout === "atlas" ? farPointCount : basePointCount;
       return [[0, overviewCount]];
@@ -280,6 +290,7 @@
       document.documentElement.dataset.rubylensMidPoints = String(midPointCount);
       document.documentElement.dataset.rubylensEssentialMidPoints = String(essentialMidPointCount);
       document.documentElement.dataset.rubylensSelectedRangePoints = focusedGroupIndex === null ? "0" : String(model.groupRanges[focusedGroupIndex][1]);
+      document.documentElement.dataset.rubylensSelectedMidPoints = focusedGroupIndex === null ? "0" : String(groupMidDrawRanges[focusedGroupIndex][1]);
       document.documentElement.dataset.rubylensSelectedNearPoints = focusedGroupIndex === null ? "0" : String(groupNearDrawRanges[focusedGroupIndex][1]);
     }
     if (groupedMode && qaMode) {
@@ -1052,7 +1063,7 @@
       selectedPoint = null;
       selectionLocked = false;
       selectPoint(hub, true);
-      flyCamera(cameraTargetForPoint(hub, clamp(7 / Math.max(hub.systemRadius, 1), 4, 7)));
+      flyCamera(cameraTargetForPoint(hub, clamp(32 / Math.max(hub.systemRadius, .1), 4, 30)));
       return true;
     }
 
@@ -1315,8 +1326,9 @@
     }
 
     function resetCamera() {
-      yaw = -.36;
-      pitch = .34;
+      const atlas = groupedMode && interactiveMode && model.explorerLayout === "atlas";
+      yaw = atlas ? 0 : -.36;
+      pitch = atlas ? 0 : .34;
       zoom = 1;
       panX = 0;
       panY = 0;
@@ -1706,6 +1718,7 @@
       document.getElementById("coverage").textContent = `${renderedDependencyStars.toLocaleString()} dependency stars shown`;
       const warningTotal = Object.values(model.warningCounts).reduce((sum, count) => sum + count, 0);
       if (warningTotal > 0) { const status = document.getElementById("status"); status.hidden = false; status.textContent = `${warningTotal.toLocaleString()} partial-index warning${warningTotal === 1 ? "" : "s"}`; }
+      resetCamera();
       setDrifting(drifting);
       setNavigationMode(navigationMode);
       createExplorer();

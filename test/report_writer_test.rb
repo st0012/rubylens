@@ -195,7 +195,7 @@ class ReportWriterTest < Minitest::Test
       assert_includes(html, "SHOWCASE_POINT_LIMIT = 50_000")
       assert_includes(html, '"durationMs": 60000')
       assert_includes(html, 'const groupedMode = model.schema === "rubylens.art.v8" || model.schema === "rubylens.showcase.v2"')
-      assert_includes(html, "const GROUPED_WORKSPACE_RADIUS = 42")
+      assert_includes(html, 'model.explorerLayout === "atlas" ? 160 : 42')
       assert_includes(html, "if (groupedMode && qaMode)")
       assert_includes(html, "if (groupedMode || !showcaseMode || points.length <= SHOWCASE_POINT_LIMIT) return points")
       assert_includes(html, 'systemsTitle.textContent = "Core systems"')
