@@ -39,7 +39,7 @@ bundle exec rubylens showcase .
 
 The default output is `rubylens-showcase.html` in the project root. It is self-contained, offline, atomically written with mode `0600`, and locally excludes only that exact default path and its atomic temporary-file pattern. Explicit custom outputs remain unmanaged. RubyLens refuses to replace a tracked default or an unrelated existing file.
 
-The Showcase payload intentionally includes the project name, aggregate Ruby statistics, and numeric visual structure. It does not serialize declaration names, gem names, source text, comments, or paths. Its deterministic renderer prioritizes gem hubs and bounds large scenes to 50,000 plotted points, sampling hubs only if they alone exceed that budget. `prefers-reduced-motion` produces one stable frame instead of a continuous orbit.
+The Showcase payload intentionally includes the project name, aggregate Ruby statistics, and numeric visual structure. It does not serialize declaration names, gem names, source text, comments, or paths. Configured multi-system scenes serialize at most 50,000 namespace rows, plus bounded dependency detail, and retain an anonymous hub and deterministic representatives from every nonempty system before allocating detail. Unconfigured scenes preserve the existing 50,000-point gem-hub sampler. `prefers-reduced-motion` produces one stable frame instead of a continuous orbit.
 
 Ruby API:
 
@@ -50,7 +50,7 @@ puts result.output_path
 
 Showcase generation and viewing need no Chrome, Chromium, Ferrum, FFmpeg, Node, or HTTP server. The HTML discloses enough aggregate structure to characterize a codebase, so review it before sharing.
 
-The configurable multi-system design for repositories with many first-class applications or components is documented in [`docs/MONOREPO_BOUNDARIES.md`](docs/MONOREPO_BOUNDARIES.md). Reference-route experiments are paused and preserved in [`docs/REFERENCE_ROUTES_FUTURE.md`](docs/REFERENCE_ROUTES_FUTURE.md).
+Repositories with many first-class applications or components can add a strict versioned `.rubylens.yml`, or pass `--config FILE`, to render them as separate Core systems. Use `--no-config` to force the unchanged single-system behavior. The full matching, ownership, privacy, geometry, and bounded-plotting contract is documented in [`docs/MONOREPO_BOUNDARIES.md`](docs/MONOREPO_BOUNDARIES.md). Reference-route experiments are paused and preserved in [`docs/REFERENCE_ROUTES_FUTURE.md`](docs/REFERENCE_ROUTES_FUTURE.md).
 
 ## Development
 
