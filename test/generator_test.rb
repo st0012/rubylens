@@ -3,6 +3,11 @@
 require_relative "test_helper"
 
 class GeneratorTest < Minitest::Test
+  def test_report_and_showcase_use_distinct_configured_namespace_budgets
+    assert_equal(100_000, RubyLens::Generator::DEFAULT_NAMESPACE_BUDGET)
+    assert_equal(50_000, RubyLens::ShowcaseGenerator::DEFAULT_NAMESPACE_BUDGET)
+  end
+
   def test_generation_pipeline_builds_the_model_and_shared_warnings
     manifest = Struct.new(:warnings).new(["manifest warning"])
     manifest_builder = Object.new

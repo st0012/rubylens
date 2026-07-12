@@ -41,4 +41,16 @@ class ModelNamespaceAllocationTest < Minitest::Test
     assert_equal({ "alpha" => 2, "beta" => 2, "zeta" => 1 }, keys.zip(quotas).to_h)
     assert_equal(keys.zip(quotas).to_h, reordered_keys.zip(reordered).to_h)
   end
+
+  def test_preserves_group_and_category_minimums_before_weighted_detail
+    quotas = RubyLens::Model::NamespaceAllocation.new(
+      sizes: [10, 10], keys: %w[beta alpha], minimums: [2, 2], budget: 4,
+    ).quotas
+    constrained = RubyLens::Model::NamespaceAllocation.new(
+      sizes: [10, 10], keys: %w[beta alpha], minimums: [2, 2], budget: 3,
+    ).quotas
+
+    assert_equal([2, 2], quotas)
+    assert_equal([1, 2], constrained)
+  end
 end
