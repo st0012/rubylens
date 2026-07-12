@@ -22,7 +22,7 @@
       tests: { ancestorDepth: .18, definitionSites: .25, reopenings: .18, descendants: .42, references: .85, members: .55 },
       dependencies: { ancestorDepth: .12, definitionSites: .35, reopenings: .2, descendants: .32, references: .48, members: .4 },
     };
-    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, showcaseRenderer = null;
+    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, focusedGroupIndex = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, showcaseRenderer = null;
     const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35, SHOWCASE_POINT_LIMIT = 50_000;
     const SHOWCASE_PRESET = Object.freeze({
       "stageWidth": 1920,
@@ -49,13 +49,15 @@
       "mastheadWidth": 632
     });
     const TOP_DOWN_PITCH = Math.PI / 2;
-    const contextVisibility = { selection: .75, category: .16, package: .75 };
+    const contextVisibility = { selection: .75, category: .16, package: .75, system: .75 };
     const pointers = new Map();
     const visibleCategories = { core: true, tests: true, dependencies: true };
     const visibilityInputs = {};
     const focusButtons = {};
+    const systemFocusButtons = {};
     const excludedTriviaNames = new Set(["Object", "Kernel", "BasicObject"]);
     const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const configuredMobile = () => groupedMode && Math.min(window.innerWidth, window.innerHeight) <= 430;
     let drifting = interactiveMode && !reducedMotionQuery.matches;
     const colours = { core: [244, 82, 132], tests: [87, 204, 255], dependencies: [255, 184, 77] };
 
@@ -97,13 +99,15 @@
     }
 
     const GROUPED_WORKSPACE_RADIUS = 42;
-    const groupNamespaceCount = row => Number(row?.[1] || 0) + Number(row?.[2] || 0) + Number(row?.[3] || 0);
-    const rawGroupRadii = groupedMode ? model.groups.map(row => 6 + Math.sqrt(groupNamespaceCount(row)) * .35) : [];
-    const rawWorkspaceRadius = groupedMode ? model.groupAnchors.reduce((radius, anchor, index) => (
+    const sourceGroupAnchors = groupedMode && interactiveMode && model.explorerLayout === "atlas"
+      ? model.explorerAnchors
+      : model.groupAnchors;
+    const rawGroupRadii = groupedMode ? model.groupRadii.map(value => value / 1000) : [];
+    const rawWorkspaceRadius = groupedMode ? sourceGroupAnchors.reduce((radius, anchor, index) => (
       Math.max(radius, Math.hypot(anchor[0], anchor[1], anchor[2]) + rawGroupRadii[index])
     ), 0) : 0;
     const groupedPositionScale = rawWorkspaceRadius > 0 ? GROUPED_WORKSPACE_RADIUS / rawWorkspaceRadius : 1;
-    const groupAnchors = groupedMode ? model.groupAnchors.map(anchor => anchor.map(value => value * groupedPositionScale)) : [];
+    const groupAnchors = groupedMode ? sourceGroupAnchors.map(anchor => anchor.map(value => value * groupedPositionScale)) : [];
     const groupRadii = rawGroupRadii.map(radius => radius * groupedPositionScale);
     const workspaceSystemRadius = groupedMode ? groupAnchors.reduce((radius, anchor, index) => (
       Math.max(radius, Math.hypot(anchor[0], anchor[1], anchor[2]) + groupRadii[index])
@@ -117,7 +121,14 @@
       const local = tests ? testPosition(row[0]) : corePosition(row[0]);
       const magnitude = Math.max(Math.hypot(local[0], local[1], local[2]), 1e-6);
       const localRadius = systemRadius * (tests ? .68 + unit(row[0], 31) * .28 : .08 + unit(row[0], 30) * .5);
-      return anchor.map((value, index) => value + local[index] / magnitude * localRadius);
+      const position = local.map(value => value / magnitude * localRadius);
+      const pitch = (unit(groupIndex + 1, 32) - .5) * .28;
+      const roll = (unit(groupIndex + 1, 33) - .5) * .2;
+      const pitchCos = Math.cos(pitch), pitchSin = Math.sin(pitch);
+      const rollCos = Math.cos(roll), rollSin = Math.sin(roll);
+      const pitched = [position[0], position[1] * pitchCos - position[2] * pitchSin, position[1] * pitchSin + position[2] * pitchCos];
+      const inclined = [pitched[0] * rollCos - pitched[1] * rollSin, pitched[0] * rollSin + pitched[1] * rollCos, pitched[2]];
+      return anchor.map((value, index) => value + inclined[index]);
     }
 
     const packageAnchors = model.packages.map((row, index) => {
@@ -146,36 +157,74 @@
 
     function buildPoints() {
       const points = [];
+      const namespacePoints = [];
       const interactivePoints = [];
       const dependencyHubs = [];
+      const systemHubs = [];
+      const namespaceLods = Array(model.namespaces.length).fill(2);
+      if (groupedMode) {
+        model.groupRanges.forEach(([first, length], groupIndex) => {
+          const midLength = model.groupLods[groupIndex][0];
+          for (let offset = 0; offset < length; offset += 1) namespaceLods[first + offset] = offset < midLength ? 1 : 2;
+        });
+      }
       const addPoint = (point, interactive = true) => {
+        point.renderOrder = points.length;
         points.push(point);
         if (interactive && interactiveMode) interactivePoints.push(point);
         if (point.hub) dependencyHubs.push(point);
+        if (point.systemHub) systemHubs.push(point);
       };
       model.namespaces.forEach((row, index) => {
         const category = row[3] === 1 ? "tests" : "core";
         const values = row.slice(4, 10);
         const rubyCounts = row.slice(10, 14);
-        const point = { category, groupIndex: groupedMode ? row[1] : null, seed: row[0], position: groupedMode ? groupedNamespacePosition(row) : category === "tests" ? testPosition(row[0]) : corePosition(row[0]), signal: weightedSignal(normalizedSignals(values), category), base: category === "core" ? .82 : .68 };
+        const point = { category, groupIndex: groupedMode ? row[1] : null, sourceIndex: index, lod: groupedMode ? namespaceLods[index] : 2, seed: row[0], position: groupedMode ? groupedNamespacePosition(row) : category === "tests" ? testPosition(row[0]) : corePosition(row[0]), signal: weightedSignal(normalizedSignals(values), category), base: category === "core" ? .82 : .68 };
         if (interactiveMode) Object.assign(point, { name: model.namespaceNames[index], groupName: groupedMode ? model.groupNames[row[1]] : null, kind: row[2] === 0 ? "Class" : "Module", rubyCounts, instanceVariableCount: row[14] || 0, values });
+        namespacePoints.push(point);
         addPoint(point);
       });
+      if (groupedMode) {
+        model.groups.forEach((row, groupIndex) => {
+          const coreCount = Number(row[1] || 0) + Number(row[3] || 0);
+          const testCount = Number(row[2] || 0);
+          if (coreCount + testCount === 0) return;
+          const point = {
+            category: coreCount > 0 ? "core" : "tests",
+            groupIndex,
+            lod: 0,
+            seed: hash(groupIndex + 1, 34),
+            position: groupAnchors[groupIndex],
+            signal: .5,
+            base: 1 + Math.min(3.2, groupRadii[groupIndex] * .22),
+            systemHub: true,
+            systemRadius: groupRadii[groupIndex],
+          };
+          if (interactiveMode) Object.assign(point, {
+            name: model.groupNames[groupIndex],
+            coreCount,
+            testCount,
+            crossGroupCount: Number(row[4] || 0),
+            rubyCounts: row.slice(5, 9),
+          });
+          addPoint(point, false);
+        });
+      }
       model.dependencyStars.forEach(row => {
         const values = row.slice(2, 8);
-        addPoint({ category: "dependencies", packageIndex: row[1], seed: row[0], position: dependencyPosition(row[0], row[1]), signal: weightedSignal(normalizedSignals(values), "dependencies"), base: .45 }, false);
+        addPoint({ category: "dependencies", lod: groupedMode ? 1 : 2, packageIndex: row[1], seed: row[0], position: dependencyPosition(row[0], row[1]), signal: weightedSignal(normalizedSignals(values), "dependencies"), base: .45 }, false);
       });
       packageAnchors.forEach((anchor, index) => {
         const packageRow = model.packages[index];
         const rubyCounts = packageRow.slice(4, 8);
         const visualValues = [0, packageRow[3], 0, 0, 0, 0];
-        const point = { category: "dependencies", packageIndex: index, seed: packageRow[0], position: anchor.slice(0, 3), signal: weightedSignal(normalizedSignals(visualValues), "dependencies"), base: 1.8, hub: true };
+        const point = { category: "dependencies", lod: groupedMode ? 0 : 2, packageIndex: index, seed: packageRow[0], position: anchor.slice(0, 3), signal: weightedSignal(normalizedSignals(visualValues), "dependencies"), base: 1.8, hub: true };
         if (interactiveMode) Object.assign(point, { name: model.packageNames[index], packageRole: packageRow[1] === 0 ? "Direct dependency" : "Transitive dependency", packageLocation: packageRow[2] === 0 ? "Workspace package" : "External gem", rubyCounts });
         addPoint(point);
       });
-      return { points, interactivePoints, dependencyHubs };
+      return { points, namespacePoints, interactivePoints, dependencyHubs, systemHubs };
     }
-    const { points, interactivePoints, dependencyHubs } = buildPoints();
+    const { points, namespacePoints, interactivePoints, dependencyHubs, systemHubs } = buildPoints();
     function showcasePointSample() {
       if (groupedMode || !showcaseMode || points.length <= SHOWCASE_POINT_LIMIT) return points;
       const hubs = points.filter(point => point.hub);
@@ -191,15 +240,58 @@
       candidates.sort((left, right) => left[0] - right[0] || left[1] - right[1]);
       return candidates.slice(0, available).map(candidate => candidate[2]).concat(hubs);
     }
-    const renderPoints = showcasePointSample();
+    const sampledPoints = showcasePointSample();
+    const renderPoints = groupedMode
+      ? sampledPoints.slice().sort((left, right) => left.lod - right.lod || left.renderOrder - right.renderOrder)
+      : sampledPoints;
+    const firstMidPoint = groupedMode ? renderPoints.findIndex(point => point.lod > 0) : -1;
+    const farPointCount = groupedMode ? (firstMidPoint < 0 ? renderPoints.length : firstMidPoint) : renderPoints.length;
+    const firstNearPoint = groupedMode ? renderPoints.findIndex(point => point.lod > 1) : -1;
+    const midPointCount = groupedMode ? (firstNearPoint < 0 ? renderPoints.length : firstNearPoint) : renderPoints.length;
+    const firstFaintDependency = groupedMode ? renderPoints.findIndex(point => point.lod === 1 && point.category === "dependencies" && !point.hub) : -1;
+    const essentialMidPointCount = firstFaintDependency < 0 ? midPointCount : Math.min(midPointCount, firstFaintDependency);
+    const groupNearDrawRanges = groupedMode ? model.groups.map(() => [0, 0]) : [];
+    if (groupedMode) {
+      for (let index = midPointCount; index < renderPoints.length; index += 1) {
+        const groupIndex = renderPoints[index].groupIndex;
+        const range = groupNearDrawRanges[groupIndex];
+        if (range[1] === 0) range[0] = index;
+        range[1] += 1;
+      }
+    }
+
+    function visibleDrawRanges() {
+      if (!groupedMode) return [[0, renderPoints.length]];
+      const basePointCount = configuredMobile() ? essentialMidPointCount : midPointCount;
+      if (focusedGroupIndex !== null) {
+        const near = groupNearDrawRanges[focusedGroupIndex] || [0, 0];
+        return near[1] > 0 ? [[0, basePointCount], near] : [[0, basePointCount]];
+      }
+      const overviewCount = interactiveMode && model.explorerLayout === "atlas" ? farPointCount : basePointCount;
+      return [[0, overviewCount]];
+    }
+    function updateQaDrawCounts() {
+      if (!groupedMode || !qaMode) return;
+      const ranges = visibleDrawRanges();
+      document.documentElement.dataset.rubylensRetainedPoints = String(renderPoints.length);
+      document.documentElement.dataset.rubylensRenderedPoints = String(ranges.reduce((sum, range) => sum + range[1], 0));
+      document.documentElement.dataset.rubylensDrawRanges = JSON.stringify(ranges);
+      document.documentElement.dataset.rubylensFarPoints = String(farPointCount);
+      document.documentElement.dataset.rubylensMidPoints = String(midPointCount);
+      document.documentElement.dataset.rubylensEssentialMidPoints = String(essentialMidPointCount);
+      document.documentElement.dataset.rubylensSelectedRangePoints = focusedGroupIndex === null ? "0" : String(model.groupRanges[focusedGroupIndex][1]);
+      document.documentElement.dataset.rubylensSelectedNearPoints = focusedGroupIndex === null ? "0" : String(groupNearDrawRanges[focusedGroupIndex][1]);
+    }
     if (groupedMode && qaMode) {
-      document.documentElement.dataset.rubylensRenderedPoints = String(renderPoints.length);
       document.documentElement.dataset.rubylensNamespacePoints = String(model.namespaces.length);
       document.documentElement.dataset.rubylensRangePoints = String(model.groupRanges.reduce((sum, range) => sum + range[1], 0));
       let minimumCentroidDistance = Infinity;
-      for (let leftIndex = 0; leftIndex < groupAnchors.length; leftIndex += 1) {
+      const activeGroupIndexes = model.groups.map((row, index) => Number(row[1] || 0) + Number(row[2] || 0) + Number(row[3] || 0) > 0 ? index : null).filter(Number.isInteger);
+      for (let leftRank = 0; leftRank < activeGroupIndexes.length; leftRank += 1) {
+        const leftIndex = activeGroupIndexes[leftRank];
         const left = groupAnchors[leftIndex];
-        for (let rightIndex = leftIndex + 1; rightIndex < groupAnchors.length; rightIndex += 1) {
+        for (let rightRank = leftRank + 1; rightRank < activeGroupIndexes.length; rightRank += 1) {
+          const rightIndex = activeGroupIndexes[rightRank];
           const right = groupAnchors[rightIndex];
           minimumCentroidDistance = Math.min(minimumCentroidDistance, Math.hypot(left[0] - right[0], left[1] - right[1], left[2] - right[2]));
         }
@@ -207,7 +299,7 @@
       const localDistances = { core: { sum: 0, count: 0 }, tests: { sum: 0, count: 0 } };
       let minimumDependencyRadius = Infinity;
       for (const point of points) {
-        if (Number.isInteger(point.groupIndex)) {
+        if (Number.isInteger(point.groupIndex) && !point.systemHub) {
           const anchor = groupAnchors[point.groupIndex];
           localDistances[point.category].sum += Math.hypot(point.position[0] - anchor[0], point.position[1] - anchor[1], point.position[2] - anchor[2]);
           localDistances[point.category].count += 1;
@@ -219,6 +311,7 @@
       document.documentElement.dataset.rubylensCoreMeanRadius = (localDistances.core.sum / Math.max(1, localDistances.core.count)).toFixed(3);
       document.documentElement.dataset.rubylensTestMeanRadius = (localDistances.tests.sum / Math.max(1, localDistances.tests.count)).toFixed(3);
       document.documentElement.dataset.rubylensDependencyMargin = Number.isFinite(minimumDependencyRadius) ? (minimumDependencyRadius - workspaceSystemRadius).toFixed(3) : "0";
+      updateQaDrawCounts();
     }
 
     function createShowcaseRenderer() {
@@ -393,7 +486,7 @@
         pointData[offset + 3] = point.base * (.62 + point.signal * .46);
         pointData[offset + 4] = clamp(.14 + point.signal * .105, .12, point.hub ? .86 : .7);
         pointData[offset + 5] = categoryIndex[point.category];
-        pointData[offset + 6] = point.hub ? 5.2 : 3.2;
+        pointData[offset + 6] = point.systemHub ? 8 : point.hub ? 5.2 : 3.2;
       });
 
       const pointVao = gl.createVertexArray();
@@ -429,10 +522,12 @@
       document.documentElement.dataset.pointSizeRange = `${pointSizeRange[0]},${pointSizeRange[1]}`;
       canvas.style.display = "none";
 
+      let renderScale = 1;
       return Object.freeze({
         resize(viewportWidth, viewportHeight) {
-          liveCanvas.width = Math.round(viewportWidth);
-          liveCanvas.height = Math.round(viewportHeight);
+          renderScale = configuredMobile() ? .75 : 1;
+          liveCanvas.width = Math.round(viewportWidth * renderScale);
+          liveCanvas.height = Math.round(viewportHeight * renderScale);
           gl.viewport(0, 0, liveCanvas.width, liveCanvas.height);
         },
         render() {
@@ -440,9 +535,9 @@
           gl.disable(gl.BLEND);
           gl.useProgram(backgroundProgram);
           gl.bindVertexArray(null);
-          gl.uniform2f(backgroundUniforms.resolution, width, height);
-          gl.uniform2f(backgroundUniforms.center, sceneCenterX, sceneCenterY);
-          gl.uniform1f(backgroundUniforms.backgroundGlow, SHOWCASE_PRESET.backgroundGlowPercent);
+          gl.uniform2f(backgroundUniforms.resolution, width * renderScale, height * renderScale);
+          gl.uniform2f(backgroundUniforms.center, sceneCenterX * renderScale, sceneCenterY * renderScale);
+          gl.uniform1f(backgroundUniforms.backgroundGlow, SHOWCASE_PRESET.backgroundGlowPercent * (configuredMobile() ? .8 : 1));
           gl.drawArrays(gl.TRIANGLES, 0, 3);
 
           gl.enable(gl.BLEND);
@@ -450,17 +545,18 @@
           gl.blendFunc(gl.ONE, gl.ONE);
           gl.useProgram(pointProgram);
           gl.bindVertexArray(pointVao);
-          gl.uniform2f(pointUniforms.resolution, width, height);
-          gl.uniform2f(pointUniforms.center, sceneCenterX, sceneCenterY);
+          gl.uniform2f(pointUniforms.resolution, width * renderScale, height * renderScale);
+          gl.uniform2f(pointUniforms.center, sceneCenterX * renderScale, sceneCenterY * renderScale);
           gl.uniform1f(pointUniforms.yaw, yaw);
           gl.uniform1f(pointUniforms.pitch, pitch);
-          gl.uniform1f(pointUniforms.zoom, zoom);
+          gl.uniform1f(pointUniforms.zoom, zoom * renderScale);
           gl.uniform1f(pointUniforms.brightness, SHOWCASE_PRESET.starBrightnessPercent);
-          gl.uniform1f(pointUniforms.glow, SHOWCASE_PRESET.pointGlowPercent);
+          gl.uniform1f(pointUniforms.glow, SHOWCASE_PRESET.pointGlowPercent * (configuredMobile() ? .65 : 1));
           gl.uniform1f(pointUniforms.deepDetail, deepDetail);
           for (let pass = 0; pass < 3; pass += 1) {
+            if (configuredMobile() && pass === 2) continue;
             gl.uniform1i(pointUniforms.pass, pass);
-            gl.drawArrays(gl.POINTS, 0, renderPoints.length);
+            for (const [first, length] of visibleDrawRanges()) gl.drawArrays(gl.POINTS, first, length);
           }
           gl.bindVertexArray(null);
           gl.disable(gl.BLEND);
@@ -637,8 +733,14 @@
 
     function updateTooltipContent(point) {
       tooltipMetrics.textContent = "";
-      tooltipCategory.textContent = point.hub ? "Gem" : point.category === "tests" ? "Tests" : "Core code";
+      tooltipCategory.textContent = point.systemHub ? "Core system" : point.hub ? "Gem" : point.category === "tests" ? "Tests" : "Core code";
       tooltipName.textContent = point.name || "Unnamed Ruby item";
+      if (point.systemHub) {
+        const spans = point.crossGroupCount > 0 ? ` · ${point.crossGroupCount.toLocaleString()} shared namespace span${point.crossGroupCount === 1 ? "" : "s"}` : "";
+        tooltipContext.textContent = `${point.coreCount.toLocaleString()} Core · ${point.testCount.toLocaleString()} Tests${spans}`;
+        addRubyMetrics(point.rubyCounts, allRubyMetricIndexes);
+        return;
+      }
       if (point.hub) {
         const expanded = expandedPackageIndex === point.packageIndex ? " · Expanded gem cloud · Escape to exit" : "";
         tooltipContext.textContent = `${point.packageRole} · ${point.packageLocation}${expanded}`;
@@ -681,10 +783,10 @@
       requestRender();
     }
 
-    function hitTest(x, y) {
+    function nearestScreenPoint(candidates, x, y) {
       let nearest = null;
       let nearestDistance = Infinity;
-      for (const point of interactivePoints) {
+      for (const point of candidates) {
         if (!point.screen) continue;
         if (focusedCategory && point.category !== focusedCategory) continue;
         if (expandedPackageIndex !== null && (point.category !== "dependencies" || point.packageIndex !== expandedPackageIndex)) continue;
@@ -698,6 +800,47 @@
         }
       }
       return nearest;
+    }
+
+    function nearestNamespaceInRange(first, length, x, y) {
+      let nearest = null;
+      let nearestDistance = Infinity;
+      const last = Math.min(namespacePoints.length, first + length);
+      for (let index = first; index < last; index += 1) {
+        const point = namespacePoints[index];
+        if (!point.screen || (focusedCategory && point.category !== focusedCategory)) continue;
+        const distance = Math.hypot(point.screen[0] - x, point.screen[1] - y);
+        const radius = Math.max(8, point.screen[2] + 4);
+        if (distance <= radius && distance < nearestDistance) {
+          nearest = point;
+          nearestDistance = distance;
+        }
+      }
+      return nearest;
+    }
+
+    function systemHubAt(x, y) {
+      let nearest = null;
+      let nearestRatio = Infinity;
+      for (const point of systemHubs) {
+        if (!point.screen) continue;
+        const distance = Math.hypot(point.screen[0] - x, point.screen[1] - y);
+        const radius = Math.max(10, point.screen[2] + point.systemRadius * point.screen[3]);
+        const ratio = distance / radius;
+        if (ratio <= 1 && ratio < nearestRatio) {
+          nearest = point;
+          nearestRatio = ratio;
+        }
+      }
+      return nearest;
+    }
+
+    function hitTest(x, y) {
+      if (!groupedMode) return nearestScreenPoint(interactivePoints, x, y);
+      if (focusedGroupIndex === null) return systemHubAt(x, y);
+
+      const [first, length] = model.groupRanges[focusedGroupIndex];
+      return nearestNamespaceInRange(first, length, x, y);
     }
 
     function dependencyPackageAt(x, y, exact = hitTest(x, y)) {
@@ -821,10 +964,21 @@
       expandedPackageIndex = null;
     }
 
+    function clearSystemFocus() {
+      if (focusedGroupIndex === null) return;
+      const previous = focusedGroupIndex;
+      focusedGroupIndex = null;
+      if (systemFocusButtons[previous]) systemFocusButtons[previous].setAttribute("aria-pressed", "false");
+      document.body.removeAttribute("data-focused-group-index");
+      document.dispatchEvent(new CustomEvent("rubylens:core-system-focus", { detail: { groupIndex: null } }));
+      updateQaDrawCounts();
+    }
+
     function clearExplorationFocus() {
       cancelCameraFlight();
       clearActiveFact();
       clearCategoryFocus();
+      clearSystemFocus();
       clearExpandedPackage();
       selectPoint(null);
     }
@@ -843,6 +997,7 @@
       }
       setCategoryVisible(category, true);
       clearActiveFact();
+      clearSystemFocus();
       clearExpandedPackage();
       selectPoint(null);
       clearCategoryFocus();
@@ -864,6 +1019,7 @@
       }
       setCategoryVisible(point.category, true);
       clearActiveFact();
+      clearSystemFocus();
       clearExpandedPackage();
       activeFactButton = button;
       activeFactButton.setAttribute("aria-pressed", "true");
@@ -875,12 +1031,48 @@
       flyCamera(topDownCameraTargetForPoint(point));
     }
 
+    function focusSystem(groupIndex, button = systemFocusButtons[groupIndex]) {
+      const hub = systemHubs.find(point => point.groupIndex === Number(groupIndex));
+      if (!hub) return false;
+      if (focusedGroupIndex === hub.groupIndex) {
+        clearExplorationFocus();
+        return true;
+      }
+
+      clearActiveFact();
+      clearCategoryFocus();
+      clearExpandedPackage();
+      clearSystemFocus();
+      focusedGroupIndex = hub.groupIndex;
+      if (button) button.setAttribute("aria-pressed", "true");
+      document.body.dataset.focusedGroupIndex = String(hub.groupIndex);
+      document.dispatchEvent(new CustomEvent("rubylens:core-system-focus", { detail: { groupIndex: hub.groupIndex } }));
+      updateQaDrawCounts();
+      setDrifting(false);
+      selectedPoint = null;
+      selectionLocked = false;
+      selectPoint(hub, true);
+      flyCamera(cameraTargetForPoint(hub, clamp(7 / Math.max(hub.systemRadius, 1), 4, 7)));
+      return true;
+    }
+
+    if (interactiveMode && groupedMode) {
+      window.RubyLensCoreSystems = Object.freeze({
+        focus: groupIndex => focusSystem(Number(groupIndex)),
+        clear: () => { clearExplorationFocus(); return true; },
+        range: groupIndex => model.groupRanges[Number(groupIndex)]?.slice() || null,
+        selected: () => focusedGroupIndex,
+        layout: model.explorerLayout,
+      });
+    }
+
     function focusDependencyPackage(packageIndex, button = null) {
       const hub = dependencyHubs.find(point => point.packageIndex === packageIndex);
       if (!hub) return false;
 
       setCategoryVisible("dependencies", true);
       clearActiveFact();
+      clearSystemFocus();
       if (button) {
         activeFactButton = button;
         activeFactButton.setAttribute("aria-pressed", "true");
@@ -975,20 +1167,29 @@
           const systemsTitle = document.createElement("h3");
           systemsTitle.textContent = "Core systems";
           const systemList = document.createElement("ol");
-          model.groupNames.slice(0, 16).forEach((name, index) => {
+          const activeSystemIndexes = model.groups
+            .map((row, index) => Number(row[1] || 0) + Number(row[2] || 0) + Number(row[3] || 0) > 0 ? index : null)
+            .filter(Number.isInteger);
+          activeSystemIndexes.slice(0, 16).forEach(index => {
+            const name = model.groupNames[index];
             const row = model.groups[index];
             const item = document.createElement("li");
-            const label = document.createElement("span");
+            const label = document.createElement("button");
+            label.type = "button";
+            label.setAttribute("aria-pressed", "false");
+            label.setAttribute("aria-label", `Focus Core system ${name}`);
             label.textContent = name;
+            systemFocusButtons[index] = label;
+            label.addEventListener("click", () => focusSystem(index, label));
             const count = document.createElement("small");
             count.textContent = `${Number(row[1] || 0) + Number(row[3] || 0)} core · ${Number(row[2] || 0)} tests`;
             item.append(label, count);
             systemList.append(item);
           });
           systems.append(systemsTitle, systemList);
-          if (model.groupNames.length > 16) {
+          if (activeSystemIndexes.length > 16) {
             const remainder = document.createElement("p");
-            remainder.textContent = `${(model.groupNames.length - 16).toLocaleString()} more systems`;
+            remainder.textContent = `${(activeSystemIndexes.length - 16).toLocaleString()} more systems`;
             systems.append(remainder);
           }
           body.append(systems);
@@ -1041,21 +1242,24 @@
         height = SHOWCASE_PRESET.stageHeight;
         if (showcaseRenderer) showcaseRenderer.resize(width, height);
         else {
-          canvas.width = width;
-          canvas.height = height;
-          context.setTransform(1, 0, 0, 1, 0, 0);
+          const renderScale = configuredMobile() ? .75 : 1;
+          canvas.width = Math.round(width * renderScale);
+          canvas.height = Math.round(height * renderScale);
+          context.setTransform(renderScale, 0, 0, renderScale, 0, 0);
         }
         fitShowcaseStage();
         updateSceneViewport();
+        updateQaDrawCounts();
         if (reducedMotionQuery.matches) applyShowcaseCamera(0);
         requestRender();
         return;
       }
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      dpr = Math.min(window.devicePixelRatio || 1, configuredMobile() ? 1.25 : 2);
       width = window.innerWidth; height = window.innerHeight;
       canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
       updateSceneViewport();
+      updateQaDrawCounts();
       requestRender();
     }
 
@@ -1157,19 +1361,22 @@
       context.globalCompositeOperation = "lighter";
       const matrix = [Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch)];
       const deepDetail = clamp(Math.log2(Math.max(1, zoom)) / 5, 0, 1);
-      for (const point of renderPoints) {
+      for (const [first, length] of visibleDrawRanges()) {
+      for (let index = first; index < first + length; index += 1) {
+        const point = renderPoints[index];
         const projected = project(point, matrix);
         if (!projected) continue;
         const [x, y, perspective] = projected;
         if (x < -20 || x > sceneRight + 20 || y < -20 || y > sceneBottom + 20) continue;
-        const size = clamp(point.base * (.62 + point.signal * .46) * perspective, .35, point.hub ? 5.2 : 3.2);
+        const size = clamp(point.base * (.62 + point.signal * .46) * perspective, .35, point.systemHub ? 8 : point.hub ? 5.2 : 3.2);
         const alpha = clamp(.14 + point.signal * .105, .12, point.hub ? .86 : .7) * SHOWCASE_PRESET.starBrightnessPercent / 100;
         const colour = colours[point.category];
         if (size > 1.35) {
-          const glowScale = (3.4 - deepDetail * 1.3) * (.75 + .25 * SHOWCASE_PRESET.pointGlowPercent / 100);
+          const mobileGlow = configuredMobile() ? .65 : 1;
+          const glowScale = (3.4 - deepDetail * 1.3) * (.75 + .25 * SHOWCASE_PRESET.pointGlowPercent * mobileGlow / 100);
           context.beginPath();
           context.arc(x, y, size * glowScale, 0, Math.PI * 2);
-          context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${alpha * .055 * SHOWCASE_PRESET.pointGlowPercent / 100})`;
+          context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${alpha * .055 * SHOWCASE_PRESET.pointGlowPercent * mobileGlow / 100})`;
           context.fill();
         }
         context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${alpha})`;
@@ -1179,13 +1386,13 @@
           context.arc(x, y, size, 0, Math.PI * 2);
           context.fill();
         }
-        if (size > 1.1) {
+        if (size > 1.1 && !configuredMobile()) {
           context.beginPath();
           context.arc(x, y, Math.max(.45 + deepDetail * .25, size * (.24 + deepDetail * .06)), 0, Math.PI * 2);
           context.fillStyle = `rgba(255,248,244,${Math.min(.9, alpha * 1.25)})`;
           context.fill();
         }
-      }
+      }}
       context.globalCompositeOperation = "source-over";
     }
 
@@ -1207,7 +1414,9 @@
       context.globalCompositeOperation = "lighter";
       const matrix = [Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch)];
       const deepDetail = clamp(Math.log2(Math.max(1, zoom)) / 5, 0, 1);
-      for (const point of renderPoints) {
+      for (const [first, length] of visibleDrawRanges()) {
+      for (let index = first; index < first + length; index += 1) {
+        const point = renderPoints[index];
         point.screen = null;
         if (point.hub) point.cloudScreenRadius = null;
         if (!visibleCategories[point.category]) continue;
@@ -1217,29 +1426,35 @@
         const cullMargin = point === selectedPoint ? 0 : 20;
         if (x < -cullMargin || x > sceneRight + cullMargin || y < -cullMargin || y > sceneBottom + cullMargin) continue;
         const signal = point.signal;
-        const size = clamp(point.base * (.62 + signal * .46) * perspective, .35, point.hub ? 5.2 : 3.2);
+        const size = clamp(point.base * (.62 + signal * .46) * perspective, .35, point.systemHub ? 8 : point.hub ? 5.2 : 3.2);
         const alpha = clamp(.14 + signal * .105, .12, point.hub ? .86 : .7);
         const focusedPackagePoint = expandedPackageIndex !== null && point.category === "dependencies" && point.packageIndex === expandedPackageIndex;
-        const emphasis = expandedPackageIndex !== null
+        const systemEmphasis = focusedGroupIndex !== null && Number.isInteger(point.groupIndex) && point.groupIndex !== focusedGroupIndex
+          ? contextVisibility.system
+          : 1;
+        const selectionEmphasis = selectionLocked && selectedPoint
+          ? (selectedPoint.systemHub ? 1 : point === selectedPoint ? 1 : contextVisibility.selection)
+          : focusedCategory && point.category !== focusedCategory ? contextVisibility.category : 1;
+        const emphasis = (expandedPackageIndex !== null
           ? (focusedPackagePoint ? 1 : contextVisibility.package)
-          : selectionLocked && selectedPoint ? (point === selectedPoint ? 1 : contextVisibility.selection) : focusedCategory && point.category !== focusedCategory ? contextVisibility.category : 1;
+          : selectionEmphasis) * systemEmphasis;
         const visibleAlpha = focusedPackagePoint ? Math.max(.34, alpha) : alpha * emphasis;
         const colour = colours[point.category];
-        point.screen = [x, y, size];
+        point.screen = [x, y, size, perspective];
         if (point.hub) {
           const expansion = expandedPackageIndex === point.packageIndex ? DEPENDENCY_EXPANSION : 1;
           point.cloudScreenRadius = Math.max(12, packageAnchors[point.packageIndex][3] * perspective * expansion * 1.2);
         }
         const detailedPoint = expandedPackageIndex !== null ? focusedPackagePoint : emphasis >= .1;
         if (size > 1.35 && detailedPoint) {
-          const glowScale = focusedPackagePoint ? 2.2 - deepDetail * .8 : 3.4 - deepDetail * 1.3;
+          const glowScale = (focusedPackagePoint ? 2.2 - deepDetail * .8 : 3.4 - deepDetail * 1.3) * (configuredMobile() ? .7 : 1);
           context.beginPath(); context.arc(x, y, size * glowScale, 0, Math.PI * 2);
           context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${visibleAlpha * (focusedPackagePoint ? .045 : .055)})`; context.fill();
         }
         context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${visibleAlpha})`;
         if (!detailedPoint || size < .85) context.fillRect(x, y, 1, 1);
         else { context.beginPath(); context.arc(x, y, size, 0, Math.PI * 2); context.fill(); }
-        if (size > 1.1 && detailedPoint) {
+        if (size > 1.1 && detailedPoint && !configuredMobile()) {
           context.beginPath(); context.arc(x, y, Math.max(.45 + deepDetail * .25, size * (.24 + deepDetail * .06)), 0, Math.PI * 2);
           context.fillStyle = `rgba(255,248,244,${Math.min(.9, visibleAlpha * 1.25)})`; context.fill();
         }
@@ -1249,7 +1464,7 @@
           context.beginPath(); context.arc(x, y, Math.max(12, size * 4), 0, Math.PI * 2);
           context.strokeStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},.5)`; context.lineWidth = 1; context.stroke();
         }
-      }
+      }}
       context.globalCompositeOperation = "source-over";
       if (selectedPoint) {
         if (cameraFlight) tooltip.hidden = true;
@@ -1309,7 +1524,13 @@
       ["classes", "modules", "methods", "constants"].forEach((metric, index) => {
         document.getElementById(`cinema-${metric}`).textContent = format(core[index]);
       });
-      document.getElementById("cinema-secondary").textContent = `Tests · ${counted(tests[0], "class", "classes")} · ${counted(tests[2], "method", "methods")}   ·   ${counted(totals.packages, "dependency gem", "dependency gems")} in orbit`;
+      if (groupedMode) {
+        const coreSystemCount = model.groups.filter(row => Number(row[1] || 0) + Number(row[2] || 0) + Number(row[3] || 0) > 0).length;
+        document.querySelector(".eyebrow").textContent = "RubyLens · Core systems";
+        document.getElementById("cinema-secondary").textContent = `Core systems · ${format(coreSystemCount)}   ·   Tests · ${counted(tests[0], "class", "classes")} · ${counted(tests[2], "method", "methods")}   ·   ${counted(totals.packages, "dependency gem", "dependency gems")} in orbit`;
+      } else {
+        document.getElementById("cinema-secondary").textContent = `Tests · ${counted(tests[0], "class", "classes")} · ${counted(tests[2], "method", "methods")}   ·   ${counted(totals.packages, "dependency gem", "dependency gems")} in orbit`;
+      }
     }
 
     function setDrifting(next) {
@@ -1398,6 +1619,7 @@
         clearActiveFact();
         clearCategoryFocus();
         if (point?.category === "dependencies" && selectionLocked && selectedPoint === point) focusDependencyPackage(point.packageIndex);
+        else if (point?.systemHub) focusSystem(point.groupIndex);
         else if (point) selectPoint(point, true);
         else clearExplorationFocus();
       }
@@ -1435,6 +1657,7 @@
       else if (event.key === "-") { cancelCameraFlight(); zoomBetween(zoom / ZOOM_STEP, sceneCenterX, sceneCenterY); }
       else if (event.key === "0") { cancelCameraFlight(); resetCamera(); }
       else if (event.key.toLowerCase() === "p") { cancelCameraFlight(); setNavigationMode(navigationMode === "pan" ? "orbit" : "pan"); }
+      else if ((event.key === "Enter" || event.key.toLowerCase() === "f") && selectedPoint?.systemHub) focusSystem(selectedPoint.groupIndex);
       else if ((event.key === "Enter" || event.key.toLowerCase() === "f") && selectedPoint?.category === "dependencies") focusDependencyPackage(selectedPoint.packageIndex);
       else return;
       event.preventDefault();

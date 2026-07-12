@@ -30,6 +30,8 @@ class ShowcaseWriterTest < Minitest::Test
       assert_includes(html, 'class="showcase-stage"')
       assert_includes(html, 'dataset.showcaseRenderer = "webgl2"')
       assert_includes(html, "function renderShowcase(timestamp)")
+      assert_includes(html, 'document.querySelector(".eyebrow").textContent = "RubyLens · Core systems"')
+      assert_includes(html, "`Core systems · ${format(coreSystemCount)}")
       assert_includes(html, 'dataset.showcaseReady = "true"')
       assert_includes(html, 'dataset.showcaseMotion = "reduced"')
       assert_includes(html, 'class="cinema-stats"')
