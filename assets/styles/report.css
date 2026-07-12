@@ -48,7 +48,9 @@
     .systems-summary h3 { margin: 0 0 7px; color: #7f788b; font-size: 10px; font-weight: 500; }
     .systems-summary ol { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
     .systems-summary li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; color: #e9e3ef; font-size: 10px; }
-    .systems-summary li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .systems-summary li button { overflow: hidden; border: 0; padding: 0; background: transparent; color: inherit; font-size: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+    .systems-summary li button:hover { color: #fff; background: transparent; }
+    .systems-summary li button[aria-pressed="true"] { color: #fff; text-decoration: underline; text-underline-offset: 2px; }
     .systems-summary li small, .systems-summary p { color: #756e7e; font-size: 9px; font-variant-numeric: tabular-nums; }
     .systems-summary p { margin: 7px 0 0; }
     .section-actions button[aria-pressed="true"] { border-color: rgba(216,200,255,.36); background: rgba(216,200,255,.14); color: #fff; }
