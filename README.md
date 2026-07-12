@@ -50,7 +50,7 @@ puts result.output_path
 
 Showcase generation and viewing need no Chrome, Chromium, Ferrum, FFmpeg, Node, or HTTP server. The HTML discloses enough aggregate structure to characterize a codebase, so review it before sharing.
 
-Repositories with many first-class applications or components can add a strict versioned `.rubylens.yml`, or pass `--config FILE`, to render them as separate Core systems. Use `--no-config` to force the unchanged single-system behavior. The full matching, ownership, privacy, geometry, and bounded-plotting contract is documented in [`docs/MONOREPO_BOUNDARIES.md`](docs/MONOREPO_BOUNDARIES.md). Reference-route experiments are paused and preserved in [`docs/REFERENCE_ROUTES_FUTURE.md`](docs/REFERENCE_ROUTES_FUTURE.md).
+Repositories with many first-class applications or components can add a strict versioned `.rubylens.yml`, or pass `--config FILE`, to make them named, navigable regions inside the same continuous Core galaxy. Boundaries never change host diameter and region proximity is artistic, not a dependency claim. Use `--no-config` for one anonymous region. The matching, ownership, privacy, scale, and bounded-rendering contract is documented in [`docs/MONOREPO_BOUNDARIES.md`](docs/MONOREPO_BOUNDARIES.md). Reference-route experiments are paused and preserved in [`docs/REFERENCE_ROUTES_FUTURE.md`](docs/REFERENCE_ROUTES_FUTURE.md).
 
 ## Development
 

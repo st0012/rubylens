@@ -99,7 +99,6 @@ end
 
 snapshot = {
   "schema" => "rubylens.snapshot.v6",
-  "explorer_layout" => ENV.fetch("EXPLORER_LAYOUT", "association"),
   "project_name" => "Synthetic Large Monorepo",
   "components" => namespace_counts.map(&:sum),
   "namespace_names" => names,
@@ -130,7 +129,7 @@ reordered = snapshot.merge(
 reordered_digest = Digest::SHA256.hexdigest(JSON.generate(builder.build(reordered)))
 art_digest = Digest::SHA256.hexdigest(art_json)
 
-ranges = model.fetch("groupRanges")
+ranges = model.fetch("regionRanges")
 quotas = ranges.map(&:last)
 raise "quota sum mismatch" unless quotas.sum == [budget, namespace_count].min
 raise "quota exceeds group size" unless quotas.each_with_index.all? { |quota, index| quota <= namespace_counts[index].sum }
@@ -139,7 +138,7 @@ raise "ranges are not contiguous" unless ranges.each_with_index.all? do |(first,
   first == ranges.take(index).sum(&:last) && model.fetch("namespaces").slice(first, length).all? { |row| row[1] == index }
 end
 raise "reordered input changed output" unless reordered_digest == art_digest
-raise "LOD bounds are invalid" unless model.fetch("groupLods").each_with_index.all? do |(mid_length, near_length), index|
+raise "LOD bounds are invalid" unless model.fetch("regionLods").each_with_index.all? do |(mid_length, near_length), index|
   near_length == ranges[index][1] && mid_length.between?(near_length.zero? ? 0 : 1, near_length)
 end
 raise "category representatives were lost" unless ranges.each_with_index.all? do |(first, length), index|
@@ -147,52 +146,71 @@ raise "category representatives were lost" unless ranges.each_with_index.all? do
   source_categories = []
   source_categories << :core if core + mixed > 0
   source_categories << :tests if tests > 0
-  mid_length = model.fetch("groupLods").fetch(index).first
+  mid_length = model.fetch("regionLods").fetch(index).first
   selected_categories = model.fetch("namespaces").slice(first, mid_length).map { |row| row[3] == 1 ? :tests : :core }.uniq
   (source_categories - selected_categories).empty?
 end
 
-core_totals = model.fetch("groups").each_with_object(Array.new(4, 0)) do |row, totals|
+core_totals = model.fetch("regions").each_with_object(Array.new(4, 0)) do |row, totals|
   row.slice(5, 4).each_with_index { |count, index| totals[index] += count }
 end
-test_totals = model.fetch("groups").each_with_object(Array.new(4, 0)) do |row, totals|
+test_totals = model.fetch("regions").each_with_object(Array.new(4, 0)) do |row, totals|
   row.slice(9, 4).each_with_index { |count, index| totals[index] += count }
 end
 raise "core aggregates do not reconcile" unless core_totals == category_stats.fetch("core")
 raise "test aggregates do not reconcile" unless test_totals == category_stats.fetch("tests")
 
-anchors = model.fetch("groupAnchors")
-radii = model.fetch("groupRadii").map { |radius| radius / 1000.0 }
-expected_radii = namespace_counts.map do |core, _tests, mixed|
-  [[3.5 + Math.sqrt(core + mixed) * 0.55, 4.0].max, 16.0].min
+represented_core = 0
+represented_tests = 0
+ranges.each_with_index do |(first, length), index|
+  retained = model.fetch("namespaces").slice(first, length)
+  core, tests, mixed = namespace_counts.fetch(index)
+  retained_core = retained.reject { |row| row.fetch(3) == 1 }.sum { |row| row.fetch(15) }
+  retained_tests = retained.select { |row| row.fetch(3) == 1 }.sum { |row| row.fetch(15) }
+  raise "Core represented weights do not reconcile" unless retained_core == core + mixed
+  raise "Test represented weights do not reconcile" unless retained_tests == tests
+  represented_core += retained_core
+  represented_tests += retained_tests
 end
-raise "system radius transform mismatch" unless radii.zip(expected_radii).all? { |actual, expected| (actual - expected).abs < 0.001 }
-raise "active anchor occupies the barycenter" if anchors.include?([0, 0, 0])
-raise "active anchors are not centered" unless 3.times.all? { |axis| anchors.sum { |anchor| anchor[axis] }.zero? }
-minimum_anchor_distance = Float::INFINITY
-minimum_anchor_margin = Float::INFINITY
-anchors.each_index do |left_index|
-  (left_index + 1...anchors.length).each do |right_index|
-    distance = Math.sqrt(anchors[left_index].zip(anchors[right_index]).sum { |a, b| (a - b)**2 })
-    minimum_anchor_distance = [minimum_anchor_distance, distance].min
-    minimum_anchor_margin = [minimum_anchor_margin, distance - radii[left_index] - radii[right_index]].min
-  end
+exact_core = namespace_counts.sum { |core, _tests, mixed| core + mixed }
+exact_tests = namespace_counts.sum { |_core, tests, _mixed| tests }
+raise "global Core represented weights do not reconcile" unless represented_core == exact_core
+raise "global Test represented weights do not reconcile" unless represented_tests == exact_tests
+
+workspace_radius = model.fetch("workspaceRadius") / 1000.0
+expected_radius = RubyLens::Model::WorkspaceLayout.radius(exact_core)
+raise "workspace radius transform mismatch" unless (workspace_radius - expected_radius).abs < 0.001
+partitioned_radius = RubyLens::Model::WorkspaceLayout.new(
+  seeds: groups.map { |group| group.fetch("anchor_seed") },
+  namespace_counts: namespace_counts.map(&:sum),
+  radius_population: exact_core,
+).radius
+single_radius = RubyLens::Model::WorkspaceLayout.new(
+  seeds: [1], namespace_counts: [namespace_count], radius_population: exact_core,
+).radius
+raise "boundary count changed host diameter" unless partitioned_radius == single_radius
+
+bounds = model.fetch("regionBounds")
+centroids = model.fetch("regionCentroids")
+angle_span = bounds.sum { |start_angle, end_angle, _inner, _outer| (end_angle - start_angle) / 1_000_000.0 }
+raise "region arc windows do not cover one turn" unless (angle_span - Math::PI * 2).abs < 0.001
+raise "region centroid left the common plane" unless centroids.all? { |_x, y, _z| y.zero? }
+raise "region centroid escaped the host" unless centroids.all? do |x, _y, z|
+  Math.hypot(x, z) / 1000.0 < workspace_radius
 end
-raise "system anchors overlap" unless minimum_anchor_margin > RubyLens::Model::GroupLayout::ASSOCIATION_GAP / 2
-maximum_anchor_coordinate = anchors.flatten.map(&:abs).max || 0
 private_tokens = [group_ids.first, group_ids[group_count / 2], group_ids.last,
   group_names.first, group_names[group_count / 2], group_names.last,
   names.first, names.last, packages.first.fetch("name")]
 raise "Report omitted identity-bearing labels" unless group_names.first(2).all? { |token| art_json.include?(token) }
 raise "Report retained group IDs" if [group_ids.first, group_ids[group_count / 2], group_ids.last].any? { |token| art_json.include?(token) }
-raise "Showcase retained identity-bearing fields" if %w[groupNames namespaceNames packageNames].any? { |key| showcase.key?(key) }
+raise "Showcase retained identity-bearing fields" if %w[regionNames namespaceNames packageNames].any? { |key| showcase.key?(key) }
 raise "Showcase retained a private token" if private_tokens.any? { |token| showcase_json.include?(token) }
 
 outputs = {}
 if (output_directory = ENV["OUTPUT_DIR"])
   FileUtils.mkdir_p(output_directory)
-  report_path = File.join(output_directory, "synthetic-monorepo-#{snapshot.fetch("explorer_layout")}-report.html")
-  showcase_path = File.join(output_directory, "synthetic-monorepo-showcase.html")
+  report_path = File.join(output_directory, "synthetic-scale-adaptive-report.html")
+  showcase_path = File.join(output_directory, "synthetic-scale-adaptive-showcase.html")
   RubyLens::ReportWriter.new.write(model, output: report_path)
   RubyLens::ShowcaseWriter.new.write(showcase, output: showcase_path)
   outputs = { report: report_path, showcase: showcase_path }
@@ -218,16 +236,17 @@ result = {
     direct_slices_verified: true,
     nested_lods_verified: true,
   },
-  anchors: {
-    minimum_distance: minimum_anchor_distance.round(3),
-    minimum_margin: minimum_anchor_margin.round(3),
-    maximum_absolute_coordinate: maximum_anchor_coordinate,
-    empty_barycenter: true,
+  geometry: {
+    workspace_radius: workspace_radius,
+    radius_population: exact_core,
+    boundary_count_invariant: partitioned_radius == single_radius,
+    region_arc_turns: (angle_span / (Math::PI * 2)).round(6),
+    common_plane: true,
   },
-  radii: {
-    transform: "clamp(3.5 + 0.55 * sqrt(core + mixed), 4.0, 16.0)",
-    minimum: radii.min,
-    maximum: radii.max,
+  represented_weights: {
+    core: represented_core,
+    tests: represented_tests,
+    exact: true,
   },
   aggregates_reconcile: true,
   deterministic_reordered_input: reordered_digest == art_digest,
@@ -240,7 +259,7 @@ result = {
   showcase: {
     schema: showcase.fetch("schema"),
     bytes: showcase_json.bytesize,
-    anonymous_groups: true,
+    anonymous_regions: true,
   },
   model_seconds: model_elapsed.round(3),
   heap_live_slot_delta: heap_live_slot_delta,

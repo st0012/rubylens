@@ -48,7 +48,6 @@ class RubydexAdapterTest < Minitest::Test
 
       assert_equal(first, second)
       assert_equal("rubylens.snapshot.v6", first.fetch("schema"))
-      assert_equal("association", first.fetch("explorer_layout"))
       assert_equal(
         [
           {
@@ -108,7 +107,7 @@ class RubydexAdapterTest < Minitest::Test
       refute_includes(serialized, "file://")
 
       art = RubyLens::ArtModelBuilder.new(seed: 12).build(first)
-      assert_equal("rubylens.art.v8", art.fetch("schema"))
+      assert_equal("rubylens.art.v9", art.fetch("schema"))
       assert_equal(first.fetch("namespaces").length, art.dig("totals", "renderedNamespaces"))
     end
   end

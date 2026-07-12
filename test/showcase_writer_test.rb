@@ -7,11 +7,18 @@ class ShowcaseWriterTest < Minitest::Test
     Dir.mktmpdir("rubylens-showcase-") do |directory|
       output = File.join(directory, "showcase.html")
       model = {
-        "schema" => "rubylens.showcase.v1",
+        "schema" => "rubylens.showcase.v3",
         "projectName" => "Synthetic App",
-        "totals" => { "namespaces" => 0, "packages" => 0, "dependencyStars" => 0, "renderedDependencyStars" => 0 },
+        "totals" => { "namespaces" => 0, "renderedNamespaces" => 0, "regions" => 1, "packages" => 0, "dependencyStars" => 0, "renderedDependencyStars" => 0 },
         "domains" => RubyLens::ArtModelBuilder::SIGNAL_FIELDS.to_h { |field| [field, 0] },
         "categoryStats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
+        "workspaceRadius" => 0,
+        "workspaceDensity" => [0, 0, 0, 0, 0, 0],
+        "regions" => [[0] * 13],
+        "regionRanges" => [[0, 0]],
+        "regionLods" => [[0, 0]],
+        "regionBounds" => [[0, 0, 0, 0]],
+        "regionCentroids" => [[0, 0, 0]],
         "namespaces" => [],
         "packages" => [],
         "dependencyStars" => [],
@@ -26,12 +33,12 @@ class ShowcaseWriterTest < Minitest::Test
       assert_includes(html, "const SHOWCASE_PRESET = Object.freeze")
       assert_includes(html, '"durationMs": 60000')
       assert_includes(html, "if (hubs.length >= SHOWCASE_POINT_LIMIT)")
-      assert_includes(html, "if (groupedMode || !showcaseMode || points.length <= SHOWCASE_POINT_LIMIT) return points")
+      assert_includes(html, "if (!showcaseMode || points.length <= SHOWCASE_POINT_LIMIT) return points")
       assert_includes(html, 'class="showcase-stage"')
       assert_includes(html, 'dataset.showcaseRenderer = "webgl2"')
       assert_includes(html, "function renderShowcase(timestamp)")
-      assert_includes(html, 'document.querySelector(".eyebrow").textContent = "RubyLens · Core systems"')
-      assert_includes(html, "`Core systems · ${format(coreSystemCount)}")
+      assert_includes(html, "const workspaceRadius = model.workspaceRadius / 1000")
+      refute_includes(html, "Core systems")
       assert_includes(html, 'dataset.showcaseReady = "true"')
       assert_includes(html, 'dataset.showcaseMotion = "reduced"')
       assert_includes(html, 'class="cinema-stats"')

@@ -2,11 +2,13 @@
     const model = JSON.parse(atob("{{MODEL_BASE64}}"));
     const showcaseMode = document.body.dataset.rubylensMode === "showcase";
     const interactiveMode = !showcaseMode;
-    const groupedMode = model.schema === "rubylens.art.v8" || model.schema === "rubylens.showcase.v2";
-    if (groupedMode) document.body.classList.add("has-core-systems");
+    const scaleAdaptiveMode = model.schema === "rubylens.art.v9" || model.schema === "rubylens.showcase.v3";
+    if (!scaleAdaptiveMode) throw new Error("RubyLens requires the unified art.v9 visual contract");
+    const configuredRegions = interactiveMode && Array.isArray(model.regionNames);
+    document.body.classList.add("has-scale-adaptive-core");
     const qaMode = window.__RUBYLENS_QA__ === true;
     const canvas = document.getElementById("cosmos");
-    const context = canvas.getContext("2d", { alpha: false });
+    const context = canvas.getContext("2d", { alpha: showcaseMode ? false : true });
     const showcaseStage = document.getElementById("showcase-stage");
     const panel = document.getElementById("panel");
     const panelBody = document.getElementById("panel-body");
@@ -23,8 +25,8 @@
       tests: { ancestorDepth: .18, definitionSites: .25, reopenings: .18, descendants: .42, references: .85, members: .55 },
       dependencies: { ancestorDepth: .12, definitionSites: .35, reopenings: .2, descendants: .32, references: .48, members: .4 },
     };
-    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, focusedGroupIndex = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, showcaseRenderer = null;
-    const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35, SHOWCASE_POINT_LIMIT = 50_000;
+    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, focusedGroupIndex = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, sceneRenderer = null;
+    const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35, SHOWCASE_POINT_LIMIT = 50_000, OVERVIEW_PICK_LIMIT = 4_000, FOCUSED_PICK_LIMIT = 12_000;
     const SHOWCASE_PRESET = Object.freeze({
       "stageWidth": 1920,
       "stageHeight": 1080,
@@ -58,8 +60,8 @@
     const systemFocusButtons = {};
     const excludedTriviaNames = new Set(["Object", "Kernel", "BasicObject"]);
     const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const configuredMobile = () => groupedMode && Math.min(window.innerWidth, window.innerHeight) <= 430;
-    let drifting = interactiveMode && !reducedMotionQuery.matches && !(groupedMode && model.explorerLayout === "atlas");
+    const configuredMobile = () => Math.min(window.innerWidth, window.innerHeight) <= 430;
+    let drifting = interactiveMode && !reducedMotionQuery.matches;
     const colours = { core: [244, 82, 132], tests: [87, 204, 255], dependencies: [255, 184, 77] };
 
     const hash = (seed, channel = 0) => {
@@ -80,69 +82,55 @@
       return fields.reduce((total, field, index) => total + signalWeights[category][field] * normalized[index], .12);
     }
 
-    function corePosition(seed) {
-      const bulge = unit(seed, 2) < .24;
-      const radial = bulge ? 17 * Math.pow(unit(seed, 3), 1.75) : Math.min(42, -10 * Math.log(Math.max(1e-5, 1 - unit(seed, 3))));
-      const theta = unit(seed, 4) * Math.PI * 2 + radial * .04;
-      const vertical = normal(seed, 5) * (bulge ? 5.8 : 1.4 + radial * .025);
-      return [Math.cos(theta) * radial, vertical, Math.sin(theta) * radial];
+    const workspaceRadius = model.workspaceRadius / 1000;
+    const cameraDistance = 230 + workspaceRadius * .9;
+    const cameraFocal = 440;
+    const regionBounds = model.regionBounds.map(([start, finish, inner, outer]) => [start / 1_000_000, finish / 1_000_000, inner / 1000, outer / 1000]);
+    const regionCentroids = model.regionCentroids.map(row => row.map(value => value / 1000));
+    const regionRadii = regionBounds.map(([start, finish, _inner, outer]) => outer * Math.sqrt(Math.max(0, finish - start) / (Math.PI * 2)));
+    const groups = model.regions;
+    const groupRanges = model.regionRanges;
+    const groupLods = model.regionLods;
+    const groupAnchors = regionCentroids;
+    const groupRadii = regionRadii;
+    const groupNames = model.regionNames || [];
+
+    function circularBlend(left, right, mix) {
+      const delta = Math.atan2(Math.sin(right - left), Math.cos(right - left));
+      return left + delta * mix;
     }
 
-    function testPosition(seed) {
-      const radial = 17 + Math.min(45, -14 * Math.log(Math.max(1e-5, 1 - unit(seed, 7))));
-      const arm = Math.floor(unit(seed, 8) * 3);
-      const inArm = unit(seed, 9) < .38;
-      const theta = inArm
-        ? arm * (Math.PI * 2 / 3) + radial * .105 + normal(seed, 10) * .22
-        : unit(seed, 10) * Math.PI * 2;
-      const vertical = normal(seed, 11) * (1.4 + radial * .035);
-      return [Math.cos(theta) * radial, vertical, Math.sin(theta) * radial];
-    }
-
-    const GROUPED_WORKSPACE_RADIUS = groupedMode && interactiveMode && model.explorerLayout === "atlas" ? 160 : 42;
-    const sourceGroupAnchors = groupedMode && interactiveMode && model.explorerLayout === "atlas"
-      ? model.explorerAnchors
-      : model.groupAnchors;
-    const rawGroupRadii = groupedMode ? model.groupRadii.map(value => value / 1000) : [];
-    const rawWorkspaceRadius = groupedMode ? sourceGroupAnchors.reduce((radius, anchor, index) => (
-      Math.max(radius, Math.hypot(anchor[0], anchor[1], anchor[2]) + rawGroupRadii[index])
-    ), 0) : 0;
-    const groupedPositionScale = rawWorkspaceRadius > 0 ? GROUPED_WORKSPACE_RADIUS / rawWorkspaceRadius : 1;
-    const groupAnchors = groupedMode ? sourceGroupAnchors.map(anchor => anchor.map(value => value * groupedPositionScale)) : [];
-    const groupRadii = rawGroupRadii.map(radius => radius * groupedPositionScale);
-    const workspaceSystemRadius = groupedMode ? groupAnchors.reduce((radius, anchor, index) => (
-      Math.max(radius, Math.hypot(anchor[0], anchor[1], anchor[2]) + groupRadii[index])
-    ), 0) : 0;
-
-    function groupedNamespacePosition(row) {
-      const groupIndex = row[1];
-      const anchor = groupAnchors[groupIndex] || [0, 0, 0];
-      const systemRadius = groupRadii[groupIndex] || 1;
+    function workspaceNamespacePosition(row) {
+      const seed = row[0];
+      const regionIndex = row[1];
       const tests = row[3] === 1;
-      const local = tests ? testPosition(row[0]) : corePosition(row[0]);
-      const magnitude = Math.max(Math.hypot(local[0], local[1], local[2]), 1e-6);
-      const localRadius = systemRadius * (tests ? .68 + unit(row[0], 31) * .28 : .08 + unit(row[0], 30) * .5);
-      const position = local.map(value => value / magnitude * localRadius);
-      const pitch = (unit(groupIndex + 1, 32) - .5) * .28;
-      const roll = (unit(groupIndex + 1, 33) - .5) * .2;
-      const pitchCos = Math.cos(pitch), pitchSin = Math.sin(pitch);
-      const rollCos = Math.cos(roll), rollSin = Math.sin(roll);
-      const pitched = [position[0], position[1] * pitchCos - position[2] * pitchSin, position[1] * pitchSin + position[2] * pitchCos];
-      const inclined = [pitched[0] * rollCos - pitched[1] * rollSin, pitched[0] * rollSin + pitched[1] * rollCos, pitched[2]];
-      return anchor.map((value, index) => value + inclined[index]);
+      const bounds = regionBounds[regionIndex] || [0, Math.PI * 2, 0, workspaceRadius];
+      const span = Math.max(0, bounds[1] - bounds[0]);
+      const bulge = !tests && unit(seed, 2) < .1;
+      const radial = tests
+        ? workspaceRadius * (.7 + .34 * Math.pow(unit(seed, 7), .7))
+        : bulge
+          ? workspaceRadius * (.05 + .3 * Math.pow(unit(seed, 3), .72))
+          : workspaceRadius * (.12 + .86 * Math.pow(unit(seed, 3), .54));
+      const armCount = 4;
+      const arm = Math.floor(unit(seed, 4) * armCount);
+      const armTheta = arm * Math.PI * 2 / armCount + radial / Math.max(workspaceRadius, 1) * 3.7 + normal(seed, 5) * (tests ? .16 : .22);
+      const sectorTheta = bounds[0] + span * unit(seed, 6);
+      const sectorMix = configuredRegions || showcaseMode ? .58 : .18;
+      const theta = circularBlend(armTheta, sectorTheta, sectorMix) + normal(seed, 12) * Math.min(.2, span * .12);
+      const verticalScale = tests
+        ? .025 + radial * .018
+        : bulge ? workspaceRadius * .11 : .035 + radial * .012;
+      const vertical = normal(seed, tests ? 11 : 8) * verticalScale;
+      return [Math.cos(theta) * radial, vertical, Math.sin(theta) * radial];
     }
 
     const packageAnchors = model.packages.map((row, index) => {
       const seed = row[0];
       const cloudRadius = 1.6 + Math.min(9, Math.sqrt(row[3]) * .055);
-      const radius = groupedMode
-        ? workspaceSystemRadius + cloudRadius + 18 + 72 * Math.pow(unit(seed, 14), .72)
-        : 70 + 72 * Math.pow(unit(seed, 14), .72);
+      const radius = workspaceRadius + cloudRadius + 14 + Math.max(28, workspaceRadius * .72) * Math.pow(unit(seed, 14), .7);
       const theta = unit(seed, 15) * Math.PI * 2;
-      if (groupedMode && interactiveMode && model.explorerLayout === "atlas") {
-        return [Math.cos(theta) * radius, Math.sin(theta) * radius, 0, cloudRadius, index];
-      }
-      const vertical = normal(seed, 16) * 24;
+      const vertical = normal(seed, 16) * Math.min(24, 5 + workspaceRadius * .16);
       return [Math.cos(theta) * radius, vertical, Math.sin(theta) * radius, cloudRadius, index];
     });
 
@@ -150,9 +138,6 @@
       const anchor = packageAnchors[packageIndex] || [0, 0, 0, 2];
       const radius = Math.min(anchor[3], -anchor[3] * .34 * Math.log(Math.max(1e-5, 1 - unit(seed, 18))));
       const theta = unit(seed, 19) * Math.PI * 2;
-      if (groupedMode && interactiveMode && model.explorerLayout === "atlas") {
-        return [anchor[0] + Math.cos(theta) * radius, anchor[1] + Math.sin(theta) * radius, 0];
-      }
       const lift = normal(seed, 20) * anchor[3] * .17;
       const tilt = (unit(model.packages[packageIndex]?.[0] || seed, 21) - .5) * .75;
       return [
@@ -169,9 +154,9 @@
       const dependencyHubs = [];
       const systemHubs = [];
       const namespaceLods = Array(model.namespaces.length).fill(2);
-      if (groupedMode) {
-        model.groupRanges.forEach(([first, length], groupIndex) => {
-          const midLength = model.groupLods[groupIndex][0];
+      if (scaleAdaptiveMode) {
+        groupRanges.forEach(([first, length], groupIndex) => {
+          const midLength = groupLods[groupIndex][0];
           for (let offset = 0; offset < length; offset += 1) namespaceLods[first + offset] = offset < midLength ? 1 : 2;
         });
       }
@@ -186,13 +171,15 @@
         const category = row[3] === 1 ? "tests" : "core";
         const values = row.slice(4, 10);
         const rubyCounts = row.slice(10, 14);
-        const point = { category, groupIndex: groupedMode ? row[1] : null, sourceIndex: index, lod: groupedMode ? namespaceLods[index] : 2, seed: row[0], position: groupedMode ? groupedNamespacePosition(row) : category === "tests" ? testPosition(row[0]) : corePosition(row[0]), signal: weightedSignal(normalizedSignals(values), category), base: category === "core" ? .82 : groupedMode ? .42 : .68 };
-        if (interactiveMode) Object.assign(point, { name: model.namespaceNames[index], groupName: groupedMode ? model.groupNames[row[1]] : null, kind: row[2] === 0 ? "Class" : "Module", rubyCounts, instanceVariableCount: row[14] || 0, values });
+        const representedWeight = Number(row[15] || 1);
+        const densityLift = Math.log1p(representedWeight) / Math.log1p(Math.max(1, model.workspaceDensity[5] || 1));
+        const point = { category, groupIndex: row[1], sourceIndex: index, lod: namespaceLods[index], seed: row[0], position: workspaceNamespacePosition(row), signal: weightedSignal(normalizedSignals(values), category), base: (category === "core" ? .7 : .46) * (.88 + densityLift * .24), representedWeight };
+        if (interactiveMode) Object.assign(point, { name: model.namespaceNames[index], groupName: groupNames[row[1]] || null, kind: row[2] === 0 ? "Class" : "Module", rubyCounts, instanceVariableCount: row[14] || 0, values });
         namespacePoints.push(point);
         addPoint(point);
       });
-      if (groupedMode) {
-        model.groups.forEach((row, groupIndex) => {
+      if (configuredRegions) {
+        groups.forEach((row, groupIndex) => {
           const coreCount = Number(row[1] || 0) + Number(row[3] || 0);
           const testCount = Number(row[2] || 0);
           if (coreCount + testCount === 0) return;
@@ -201,14 +188,14 @@
             groupIndex,
             lod: 0,
             seed: hash(groupIndex + 1, 34),
-            position: groupAnchors[groupIndex],
+            position: regionCentroids[groupIndex],
             signal: .5,
-            base: 1 + Math.min(3.2, rawGroupRadii[groupIndex] * .22),
+            base: .8 + Math.min(1.6, regionRadii[groupIndex] * .08),
             systemHub: true,
-            systemRadius: groupRadii[groupIndex],
+            systemRadius: regionRadii[groupIndex],
           };
           if (interactiveMode) Object.assign(point, {
-            name: model.groupNames[groupIndex],
+            name: groupNames[groupIndex],
             coreCount,
             testCount,
             crossGroupCount: Number(row[4] || 0),
@@ -219,21 +206,32 @@
       }
       model.dependencyStars.forEach(row => {
         const values = row.slice(2, 8);
-        addPoint({ category: "dependencies", lod: groupedMode ? 1 : 2, packageIndex: row[1], seed: row[0], position: dependencyPosition(row[0], row[1]), signal: weightedSignal(normalizedSignals(values), "dependencies"), base: .45 }, false);
+        addPoint({ category: "dependencies", lod: 1, packageIndex: row[1], seed: row[0], position: dependencyPosition(row[0], row[1]), signal: weightedSignal(normalizedSignals(values), "dependencies"), base: .45 }, false);
       });
       packageAnchors.forEach((anchor, index) => {
         const packageRow = model.packages[index];
         const rubyCounts = packageRow.slice(4, 8);
         const visualValues = [0, packageRow[3], 0, 0, 0, 0];
-        const point = { category: "dependencies", lod: groupedMode ? 0 : 2, packageIndex: index, seed: packageRow[0], position: anchor.slice(0, 3), signal: weightedSignal(normalizedSignals(visualValues), "dependencies"), base: 1.8, hub: true };
+        const point = { category: "dependencies", lod: 0, packageIndex: index, seed: packageRow[0], position: anchor.slice(0, 3), signal: weightedSignal(normalizedSignals(visualValues), "dependencies"), base: 1.8, hub: true };
         if (interactiveMode) Object.assign(point, { name: model.packageNames[index], packageRole: packageRow[1] === 0 ? "Direct dependency" : "Transitive dependency", packageLocation: packageRow[2] === 0 ? "Workspace package" : "External gem", rubyCounts });
         addPoint(point);
       });
       return { points, namespacePoints, interactivePoints, dependencyHubs, systemHubs };
     }
     const { points, namespacePoints, interactivePoints, dependencyHubs, systemHubs } = buildPoints();
+    function boundedRangeSample(candidates, first, length, limit) {
+      const available = Math.max(0, Math.min(length, candidates.length - first));
+      if (available <= limit) return candidates.slice(first, first + available);
+      const sampled = new Array(limit);
+      const step = available / limit;
+      const offset = unit(available ^ first, 74) * step;
+      for (let index = 0; index < limit; index += 1) sampled[index] = candidates[first + Math.floor(offset + index * step)];
+      return sampled;
+    }
+    const overviewPickPoints = boundedRangeSample(namespacePoints, 0, namespacePoints.length, OVERVIEW_PICK_LIMIT)
+      .concat(dependencyHubs, systemHubs);
     function showcasePointSample() {
-      if (groupedMode || !showcaseMode || points.length <= SHOWCASE_POINT_LIMIT) return points;
+      if (!showcaseMode || points.length <= SHOWCASE_POINT_LIMIT) return points;
       const hubs = points.filter(point => point.hub);
       const rank = point => [hash(point.seed, 73), point.seed, point];
       if (hubs.length >= SHOWCASE_POINT_LIMIT) {
@@ -248,19 +246,17 @@
       return candidates.slice(0, available).map(candidate => candidate[2]).concat(hubs);
     }
     const sampledPoints = showcasePointSample();
-    const renderPoints = groupedMode
-      ? sampledPoints.slice().sort((left, right) => left.lod - right.lod || left.renderOrder - right.renderOrder)
-      : sampledPoints;
-    const firstMidPoint = groupedMode ? renderPoints.findIndex(point => point.lod > 0) : -1;
-    const farPointCount = groupedMode ? (firstMidPoint < 0 ? renderPoints.length : firstMidPoint) : renderPoints.length;
-    const firstNearPoint = groupedMode ? renderPoints.findIndex(point => point.lod > 1) : -1;
-    const midPointCount = groupedMode ? (firstNearPoint < 0 ? renderPoints.length : firstNearPoint) : renderPoints.length;
-    const firstFaintDependency = groupedMode ? renderPoints.findIndex(point => point.lod === 1 && point.category === "dependencies" && !point.hub) : -1;
+    const renderPoints = sampledPoints.slice().sort((left, right) => left.lod - right.lod || left.renderOrder - right.renderOrder);
+    const firstMidPoint = renderPoints.findIndex(point => point.lod > 0);
+    const farPointCount = firstMidPoint < 0 ? renderPoints.length : firstMidPoint;
+    const firstNearPoint = renderPoints.findIndex(point => point.lod > 1);
+    const midPointCount = firstNearPoint < 0 ? renderPoints.length : firstNearPoint;
+    const firstFaintDependency = renderPoints.findIndex(point => point.lod === 1 && point.category === "dependencies" && !point.hub);
     const essentialMidPointCount = firstFaintDependency < 0 ? midPointCount : Math.min(midPointCount, firstFaintDependency);
-    const groupNearDrawRanges = groupedMode ? model.groups.map(() => [0, 0]) : [];
-    const groupMidDrawRanges = groupedMode ? model.groups.map(() => [0, 0]) : [];
-    const packageMidDrawRanges = groupedMode ? model.packages.map(() => []) : [];
-    if (groupedMode) {
+    const groupNearDrawRanges = groups.map(() => [0, 0]);
+    const groupMidDrawRanges = groups.map(() => [0, 0]);
+    const packageMidDrawRanges = model.packages.map(() => []);
+    if (scaleAdaptiveMode) {
       for (let index = farPointCount; index < midPointCount; index += 1) {
         const point = renderPoints[index];
         if (point.category === "dependencies" && Number.isInteger(point.packageIndex) && !point.hub) {
@@ -284,14 +280,13 @@
     }
 
     function visibleDrawRanges() {
-      if (!groupedMode) return [[0, renderPoints.length]];
       const basePointCount = configuredMobile() ? essentialMidPointCount : midPointCount;
       if (focusedGroupIndex !== null) {
         const mid = groupMidDrawRanges[focusedGroupIndex] || [0, 0];
         const near = groupNearDrawRanges[focusedGroupIndex] || [0, 0];
         return [[0, farPointCount], mid, near].filter(range => range[1] > 0);
       }
-      const overviewCount = interactiveMode && model.explorerLayout === "atlas" ? farPointCount : basePointCount;
+      const overviewCount = basePointCount;
       const ranges = [[0, overviewCount]];
       if (expandedPackageIndex !== null) {
         for (const [first, length] of packageMidDrawRanges[expandedPackageIndex] || []) {
@@ -303,7 +298,7 @@
       return ranges;
     }
     function updateQaDrawCounts() {
-      if (!groupedMode || !qaMode) return;
+      if (!qaMode) return;
       const ranges = visibleDrawRanges();
       document.documentElement.dataset.rubylensRetainedPoints = String(renderPoints.length);
       document.documentElement.dataset.rubylensRenderedPoints = String(ranges.reduce((sum, range) => sum + range[1], 0));
@@ -311,15 +306,18 @@
       document.documentElement.dataset.rubylensFarPoints = String(farPointCount);
       document.documentElement.dataset.rubylensMidPoints = String(midPointCount);
       document.documentElement.dataset.rubylensEssentialMidPoints = String(essentialMidPointCount);
-      document.documentElement.dataset.rubylensSelectedRangePoints = focusedGroupIndex === null ? "0" : String(model.groupRanges[focusedGroupIndex][1]);
+      document.documentElement.dataset.rubylensSelectedRangePoints = focusedGroupIndex === null ? "0" : String(groupRanges[focusedGroupIndex][1]);
       document.documentElement.dataset.rubylensSelectedMidPoints = focusedGroupIndex === null ? "0" : String(groupMidDrawRanges[focusedGroupIndex][1]);
       document.documentElement.dataset.rubylensSelectedNearPoints = focusedGroupIndex === null ? "0" : String(groupNearDrawRanges[focusedGroupIndex][1]);
+      document.documentElement.dataset.rubylensCpuProjectionLimit = String(focusedGroupIndex === null ? OVERVIEW_PICK_LIMIT : FOCUSED_PICK_LIMIT);
+      document.documentElement.dataset.rubylensCpuProjectedPoints = String(activePickingPoints().length);
     }
-    if (groupedMode && qaMode) {
+    if (qaMode) {
       document.documentElement.dataset.rubylensNamespacePoints = String(model.namespaces.length);
-      document.documentElement.dataset.rubylensRangePoints = String(model.groupRanges.reduce((sum, range) => sum + range[1], 0));
+      document.documentElement.dataset.rubylensRangePoints = String(groupRanges.reduce((sum, range) => sum + range[1], 0));
+      document.documentElement.dataset.rubylensWorkspaceRadius = workspaceRadius.toFixed(3);
       let minimumCentroidDistance = Infinity;
-      const activeGroupIndexes = model.groups.map((row, index) => Number(row[1] || 0) + Number(row[2] || 0) + Number(row[3] || 0) > 0 ? index : null).filter(Number.isInteger);
+      const activeGroupIndexes = groups.map((row, index) => Number(row[1] || 0) + Number(row[2] || 0) + Number(row[3] || 0) > 0 ? index : null).filter(Number.isInteger);
       for (let leftRank = 0; leftRank < activeGroupIndexes.length; leftRank += 1) {
         const leftIndex = activeGroupIndexes[leftRank];
         const left = groupAnchors[leftIndex];
@@ -329,33 +327,34 @@
           minimumCentroidDistance = Math.min(minimumCentroidDistance, Math.hypot(left[0] - right[0], left[1] - right[1], left[2] - right[2]));
         }
       }
-      const localDistances = { core: { sum: 0, count: 0 }, tests: { sum: 0, count: 0 } };
+      const hostDistances = { core: { sum: 0, count: 0 }, tests: { sum: 0, count: 0 } };
       let minimumDependencyRadius = Infinity;
       let minimumDependencyProjectedRadius = Infinity;
       for (const point of points) {
         if (Number.isInteger(point.groupIndex) && !point.systemHub) {
-          const anchor = groupAnchors[point.groupIndex];
-          localDistances[point.category].sum += Math.hypot(point.position[0] - anchor[0], point.position[1] - anchor[1], point.position[2] - anchor[2]);
-          localDistances[point.category].count += 1;
+          hostDistances[point.category].sum += Math.hypot(point.position[0], point.position[1], point.position[2]);
+          hostDistances[point.category].count += 1;
         } else if (point.category === "dependencies") {
           minimumDependencyRadius = Math.min(minimumDependencyRadius, Math.hypot(point.position[0], point.position[1], point.position[2]));
           minimumDependencyProjectedRadius = Math.min(minimumDependencyProjectedRadius, Math.hypot(point.position[0], point.position[1]));
         }
       }
       document.documentElement.dataset.rubylensCentroidSeparation = Number.isFinite(minimumCentroidDistance) ? minimumCentroidDistance.toFixed(3) : "0";
-      document.documentElement.dataset.rubylensCoreMeanRadius = (localDistances.core.sum / Math.max(1, localDistances.core.count)).toFixed(3);
-      document.documentElement.dataset.rubylensTestMeanRadius = (localDistances.tests.sum / Math.max(1, localDistances.tests.count)).toFixed(3);
-      document.documentElement.dataset.rubylensDependencyMargin = Number.isFinite(minimumDependencyRadius) ? (minimumDependencyRadius - workspaceSystemRadius).toFixed(3) : "0";
-      document.documentElement.dataset.rubylensDependencyProjectedMargin = Number.isFinite(minimumDependencyProjectedRadius) ? (minimumDependencyProjectedRadius - workspaceSystemRadius).toFixed(3) : "0";
+      document.documentElement.dataset.rubylensCoreMeanRadius = (hostDistances.core.sum / Math.max(1, hostDistances.core.count)).toFixed(3);
+      document.documentElement.dataset.rubylensTestMeanRadius = (hostDistances.tests.sum / Math.max(1, hostDistances.tests.count)).toFixed(3);
+      document.documentElement.dataset.rubylensDependencyMargin = Number.isFinite(minimumDependencyRadius) ? (minimumDependencyRadius - workspaceRadius).toFixed(3) : "0";
+      document.documentElement.dataset.rubylensDependencyProjectedMargin = Number.isFinite(minimumDependencyProjectedRadius) ? (minimumDependencyProjectedRadius - workspaceRadius).toFixed(3) : "0";
       updateQaDrawCounts();
     }
 
-    function createShowcaseRenderer() {
+    function createSceneRenderer() {
       const liveCanvas = document.createElement("canvas");
-      liveCanvas.id = "showcase-cosmos";
-      liveCanvas.setAttribute("role", "img");
-      liveCanvas.setAttribute("aria-label", canvas.getAttribute("aria-label") || "Autonomous stellar artwork of a Ruby codebase.");
-      canvas.insertAdjacentElement("afterend", liveCanvas);
+      liveCanvas.id = "rubylens-cosmos";
+      liveCanvas.setAttribute("aria-hidden", "true");
+      liveCanvas.style.pointerEvents = "none";
+      liveCanvas.style.zIndex = "0";
+      canvas.style.zIndex = "1";
+      canvas.insertAdjacentElement("beforebegin", liveCanvas);
       const gl = liveCanvas.getContext("webgl2", {
         alpha: false,
         antialias: true,
@@ -366,9 +365,20 @@
       });
       if (!gl) {
         liveCanvas.remove();
-        document.documentElement.dataset.showcaseRenderer = "canvas2d-fallback";
+        document.documentElement.dataset.rubylensRenderer = "canvas2d-fallback";
+        if (showcaseMode) document.documentElement.dataset.showcaseRenderer = "canvas2d-fallback";
         return null;
       }
+      liveCanvas.addEventListener("webglcontextlost", event => {
+        event.preventDefault();
+        liveCanvas.remove();
+        sceneRenderer = null;
+        canvas.style.display = "";
+        document.documentElement.dataset.rubylensRenderer = "canvas2d-fallback";
+        document.documentElement.dataset.rubylensRendererError = "webgl-context-lost";
+        if (showcaseMode) document.documentElement.dataset.showcaseRenderer = "canvas2d-fallback";
+        requestRender();
+      }, { once: true });
 
       const compileShader = (type, source) => {
         const shader = gl.createShader(type);
@@ -407,6 +417,9 @@
         uniform vec2 u_resolution;
         uniform vec2 u_center;
         uniform float u_backgroundGlow;
+        uniform float u_hazeStrength;
+        uniform float u_hazeTestMix;
+        uniform float u_hazeRadius;
         out vec4 outColor;
         void main() {
           vec2 pixel = vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y);
@@ -416,7 +429,10 @@
           vec3 source = mix(vec3(30.0, 16.0, 45.0) / 255.0, vec3(0.0), distanceMix);
           float centerAlpha = min(0.5, 0.18 * u_backgroundGlow / 100.0);
           float alpha = mix(centerAlpha, 0.6, distanceMix);
-          outColor = vec4(mix(base, source, alpha), 1.0);
+          float hostDistance = distance(pixel, u_center) / max(1.0, u_hazeRadius);
+          float hostField = (1.0 - smoothstep(0.08, 1.1, hostDistance)) * u_hazeStrength;
+          vec3 hostColour = mix(vec3(244.0, 82.0, 132.0), vec3(87.0, 204.0, 255.0), u_hazeTestMix) / 255.0;
+          outColor = vec4(mix(base, source, alpha) + hostColour * hostField * 0.055, 1.0);
         }
       `);
 
@@ -427,16 +443,26 @@
         layout(location = 2) in float a_alpha;
         layout(location = 3) in float a_category;
         layout(location = 4) in float a_maxSize;
+        layout(location = 5) in float a_groupIndex;
+        layout(location = 6) in float a_packageIndex;
+        layout(location = 7) in vec3 a_packageAnchor;
         uniform vec2 u_resolution;
         uniform vec2 u_center;
         uniform float u_yaw;
         uniform float u_pitch;
         uniform float u_zoom;
+        uniform float u_cameraDistance;
+        uniform float u_cameraFocal;
         uniform float u_brightness;
         uniform float u_glow;
         uniform float u_deepDetail;
         uniform int u_grouped;
         uniform int u_pass;
+        uniform vec3 u_visibility;
+        uniform float u_focusedGroup;
+        uniform float u_focusedPackage;
+        uniform float u_focusedCategory;
+        uniform float u_dependencyExpansion;
         out vec3 v_colour;
         out float v_alpha;
         out float v_radius;
@@ -450,18 +476,22 @@
         }
 
         void main() {
+          vec3 position = a_position;
+          if (u_focusedPackage >= 0.0 && abs(a_packageIndex - u_focusedPackage) < 0.5) {
+            position = a_packageAnchor + (position - a_packageAnchor) * u_dependencyExpansion;
+          }
           float cy = cos(u_yaw);
           float sy = sin(u_yaw);
           float cp = cos(u_pitch);
           float sp = sin(u_pitch);
-          float x1 = a_position.x * cy - a_position.z * sy;
-          float z1 = a_position.x * sy + a_position.z * cy;
-          float y2 = a_position.y * cp - z1 * sp;
-          float z2 = a_position.y * sp + z1 * cp;
-          float depth = 270.0 - z2;
+          float x1 = position.x * cy - position.z * sy;
+          float z1 = position.x * sy + position.z * cy;
+          float y2 = position.y * cp - z1 * sp;
+          float z2 = position.y * sp + z1 * cp;
+          float depth = u_cameraDistance - z2;
           if (depth <= 35.0) { hidePoint(); return; }
 
-          float perspective = 440.0 / depth * u_zoom;
+          float perspective = u_cameraFocal / depth * u_zoom;
           vec2 screen = u_center + vec2(x1, y2) * perspective;
           if (screen.x < -20.0 || screen.x > u_resolution.x + 20.0 || screen.y < -20.0 || screen.y > u_resolution.y + 20.0) {
             hidePoint();
@@ -469,7 +499,11 @@
           }
 
           float size = clamp(a_sizeFactor * perspective, 0.35, a_maxSize);
-          float visibleAlpha = clamp(a_alpha * u_brightness / 100.0, 0.0, 1.0);
+          int categoryIndex = int(a_category + 0.5);
+          float visibleAlpha = clamp(a_alpha * u_brightness / 100.0, 0.0, 1.0) * u_visibility[categoryIndex];
+          if (u_focusedCategory >= 0.0 && abs(a_category - u_focusedCategory) >= 0.5) visibleAlpha *= 0.72;
+          if (u_focusedGroup >= 0.0 && a_groupIndex >= 0.0 && abs(a_groupIndex - u_focusedGroup) >= 0.5) visibleAlpha *= 0.78;
+          if (u_focusedPackage >= 0.0 && a_packageIndex >= 0.0 && abs(a_packageIndex - u_focusedPackage) >= 0.5) visibleAlpha *= 0.78;
           float radius = size;
           float alpha = visibleAlpha;
           vec3 colour = a_category < 0.5
@@ -514,17 +548,23 @@
         }
       `);
 
-      const pointData = new Float32Array(renderPoints.length * 7);
+      const pointData = new Float32Array(renderPoints.length * 12);
       const categoryIndex = { core: 0, tests: 1, dependencies: 2 };
       renderPoints.forEach((point, index) => {
-        const offset = index * 7;
+        const offset = index * 12;
         pointData[offset] = point.position[0];
         pointData[offset + 1] = point.position[1];
         pointData[offset + 2] = point.position[2];
         pointData[offset + 3] = point.base * (.62 + point.signal * .46);
-        pointData[offset + 4] = clamp(.14 + point.signal * .105, .12, point.hub ? .86 : .7) * (groupedMode && point.category === "tests" && !point.systemHub ? .55 : 1);
+        pointData[offset + 4] = clamp(.11 + point.signal * .09, .09, point.hub ? .76 : .58) * (point.category === "tests" && !point.systemHub ? .68 : 1);
         pointData[offset + 5] = categoryIndex[point.category];
         pointData[offset + 6] = point.systemHub ? 8 : point.hub ? 5.2 : 3.2;
+        pointData[offset + 7] = Number.isInteger(point.groupIndex) ? point.groupIndex : -1;
+        pointData[offset + 8] = Number.isInteger(point.packageIndex) ? point.packageIndex : -1;
+        const packageAnchor = Number.isInteger(point.packageIndex) ? packageAnchors[point.packageIndex] : null;
+        pointData[offset + 9] = packageAnchor?.[0] || 0;
+        pointData[offset + 10] = packageAnchor?.[1] || 0;
+        pointData[offset + 11] = packageAnchor?.[2] || 0;
       });
 
       const pointVao = gl.createVertexArray();
@@ -532,8 +572,8 @@
       gl.bindVertexArray(pointVao);
       gl.bindBuffer(gl.ARRAY_BUFFER, pointBuffer);
       gl.bufferData(gl.ARRAY_BUFFER, pointData, gl.STATIC_DRAW);
-      const stride = 7 * Float32Array.BYTES_PER_ELEMENT;
-      [[0, 3, 0], [1, 1, 3], [2, 1, 4], [3, 1, 5], [4, 1, 6]].forEach(([location, size, offset]) => {
+      const stride = 12 * Float32Array.BYTES_PER_ELEMENT;
+      [[0, 3, 0], [1, 1, 3], [2, 1, 4], [3, 1, 5], [4, 1, 6], [5, 1, 7], [6, 1, 8], [7, 3, 9]].forEach(([location, size, offset]) => {
         gl.enableVertexAttribArray(location);
         gl.vertexAttribPointer(location, size, gl.FLOAT, false, stride, offset * Float32Array.BYTES_PER_ELEMENT);
       });
@@ -543,6 +583,9 @@
         resolution: gl.getUniformLocation(backgroundProgram, "u_resolution"),
         center: gl.getUniformLocation(backgroundProgram, "u_center"),
         backgroundGlow: gl.getUniformLocation(backgroundProgram, "u_backgroundGlow"),
+        hazeStrength: gl.getUniformLocation(backgroundProgram, "u_hazeStrength"),
+        hazeTestMix: gl.getUniformLocation(backgroundProgram, "u_hazeTestMix"),
+        hazeRadius: gl.getUniformLocation(backgroundProgram, "u_hazeRadius"),
       };
       const pointUniforms = {
         resolution: gl.getUniformLocation(pointProgram, "u_resolution"),
@@ -550,21 +593,29 @@
         yaw: gl.getUniformLocation(pointProgram, "u_yaw"),
         pitch: gl.getUniformLocation(pointProgram, "u_pitch"),
         zoom: gl.getUniformLocation(pointProgram, "u_zoom"),
+        cameraDistance: gl.getUniformLocation(pointProgram, "u_cameraDistance"),
+        cameraFocal: gl.getUniformLocation(pointProgram, "u_cameraFocal"),
         brightness: gl.getUniformLocation(pointProgram, "u_brightness"),
         glow: gl.getUniformLocation(pointProgram, "u_glow"),
         deepDetail: gl.getUniformLocation(pointProgram, "u_deepDetail"),
         grouped: gl.getUniformLocation(pointProgram, "u_grouped"),
         pass: gl.getUniformLocation(pointProgram, "u_pass"),
+        visibility: gl.getUniformLocation(pointProgram, "u_visibility"),
+        focusedGroup: gl.getUniformLocation(pointProgram, "u_focusedGroup"),
+        focusedPackage: gl.getUniformLocation(pointProgram, "u_focusedPackage"),
+        focusedCategory: gl.getUniformLocation(pointProgram, "u_focusedCategory"),
+        dependencyExpansion: gl.getUniformLocation(pointProgram, "u_dependencyExpansion"),
       };
       const pointSizeRange = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE);
-      document.documentElement.dataset.showcaseRenderer = "webgl2";
+      document.documentElement.dataset.rubylensRenderer = "webgl2";
+      if (showcaseMode) document.documentElement.dataset.showcaseRenderer = "webgl2";
       document.documentElement.dataset.pointSizeRange = `${pointSizeRange[0]},${pointSizeRange[1]}`;
-      canvas.style.display = "none";
+      if (showcaseMode) canvas.style.display = "none";
 
       let renderScale = 1;
       return Object.freeze({
         resize(viewportWidth, viewportHeight) {
-          renderScale = configuredMobile() ? .75 : 1;
+          renderScale = showcaseMode ? (configuredMobile() ? .75 : 1) : Math.min(dpr, configuredMobile() ? 1.1 : 1.5);
           liveCanvas.width = Math.round(viewportWidth * renderScale);
           liveCanvas.height = Math.round(viewportHeight * renderScale);
           gl.viewport(0, 0, liveCanvas.width, liveCanvas.height);
@@ -575,8 +626,16 @@
           gl.useProgram(backgroundProgram);
           gl.bindVertexArray(null);
           gl.uniform2f(backgroundUniforms.resolution, width * renderScale, height * renderScale);
-          gl.uniform2f(backgroundUniforms.center, sceneCenterX * renderScale, sceneCenterY * renderScale);
-          gl.uniform1f(backgroundUniforms.backgroundGlow, SHOWCASE_PRESET.backgroundGlowPercent * (configuredMobile() ? .8 : 1));
+          gl.uniform2f(backgroundUniforms.center, (sceneCenterX + panX) * renderScale, (sceneCenterY + panY) * renderScale);
+          gl.uniform1f(backgroundUniforms.backgroundGlow, (showcaseMode ? SHOWCASE_PRESET.backgroundGlowPercent : 100) * (configuredMobile() ? .8 : 1));
+          const exactCore = Number(model.workspaceDensity[1] || 0);
+          const exactTests = Number(model.workspaceDensity[2] || 0);
+          const exactTotal = exactCore + exactTests;
+          const hazeStrength = clamp(Math.log1p(exactTotal) / Math.log1p(1_000_000), 0, 1);
+          const projectedHostRadius = workspaceRadius * cameraFocal / cameraDistance * zoom * renderScale;
+          gl.uniform1f(backgroundUniforms.hazeStrength, hazeStrength);
+          gl.uniform1f(backgroundUniforms.hazeTestMix, exactTests / Math.max(1, exactTotal));
+          gl.uniform1f(backgroundUniforms.hazeRadius, Math.max(1, projectedHostRadius));
           gl.drawArrays(gl.TRIANGLES, 0, 3);
 
           gl.enable(gl.BLEND);
@@ -585,14 +644,21 @@
           gl.useProgram(pointProgram);
           gl.bindVertexArray(pointVao);
           gl.uniform2f(pointUniforms.resolution, width * renderScale, height * renderScale);
-          gl.uniform2f(pointUniforms.center, sceneCenterX * renderScale, sceneCenterY * renderScale);
+          gl.uniform2f(pointUniforms.center, (sceneCenterX + panX) * renderScale, (sceneCenterY + panY) * renderScale);
           gl.uniform1f(pointUniforms.yaw, yaw);
           gl.uniform1f(pointUniforms.pitch, pitch);
           gl.uniform1f(pointUniforms.zoom, zoom * renderScale);
-          gl.uniform1f(pointUniforms.brightness, SHOWCASE_PRESET.starBrightnessPercent);
-          gl.uniform1f(pointUniforms.glow, SHOWCASE_PRESET.pointGlowPercent * (configuredMobile() ? .65 : 1));
+          gl.uniform1f(pointUniforms.cameraDistance, cameraDistance);
+          gl.uniform1f(pointUniforms.cameraFocal, cameraFocal);
+          gl.uniform1f(pointUniforms.brightness, showcaseMode ? SHOWCASE_PRESET.starBrightnessPercent : 92);
+          gl.uniform1f(pointUniforms.glow, (showcaseMode ? SHOWCASE_PRESET.pointGlowPercent : 24) * (configuredMobile() ? .65 : 1));
           gl.uniform1f(pointUniforms.deepDetail, deepDetail);
-          gl.uniform1i(pointUniforms.grouped, groupedMode ? 1 : 0);
+          gl.uniform1i(pointUniforms.grouped, scaleAdaptiveMode ? 1 : 0);
+          gl.uniform3f(pointUniforms.visibility, visibleCategories.core ? 1 : 0, visibleCategories.tests ? 1 : 0, visibleCategories.dependencies ? 1 : 0);
+          gl.uniform1f(pointUniforms.focusedGroup, focusedGroupIndex ?? -1);
+          gl.uniform1f(pointUniforms.focusedPackage, expandedPackageIndex ?? -1);
+          gl.uniform1f(pointUniforms.focusedCategory, focusedCategory === null ? -1 : categoryIndex[focusedCategory]);
+          gl.uniform1f(pointUniforms.dependencyExpansion, DEPENDENCY_EXPANSION);
           for (let pass = 0; pass < 3; pass += 1) {
             if (configuredMobile() && pass === 2) continue;
             gl.uniform1i(pointUniforms.pass, pass);
@@ -604,12 +670,13 @@
       });
     }
 
-    if (showcaseMode) {
-      try {
-        showcaseRenderer = createShowcaseRenderer();
-      } catch (error) {
-        document.getElementById("showcase-cosmos")?.remove();
-        canvas.style.display = "";
+    try {
+      sceneRenderer = createSceneRenderer();
+    } catch (error) {
+      document.getElementById("rubylens-cosmos")?.remove();
+      canvas.style.display = "";
+      document.documentElement.dataset.rubylensRenderer = "canvas2d-fallback";
+      if (showcaseMode) {
         document.documentElement.dataset.showcaseRenderer = "canvas2d-fallback";
         document.documentElement.dataset.showcaseRendererError = error.message;
       }
@@ -643,14 +710,7 @@
       panY = target.panY;
     }
 
-    function atlasFaceOnCameraTargetForPoint(point, targetZoom) {
-      const [x, y, z] = point.position;
-      const perspective = 440 / (270 - z) * targetZoom;
-      return { yaw: 0, pitch: 0, zoom: targetZoom, panX: -x * perspective, panY: -y * perspective };
-    }
-
     function cameraTargetForPoint(point, targetZoom = point.hub ? 4 : point.category === "dependencies" ? 5 : 7) {
-      if (groupedMode && interactiveMode && model.explorerLayout === "atlas") return atlasFaceOnCameraTargetForPoint(point, targetZoom);
       const [x, y, z] = point.position;
       return {
         yaw: Math.atan2(x, z),
@@ -662,7 +722,6 @@
     }
 
     function topDownCameraTargetForPoint(point, targetZoom = point.hub ? 4 : point.category === "dependencies" ? 5 : 7) {
-      if (groupedMode && interactiveMode && model.explorerLayout === "atlas") return atlasFaceOnCameraTargetForPoint(point, targetZoom);
       const targetYaw = yaw;
       const [x, y, z] = point.position;
       const cy = Math.cos(targetYaw), sy = Math.sin(targetYaw);
@@ -671,7 +730,7 @@
       const z1 = x * sy + z * cy;
       const y2 = y * cp - z1 * sp;
       const z2 = y * sp + z1 * cp;
-      const perspective = 440 / (270 - z2) * targetZoom;
+      const perspective = cameraFocal / (cameraDistance - z2) * targetZoom;
       return {
         yaw: targetYaw,
         pitch: TOP_DOWN_PITCH,
@@ -781,7 +840,7 @@
 
     function updateTooltipContent(point) {
       tooltipMetrics.textContent = "";
-      tooltipCategory.textContent = point.systemHub ? "Core system" : point.hub ? "Gem" : point.category === "tests" ? "Tests" : "Core code";
+      tooltipCategory.textContent = point.systemHub ? "Core region" : point.hub ? "Gem" : point.category === "tests" ? "Tests" : "Core code";
       tooltipName.textContent = point.name || "Unnamed Ruby item";
       if (point.systemHub) {
         const spans = point.crossGroupCount > 0 ? ` · ${point.crossGroupCount.toLocaleString()} shared namespace span${point.crossGroupCount === 1 ? "" : "s"}` : "";
@@ -853,9 +912,8 @@
     function nearestNamespaceInRange(first, length, x, y) {
       let nearest = null;
       let nearestDistance = Infinity;
-      const last = Math.min(namespacePoints.length, first + length);
-      for (let index = first; index < last; index += 1) {
-        const point = namespacePoints[index];
+      const candidates = boundedRangeSample(namespacePoints, first, length, FOCUSED_PICK_LIMIT);
+      for (const point of candidates) {
         if (!point.screen || (focusedCategory && point.category !== focusedCategory)) continue;
         const distance = Math.hypot(point.screen[0] - x, point.screen[1] - y);
         const radius = Math.max(8, point.screen[2] + 4);
@@ -884,10 +942,10 @@
     }
 
     function hitTest(x, y) {
-      if (!groupedMode) return nearestScreenPoint(interactivePoints, x, y);
-      if (focusedGroupIndex === null) return systemHubAt(x, y);
+      if (!configuredRegions) return nearestScreenPoint(overviewPickPoints, x, y);
+      if (focusedGroupIndex === null) return systemHubAt(x, y) || nearestScreenPoint(overviewPickPoints, x, y);
 
-      const [first, length] = model.groupRanges[focusedGroupIndex];
+      const [first, length] = groupRanges[focusedGroupIndex];
       return nearestNamespaceInRange(first, length, x, y);
     }
 
@@ -1020,7 +1078,7 @@
       focusedGroupIndex = null;
       if (systemFocusButtons[previous]) systemFocusButtons[previous].setAttribute("aria-pressed", "false");
       document.body.removeAttribute("data-focused-group-index");
-      document.dispatchEvent(new CustomEvent("rubylens:core-system-focus", { detail: { groupIndex: null } }));
+      document.dispatchEvent(new CustomEvent("rubylens:core-region-focus", { detail: { regionIndex: null } }));
       updateQaDrawCounts();
     }
 
@@ -1028,7 +1086,7 @@
       focusedGroupIndex = groupIndex;
       if (button) button.setAttribute("aria-pressed", "true");
       document.body.dataset.focusedGroupIndex = String(groupIndex);
-      document.dispatchEvent(new CustomEvent("rubylens:core-system-focus", { detail: { groupIndex } }));
+      document.dispatchEvent(new CustomEvent("rubylens:core-region-focus", { detail: { regionIndex: groupIndex } }));
       updateQaDrawCounts();
     }
 
@@ -1111,13 +1169,12 @@
       return true;
     }
 
-    if (interactiveMode && groupedMode) {
-      window.RubyLensCoreSystems = Object.freeze({
+    if (interactiveMode && configuredRegions) {
+      window.RubyLensCoreRegions = Object.freeze({
         focus: groupIndex => focusSystem(Number(groupIndex)),
         clear: () => { clearExplorationFocus(); return true; },
-        range: groupIndex => model.groupRanges[Number(groupIndex)]?.slice() || null,
+        range: groupIndex => groupRanges[Number(groupIndex)]?.slice() || null,
         selected: () => focusedGroupIndex,
-        layout: model.explorerLayout,
       });
     }
 
@@ -1217,23 +1274,23 @@
           facts.append(button);
         }
         body.append(actions, createRubyBreakdown(meta.title, meta.rubyCounts, meta.metricIndexes));
-        if (category === "core" && groupedMode && model.groupNames?.length) {
+        if (category === "core" && configuredRegions) {
           const systems = document.createElement("section");
           systems.className = "systems-summary";
           const systemsTitle = document.createElement("h3");
-          systemsTitle.textContent = "Core systems";
+          systemsTitle.textContent = "Core regions";
           const systemList = document.createElement("ol");
-          const activeSystemIndexes = model.groups
+          const activeSystemIndexes = groups
             .map((row, index) => Number(row[1] || 0) + Number(row[2] || 0) + Number(row[3] || 0) > 0 ? index : null)
             .filter(Number.isInteger);
           activeSystemIndexes.slice(0, 16).forEach(index => {
-            const name = model.groupNames[index];
-            const row = model.groups[index];
+            const name = groupNames[index];
+            const row = groups[index];
             const item = document.createElement("li");
             const label = document.createElement("button");
             label.type = "button";
             label.setAttribute("aria-pressed", "false");
-            label.setAttribute("aria-label", `Focus Core system ${name}`);
+            label.setAttribute("aria-label", `Focus Core region ${name}`);
             label.textContent = name;
             systemFocusButtons[index] = label;
             label.addEventListener("click", () => focusSystem(index, label));
@@ -1245,7 +1302,7 @@
           systems.append(systemsTitle, systemList);
           if (activeSystemIndexes.length > 16) {
             const remainder = document.createElement("p");
-            remainder.textContent = `${(activeSystemIndexes.length - 16).toLocaleString()} more systems`;
+            remainder.textContent = `${(activeSystemIndexes.length - 16).toLocaleString()} more regions`;
             systems.append(remainder);
           }
           body.append(systems);
@@ -1296,7 +1353,7 @@
         dpr = 1;
         width = SHOWCASE_PRESET.stageWidth;
         height = SHOWCASE_PRESET.stageHeight;
-        if (showcaseRenderer) showcaseRenderer.resize(width, height);
+        if (sceneRenderer) sceneRenderer.resize(width, height);
         else {
           const renderScale = configuredMobile() ? .75 : 1;
           canvas.width = Math.round(width * renderScale);
@@ -1314,6 +1371,7 @@
       width = window.innerWidth; height = window.innerHeight;
       canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (sceneRenderer) sceneRenderer.resize(width, height);
       updateSceneViewport();
       updateQaDrawCounts();
       requestRender();
@@ -1371,9 +1429,8 @@
     }
 
     function resetCamera() {
-      const atlas = groupedMode && interactiveMode && model.explorerLayout === "atlas";
-      yaw = atlas ? 0 : -.36;
-      pitch = atlas ? 0 : .34;
+      yaw = -.36;
+      pitch = .34;
       zoom = 1;
       panX = 0;
       panY = 0;
@@ -1400,9 +1457,9 @@
       const z1 = positionX * sy + positionZ * cy;
       const y2 = positionY * cp - z1 * sp;
       const z2 = positionY * sp + z1 * cp;
-      const depth = 270 - z2;
+      const depth = cameraDistance - z2;
       if (depth <= 35) return null;
-      const perspective = 440 / depth * zoom;
+      const perspective = cameraFocal / depth * zoom;
       return [sceneCenterX + panX + x1 * perspective, sceneCenterY + panY + y2 * perspective, perspective];
     }
 
@@ -1426,7 +1483,7 @@
         const [x, y, perspective] = projected;
         if (x < -20 || x > sceneRight + 20 || y < -20 || y > sceneBottom + 20) continue;
         const size = clamp(point.base * (.62 + point.signal * .46) * perspective, .35, point.systemHub ? 8 : point.hub ? 5.2 : 3.2);
-        const alpha = clamp(.14 + point.signal * .105, .12, point.hub ? .86 : .7) * (groupedMode && point.category === "tests" && !point.systemHub ? .55 : 1) * SHOWCASE_PRESET.starBrightnessPercent / 100;
+        const alpha = clamp(.11 + point.signal * .09, .09, point.hub ? .76 : .58) * (point.category === "tests" && !point.systemHub ? .68 : 1) * SHOWCASE_PRESET.starBrightnessPercent / 100;
         const colour = colours[point.category];
         if (size > 1.35) {
           const mobileGlow = configuredMobile() ? .65 : 1;
@@ -1443,7 +1500,7 @@
           context.arc(x, y, size, 0, Math.PI * 2);
           context.fill();
         }
-        if (size > 1.1 && !configuredMobile() && !(groupedMode && point.category === "tests")) {
+        if (size > 1.1 && !configuredMobile() && point.category !== "tests") {
           context.beginPath();
           context.arc(x, y, Math.max(.45 + deepDetail * .25, size * (.24 + deepDetail * .06)), 0, Math.PI * 2);
           context.fillStyle = `rgba(255,248,244,${Math.min(.9, alpha * 1.25)})`;
@@ -1453,15 +1510,60 @@
       context.globalCompositeOperation = "source-over";
     }
 
+    function updateProjectedPoint(point, matrix) {
+      point.screen = null;
+      if (point.hub) point.cloudScreenRadius = null;
+      if (!visibleCategories[point.category]) return;
+      const projected = project(point, matrix);
+      if (!projected) return;
+      const [x, y, perspective] = projected;
+      if (x < -20 || x > sceneRight + 20 || y < -20 || y > sceneBottom + 20) return;
+      const size = clamp(point.base * (.62 + point.signal * .46) * perspective, .35, point.systemHub ? 8 : point.hub ? 5.2 : 3.2);
+      point.screen = [x, y, size, perspective];
+      if (point.hub) point.cloudScreenRadius = Math.max(12, packageAnchors[point.packageIndex][3] * perspective * 1.2);
+    }
+
+    function activePickingPoints() {
+      if (focusedGroupIndex === null) return overviewPickPoints;
+      const [first, length] = groupRanges[focusedGroupIndex];
+      return boundedRangeSample(namespacePoints, first, length, FOCUSED_PICK_LIMIT).concat(dependencyHubs, systemHubs);
+    }
+
+    function renderSelectionOverlay() {
+      if (!selectedPoint?.screen) return;
+      const [x, y, size] = selectedPoint.screen;
+      const colour = colours[selectedPoint.category];
+      context.beginPath(); context.arc(x, y, Math.max(7, size * 2.5), 0, Math.PI * 2);
+      context.strokeStyle = "rgba(255,255,255,.95)"; context.lineWidth = 1.2; context.stroke();
+      context.beginPath(); context.arc(x, y, Math.max(12, size * 4), 0, Math.PI * 2);
+      context.strokeStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},.5)`; context.lineWidth = 1; context.stroke();
+    }
+
     function render(timestamp) {
       animationFrame = 0;
       updateCameraFlight(timestamp);
       if (showcaseMode) {
-        if (showcaseRenderer) showcaseRenderer.render();
+        if (sceneRenderer) sceneRenderer.render();
         else renderShowcaseFallback();
         return;
       }
       if (interactiveMode) document.getElementById("zoom-level").value = `${Math.round(zoom * 100)}%`;
+      const matrix = [Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch)];
+      if (sceneRenderer) {
+        context.clearRect(0, 0, width, height);
+        sceneRenderer.render();
+        const pickingPoints = activePickingPoints();
+        for (const point of pickingPoints) updateProjectedPoint(point, matrix);
+        if (selectedPoint && !pickingPoints.includes(selectedPoint)) updateProjectedPoint(selectedPoint, matrix);
+        renderSelectionOverlay();
+        if (selectedPoint) {
+          if (cameraFlight) tooltip.hidden = true;
+          else positionTooltip(selectedPoint);
+        }
+        if (cameraFlight) requestRender();
+        else if (drifting && !dragging && !selectedPoint) { yaw += .00055; requestRender(); }
+        return;
+      }
       context.globalCompositeOperation = "source-over";
       context.fillStyle = "#03040a";
       context.fillRect(0, 0, width, height);
@@ -1469,7 +1571,6 @@
       vignette.addColorStop(0, "rgba(30,16,45,.18)"); vignette.addColorStop(1, "rgba(0,0,0,.6)");
       context.fillStyle = vignette; context.fillRect(0, 0, width, height);
       context.globalCompositeOperation = "lighter";
-      const matrix = [Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch)];
       const deepDetail = clamp(Math.log2(Math.max(1, zoom)) / 5, 0, 1);
       for (const [first, length] of visibleDrawRanges()) {
       for (let index = first; index < first + length; index += 1) {
@@ -1485,7 +1586,7 @@
         const signal = point.signal;
         const size = clamp(point.base * (.62 + signal * .46) * perspective, .35, point.systemHub ? 8 : point.hub ? 5.2 : 3.2);
         const focusedSystemTest = focusedGroupIndex !== null && point.groupIndex === focusedGroupIndex && point.category === "tests" && !point.systemHub;
-        const alpha = clamp(.14 + signal * .105, .12, point.hub ? .86 : .7) * (focusedSystemTest ? .22 : groupedMode && point.category === "tests" && !point.systemHub ? .55 : 1);
+        const alpha = clamp(.11 + signal * .09, .09, point.hub ? .76 : .58) * (focusedSystemTest ? .34 : point.category === "tests" && !point.systemHub ? .68 : 1);
         const focusedPackagePoint = expandedPackageIndex !== null && point.category === "dependencies" && point.packageIndex === expandedPackageIndex;
         const systemEmphasis = focusedGroupIndex !== null && Number.isInteger(point.groupIndex) && point.groupIndex !== focusedGroupIndex
           ? contextVisibility.system
@@ -1512,7 +1613,7 @@
         context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${visibleAlpha})`;
         if (!detailedPoint || size < .85) context.fillRect(x, y, 1, 1);
         else { context.beginPath(); context.arc(x, y, size, 0, Math.PI * 2); context.fill(); }
-        if (size > 1.1 && detailedPoint && !configuredMobile() && !(groupedMode && point.category === "tests")) {
+        if (size > 1.1 && detailedPoint && !configuredMobile() && point.category !== "tests") {
           context.beginPath(); context.arc(x, y, Math.max(.45 + deepDetail * .25, size * (.24 + deepDetail * .06)), 0, Math.PI * 2);
           context.fillStyle = `rgba(255,248,244,${Math.min(.9, visibleAlpha * 1.25)})`; context.fill();
         }
@@ -1582,13 +1683,7 @@
       ["classes", "modules", "methods", "constants"].forEach((metric, index) => {
         document.getElementById(`cinema-${metric}`).textContent = format(core[index]);
       });
-      if (groupedMode) {
-        const coreSystemCount = model.groups.filter(row => Number(row[1] || 0) + Number(row[2] || 0) + Number(row[3] || 0) > 0).length;
-        document.querySelector(".eyebrow").textContent = "RubyLens · Core systems";
-        document.getElementById("cinema-secondary").textContent = `Core systems · ${format(coreSystemCount)}   ·   Tests · ${counted(tests[0], "class", "classes")} · ${counted(tests[2], "method", "methods")}   ·   ${counted(totals.packages, "dependency gem", "dependency gems")} in orbit`;
-      } else {
-        document.getElementById("cinema-secondary").textContent = `Tests · ${counted(tests[0], "class", "classes")} · ${counted(tests[2], "method", "methods")}   ·   ${counted(totals.packages, "dependency gem", "dependency gems")} in orbit`;
-      }
+      document.getElementById("cinema-secondary").textContent = `Tests · ${counted(tests[0], "class", "classes")} · ${counted(tests[2], "method", "methods")}   ·   ${counted(totals.packages, "dependency gem", "dependency gems")} in orbit`;
     }
 
     function setDrifting(next) {
@@ -1752,7 +1847,7 @@
       document.title = `${model.projectName} · RubyLens showcase`;
       const showcaseLabel = `Autonomous stellar artwork of ${model.projectName}, completing one slow rotation each minute.`;
       canvas.setAttribute("aria-label", showcaseLabel);
-      document.getElementById("showcase-cosmos")?.setAttribute("aria-label", showcaseLabel);
+      document.getElementById("rubylens-cosmos")?.setAttribute("aria-label", showcaseLabel);
       populateShowcaseStats();
       reducedMotionQuery.addEventListener("change", startShowcase);
       configureShowcaseStage();
@@ -1760,7 +1855,7 @@
       startShowcase();
     } else {
       document.title = `RubyLens · ${model.projectName}`;
-      canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class and module stars for Ruby code details or gem clouds for package summaries. Sidebar highlights open a top-down view. Double-click a gem cloud, press Enter or F on a selected gem marker, or tap that marker again to expand its stars. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, and use arrow keys to move the view. Escape exits a focused gem system.`);
+      canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class and module stars for Ruby code details or gem clouds for package summaries. Sidebar highlights open a top-down view. Double-click a gem cloud, press Enter or F on a selected gem marker, or tap that marker again to expand its stars. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, and use arrow keys to move the view. Escape exits a focused gem cloud.`);
       document.getElementById("coverage").textContent = `${renderedDependencyStars.toLocaleString()} dependency stars shown`;
       const warningTotal = Object.values(model.warningCounts).reduce((sum, count) => sum + count, 0);
       if (warningTotal > 0) { const status = document.getElementById("status"); status.hidden = false; status.textContent = `${warningTotal.toLocaleString()} partial-index warning${warningTotal === 1 ? "" : "s"}`; }

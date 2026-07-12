@@ -34,7 +34,7 @@ module RubyLens
           eligible = nonempty.select { |index| quotas[index] < @sizes[index] }
           break if eligible.empty?
 
-          weights = eligible.to_h { |index| [index, Math.sqrt(@sizes[index])] }
+          weights = eligible.to_h { |index| [index, @sizes[index]] }
           total_weight = weights.values.sum
           shares = eligible.to_h { |index| [index, remaining * weights.fetch(index) / total_weight] }
           allocated = 0

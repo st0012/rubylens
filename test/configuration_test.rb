@@ -41,11 +41,10 @@ class ConfigurationTest < Minitest::Test
       assert_equal(%w[shared], configuration.rules.filter_map(&:id))
       assert_equal("apps/*", configuration.rules.last.each)
       assert_equal("group", configuration.ungrouped.mode)
-      assert_equal("association", configuration.explorer_layout)
     end
   end
 
-  def test_atlas_is_an_explicit_explorer_only_presentation_option
+  def test_rejects_retired_peer_system_presentation_options
     with_config(<<~YAML) do |path|
       version: 1
       boundaries:
@@ -53,25 +52,11 @@ class ConfigurationTest < Minitest::Test
       presentation:
         explorer_layout: atlas
     YAML
-      configuration = RubyLens::Configuration.resolve(root: "/unused", path: path)
-
-      assert_equal("atlas", configuration.explorer_layout)
-    end
-  end
-
-  def test_rejects_unknown_explorer_layout
-    with_config(<<~YAML) do |path|
-      version: 1
-      boundaries:
-        groups: []
-      presentation:
-        explorer_layout: automatic
-    YAML
       error = assert_raises(RubyLens::Error) do
         RubyLens::Configuration.resolve(root: "/unused", path: path)
       end
 
-      assert_equal("presentation.explorer_layout must be association or atlas", error.message)
+      assert_equal("unknown configuration key: presentation", error.message)
     end
   end
 

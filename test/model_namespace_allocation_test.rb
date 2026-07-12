@@ -3,13 +3,21 @@
 require_relative "test_helper"
 
 class ModelNamespaceAllocationTest < Minitest::Test
-  def test_allocates_explicit_budget_with_minimums_sqrt_weights_and_deterministic_remainders
+  def test_allocates_explicit_budget_with_minimums_linear_weights_and_deterministic_remainders
     quotas = RubyLens::Model::NamespaceAllocation.new(
       sizes: [1, 4, 9], keys: %w[c b a], budget: 6,
     ).quotas
 
-    assert_equal([1, 2, 3], quotas)
+    assert_equal([1, 1, 4], quotas)
     assert_equal(6, quotas.sum)
+  end
+
+  def test_post_minimum_detail_tracks_source_population_linearly
+    quotas = RubyLens::Model::NamespaceAllocation.new(
+      sizes: [10, 90], keys: %w[small large], budget: 20,
+    ).quotas
+
+    assert_equal([2, 18], quotas)
   end
 
   def test_preserves_sum_bounds_and_nonempty_representatives_when_budget_permits

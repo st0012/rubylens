@@ -43,7 +43,6 @@ module RubyLens
         }
         if configured_boundaries?(manifest)
           snapshot["schema"] = "rubylens.snapshot.v6"
-          snapshot["explorer_layout"] = manifest.boundaries.explorer_layout
           snapshot["groups"] = build_group_rows(workspace, collected.fetch(:group_ruby_counts), manifest)
           validate_group_totals!(snapshot.fetch("groups"), collected.fetch(:category_stats))
         end

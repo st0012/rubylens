@@ -4,7 +4,7 @@ RubyLens bounds the compact dependency rows retained after Rubydex indexing. Exa
 
 This removes the previous second full materialization of `graph.declarations` and prevents one million dependency declarations from becoming one million snapshot rows before the art-model rendering cap is applied. The Rubydex graph itself remains outside this memory boundary.
 
-Because `packages[].declarations` is now bounded instead of complete, the internal handoff is `rubylens.snapshot.v5`. The model builder continues to accept the old v4 shape, where declaration arrays are complete and aggregate count/maxima fields are absent. The persisted public artifact stays `rubylens.art.v7`: exact package populations, dependency totals, signal domains, and deterministic rendering retain their existing meanings.
+Because `packages[].declarations` is bounded instead of complete, the unconfigured internal handoff is `rubylens.snapshot.v5`; configured boundaries use `snapshot.v6`. Both now produce `rubylens.art.v9`, which adds an exact-population host radius, deterministic namespace budgets, and represented weights while preserving exact package populations, dependency totals, and signal domains.
 
 Run the synthetic benchmark with the project Ruby activated:
 

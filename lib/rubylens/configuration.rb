@@ -8,19 +8,18 @@ module RubyLens
     Rule = Data.define(:id, :label, :paths, :each, :id_prefix, :order)
     Ungrouped = Data.define(:mode, :label)
 
-    TOP_LEVEL_KEYS = %w[version boundaries presentation].freeze
+    TOP_LEVEL_KEYS = %w[version boundaries].freeze
     BOUNDARY_KEYS = %w[groups ungrouped].freeze
-    PRESENTATION_KEYS = %w[explorer_layout].freeze
     EXPLICIT_GROUP_KEYS = %w[id label paths].freeze
     EXPANDED_GROUP_KEYS = %w[each id_prefix label].freeze
     UNGROUPED_KEYS = %w[mode label].freeze
     ID_PATTERN = /\A[a-z0-9]+(?:-[a-z0-9]+)*\z/
     LABEL_PATTERN = /%\{basename\}/
 
-    attr_reader :rules, :ungrouped, :source, :explorer_layout
+    attr_reader :rules, :ungrouped, :source
 
     def self.disabled
-      new(rules: [], ungrouped: nil, source: :disabled, explorer_layout: "association")
+      new(rules: [], ungrouped: nil, source: :disabled)
     end
 
     def self.resolve(root:, path: nil, disabled: false)
@@ -37,7 +36,7 @@ module RubyLens
       discovered = Pathname(root).expand_path.join(".rubylens.yml")
       return load(discovered, source: :discovered) if discovered.file?
 
-      new(rules: [], ungrouped: nil, source: :absent, explorer_layout: "association")
+      new(rules: [], ungrouped: nil, source: :absent)
     end
 
     def self.load(path, source:)
@@ -59,19 +58,17 @@ module RubyLens
       rules = groups.each_with_index.map { |group, index| parse_rule(group, index) }
       validate_explicit_ids(rules)
       ungrouped = parse_ungrouped(boundaries.fetch("ungrouped", { "mode" => "group", "label" => "Other" }))
-      explorer_layout = parse_presentation(document.fetch("presentation", {}))
-      new(rules:, ungrouped:, source:, explorer_layout:)
+      new(rules:, ungrouped:, source:)
     rescue Psych::Exception => error
       raise Error, "configuration YAML is unsafe or invalid: #{error.message}"
     rescue Errno::ENOENT, Errno::EACCES => error
       raise Error, "configuration could not be read: #{error.message}"
     end
 
-    def initialize(rules:, ungrouped:, source:, explorer_layout:)
+    def initialize(rules:, ungrouped:, source:)
       @rules = rules.freeze
       @ungrouped = ungrouped
       @source = source
-      @explorer_layout = explorer_layout
       freeze
     end
 
@@ -143,18 +140,6 @@ module RubyLens
 
         validate_label(label, "boundaries.ungrouped.label", template: false)
         Ungrouped.new(mode:, label:)
-      end
-
-      def parse_presentation(value)
-        raise Error, "presentation must be a mapping" unless value.is_a?(Hash)
-
-        validate_keys(value, PRESENTATION_KEYS, "presentation")
-        layout = value.fetch("explorer_layout", "association")
-        unless %w[association atlas].include?(layout)
-          raise Error, "presentation.explorer_layout must be association or atlas"
-        end
-
-        layout.freeze
       end
 
       def validate_keys(value, allowed, context)

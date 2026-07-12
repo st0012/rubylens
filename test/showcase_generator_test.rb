@@ -80,10 +80,18 @@ class ShowcaseGeneratorTest < Minitest::Test
     model_builder = Object.new
     model_builder.define_singleton_method(:build) do |_snapshot|
       {
+        "schema" => "rubylens.art.v9",
         "projectName" => "Synthetic App",
-        "totals" => { "namespaces" => 0, "packages" => 0, "dependencyStars" => 0, "renderedDependencyStars" => 0 },
+        "totals" => { "namespaces" => 0, "renderedNamespaces" => 0, "regions" => 1, "packages" => 0, "dependencyStars" => 0, "renderedDependencyStars" => 0 },
         "domains" => RubyLens::ArtModelBuilder::SIGNAL_FIELDS.to_h { |field| [field, 0] },
         "categoryStats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
+        "workspaceRadius" => 0,
+        "workspaceDensity" => [0, 0, 0, 0, 0, 0],
+        "regions" => [[0] * 13],
+        "regionRanges" => [[0, 0]],
+        "regionLods" => [[0, 0]],
+        "regionBounds" => [[0, 0, 0, 0]],
+        "regionCentroids" => [[0, 0, 0]],
         "namespaces" => [], "packages" => [], "dependencyStars" => [],
       }
     end
