@@ -1,9 +1,10 @@
     "use strict";
     const model = JSON.parse(atob("{{MODEL_BASE64}}"));
-    const captureMode = new URLSearchParams(window.location.search).get("capture") === "1";
-    if (captureMode) document.body.classList.add("is-capture");
+    const showcaseMode = document.body.dataset.rubylensMode === "showcase";
+    const interactiveMode = !showcaseMode;
     const canvas = document.getElementById("cosmos");
     const context = canvas.getContext("2d", { alpha: false });
+    const showcaseStage = document.getElementById("showcase-stage");
     const panel = document.getElementById("panel");
     const panelBody = document.getElementById("panel-body");
     const panelToggle = document.getElementById("panel-toggle");
@@ -19,9 +20,32 @@
       tests: { ancestorDepth: .18, definitionSites: .25, reopenings: .18, descendants: .42, references: .85, members: .55 },
       dependencies: { ancestorDepth: .12, definitionSites: .35, reopenings: .2, descendants: .32, references: .48, members: .4 },
     };
-    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null;
-    const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35, CAPTURE_POINT_LIMIT = 50_000;
-    const CAPTURE_CAMERA = Object.freeze({ turns: 1, referenceWidth: 720, referenceHeight: 405, centerX: .52, centerY: .60, startYaw: -.36, pitch: .40, pitchSway: .09, zoom: 1.05, zoomBreath: .035 });
+    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, showcaseRenderer = null;
+    const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35, SHOWCASE_POINT_LIMIT = 50_000;
+    const SHOWCASE_PRESET = Object.freeze({
+      "stageWidth": 1920,
+      "stageHeight": 1080,
+      "durationMs": 60000,
+      "targetFps": 60,
+      "turns": 1,
+      "direction": "clockwise",
+      "startAngleDegrees": -54,
+      "elevationDegrees": -25,
+      "elevationSwayDegrees": 1.5,
+      "zoom": 1.6,
+      "zoomBreathPercent": 0,
+      "centerXPercent": 49,
+      "centerYPercent": 67,
+      "starBrightnessPercent": 75,
+      "pointGlowPercent": 35,
+      "backgroundGlowPercent": 200,
+      "textScalePercent": 80,
+      "layoutReferenceWidth": 720,
+      "layoutReferenceHeight": 405,
+      "mastheadLeft": 44,
+      "mastheadTop": 40,
+      "mastheadWidth": 632
+    });
     const TOP_DOWN_PITCH = Math.PI / 2;
     const contextVisibility = { selection: .75, category: .16, package: .75 };
     const pointers = new Map();
@@ -30,7 +54,7 @@
     const focusButtons = {};
     const excludedTriviaNames = new Set(["Object", "Kernel", "BasicObject"]);
     const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    let drifting = !captureMode && !reducedMotionQuery.matches;
+    let drifting = interactiveMode && !reducedMotionQuery.matches;
     const colours = { core: [244, 82, 132], tests: [87, 204, 255], dependencies: [255, 184, 77] };
 
     const hash = (seed, channel = 0) => {
@@ -96,7 +120,7 @@
       const dependencyHubs = [];
       const addPoint = (point, interactive = true) => {
         points.push(point);
-        if (interactive && !captureMode) interactivePoints.push(point);
+        if (interactive && interactiveMode) interactivePoints.push(point);
         if (point.hub) dependencyHubs.push(point);
       };
       model.namespaces.forEach((row, index) => {
@@ -104,7 +128,7 @@
         const values = row.slice(4, 10);
         const rubyCounts = row.slice(10, 14);
         const point = { category, seed: row[0], position: category === "tests" ? testPosition(row[0]) : corePosition(row[0]), signal: weightedSignal(normalizedSignals(values), category), base: category === "core" ? .82 : .68 };
-        if (!captureMode) Object.assign(point, { name: model.namespaceNames[index], kind: row[2] === 0 ? "Class" : "Module", rubyCounts, instanceVariableCount: row[14] || 0, values });
+        if (interactiveMode) Object.assign(point, { name: model.namespaceNames[index], kind: row[2] === 0 ? "Class" : "Module", rubyCounts, instanceVariableCount: row[14] || 0, values });
         addPoint(point);
       });
       model.dependencyStars.forEach(row => {
@@ -116,21 +140,286 @@
         const rubyCounts = packageRow.slice(4, 8);
         const visualValues = [0, packageRow[3], 0, 0, 0, 0];
         const point = { category: "dependencies", packageIndex: index, seed: packageRow[0], position: anchor.slice(0, 3), signal: weightedSignal(normalizedSignals(visualValues), "dependencies"), base: 1.8, hub: true };
-        if (!captureMode) Object.assign(point, { name: model.packageNames[index], packageRole: packageRow[1] === 0 ? "Direct dependency" : "Transitive dependency", packageLocation: packageRow[2] === 0 ? "Workspace package" : "External gem", rubyCounts });
+        if (interactiveMode) Object.assign(point, { name: model.packageNames[index], packageRole: packageRow[1] === 0 ? "Direct dependency" : "Transitive dependency", packageLocation: packageRow[2] === 0 ? "Workspace package" : "External gem", rubyCounts });
         addPoint(point);
       });
       return { points, interactivePoints, dependencyHubs };
     }
     const { points, interactivePoints, dependencyHubs } = buildPoints();
-    function capturePointSample() {
-      if (!captureMode || points.length <= CAPTURE_POINT_LIMIT) return points;
+    function showcasePointSample() {
+      if (!showcaseMode || points.length <= SHOWCASE_POINT_LIMIT) return points;
       const hubs = points.filter(point => point.hub);
-      const available = Math.max(0, CAPTURE_POINT_LIMIT - hubs.length);
-      const candidates = points.filter(point => !point.hub).map(point => [hash(point.seed, 73), point.seed, point]);
+      const rank = point => [hash(point.seed, 73), point.seed, point];
+      if (hubs.length >= SHOWCASE_POINT_LIMIT) {
+        return hubs.map(rank)
+          .sort((left, right) => left[0] - right[0] || left[1] - right[1])
+          .slice(0, SHOWCASE_POINT_LIMIT)
+          .map(candidate => candidate[2]);
+      }
+      const available = Math.max(0, SHOWCASE_POINT_LIMIT - hubs.length);
+      const candidates = points.filter(point => !point.hub).map(rank);
       candidates.sort((left, right) => left[0] - right[0] || left[1] - right[1]);
       return candidates.slice(0, available).map(candidate => candidate[2]).concat(hubs);
     }
-    const renderPoints = capturePointSample();
+    const renderPoints = showcasePointSample();
+
+    function createShowcaseRenderer() {
+      const liveCanvas = document.createElement("canvas");
+      liveCanvas.id = "showcase-cosmos";
+      liveCanvas.setAttribute("role", "img");
+      liveCanvas.setAttribute("aria-label", canvas.getAttribute("aria-label") || "Autonomous stellar artwork of a Ruby codebase.");
+      canvas.insertAdjacentElement("afterend", liveCanvas);
+      const gl = liveCanvas.getContext("webgl2", {
+        alpha: false,
+        antialias: true,
+        depth: false,
+        desynchronized: true,
+        powerPreference: "high-performance",
+        preserveDrawingBuffer: false,
+      });
+      if (!gl) {
+        liveCanvas.remove();
+        document.documentElement.dataset.showcaseRenderer = "canvas2d-fallback";
+        return null;
+      }
+
+      const compileShader = (type, source) => {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+          const message = gl.getShaderInfoLog(shader) || "Unknown WebGL shader error";
+          gl.deleteShader(shader);
+          throw new Error(message);
+        }
+        return shader;
+      };
+      const createProgram = (vertexSource, fragmentSource) => {
+        const program = gl.createProgram();
+        const vertex = compileShader(gl.VERTEX_SHADER, vertexSource);
+        const fragment = compileShader(gl.FRAGMENT_SHADER, fragmentSource);
+        gl.attachShader(program, vertex);
+        gl.attachShader(program, fragment);
+        gl.linkProgram(program);
+        gl.deleteShader(vertex);
+        gl.deleteShader(fragment);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+          const message = gl.getProgramInfoLog(program) || "Unknown WebGL program error";
+          gl.deleteProgram(program);
+          throw new Error(message);
+        }
+        return program;
+      };
+
+      const backgroundProgram = createProgram(`#version 300 es
+        precision highp float;
+        const vec2 POSITIONS[3] = vec2[3](vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
+        void main() { gl_Position = vec4(POSITIONS[gl_VertexID], 0.0, 1.0); }
+      `, `#version 300 es
+        precision highp float;
+        uniform vec2 u_resolution;
+        uniform vec2 u_center;
+        uniform float u_backgroundGlow;
+        out vec4 outColor;
+        void main() {
+          vec2 pixel = vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y);
+          float radius = max(u_resolution.x, u_resolution.y) * 0.72;
+          float distanceMix = clamp(distance(pixel, u_center) / radius, 0.0, 1.0);
+          vec3 base = vec3(3.0, 4.0, 10.0) / 255.0;
+          vec3 source = mix(vec3(30.0, 16.0, 45.0) / 255.0, vec3(0.0), distanceMix);
+          float centerAlpha = min(0.5, 0.18 * u_backgroundGlow / 100.0);
+          float alpha = mix(centerAlpha, 0.6, distanceMix);
+          outColor = vec4(mix(base, source, alpha), 1.0);
+        }
+      `);
+
+      const pointProgram = createProgram(`#version 300 es
+        precision highp float;
+        layout(location = 0) in vec3 a_position;
+        layout(location = 1) in float a_sizeFactor;
+        layout(location = 2) in float a_alpha;
+        layout(location = 3) in float a_category;
+        layout(location = 4) in float a_maxSize;
+        uniform vec2 u_resolution;
+        uniform vec2 u_center;
+        uniform float u_yaw;
+        uniform float u_pitch;
+        uniform float u_zoom;
+        uniform float u_brightness;
+        uniform float u_glow;
+        uniform float u_deepDetail;
+        uniform int u_pass;
+        out vec3 v_colour;
+        out float v_alpha;
+        out float v_radius;
+
+        void hidePoint() {
+          gl_Position = vec4(2.0, 2.0, 0.0, 1.0);
+          gl_PointSize = 1.0;
+          v_colour = vec3(0.0);
+          v_alpha = 0.0;
+          v_radius = 0.5;
+        }
+
+        void main() {
+          float cy = cos(u_yaw);
+          float sy = sin(u_yaw);
+          float cp = cos(u_pitch);
+          float sp = sin(u_pitch);
+          float x1 = a_position.x * cy - a_position.z * sy;
+          float z1 = a_position.x * sy + a_position.z * cy;
+          float y2 = a_position.y * cp - z1 * sp;
+          float z2 = a_position.y * sp + z1 * cp;
+          float depth = 270.0 - z2;
+          if (depth <= 35.0) { hidePoint(); return; }
+
+          float perspective = 440.0 / depth * u_zoom;
+          vec2 screen = u_center + vec2(x1, y2) * perspective;
+          if (screen.x < -20.0 || screen.x > u_resolution.x + 20.0 || screen.y < -20.0 || screen.y > u_resolution.y + 20.0) {
+            hidePoint();
+            return;
+          }
+
+          float size = clamp(a_sizeFactor * perspective, 0.35, a_maxSize);
+          float visibleAlpha = clamp(a_alpha * u_brightness / 100.0, 0.0, 1.0);
+          float radius = size;
+          float alpha = visibleAlpha;
+          vec3 colour = a_category < 0.5
+            ? vec3(244.0, 82.0, 132.0) / 255.0
+            : (a_category < 1.5 ? vec3(87.0, 204.0, 255.0) / 255.0 : vec3(255.0, 184.0, 77.0) / 255.0);
+
+          if (u_pass == 0) {
+            if (size <= 1.35 || u_glow <= 0.0) { hidePoint(); return; }
+            float glowScale = (3.4 - u_deepDetail * 1.3) * (0.75 + 0.25 * u_glow / 100.0);
+            radius = size * glowScale;
+            alpha = min(1.0, visibleAlpha * 0.055 * u_glow / 100.0);
+          } else if (u_pass == 1) {
+            radius = size < 0.85 ? 0.5 : size;
+          } else {
+            if (size <= 1.1) { hidePoint(); return; }
+            radius = max(0.45 + u_deepDetail * 0.25, size * (0.24 + u_deepDetail * 0.06));
+            alpha = min(0.9, visibleAlpha * 1.25);
+            colour = vec3(255.0, 248.0, 244.0) / 255.0;
+          }
+
+          gl_Position = vec4(screen.x / u_resolution.x * 2.0 - 1.0, 1.0 - screen.y / u_resolution.y * 2.0, 0.0, 1.0);
+          gl_PointSize = max(1.0, radius * 2.0);
+          v_colour = colour;
+          v_alpha = alpha;
+          v_radius = radius;
+        }
+      `, `#version 300 es
+        precision highp float;
+        in vec3 v_colour;
+        in float v_alpha;
+        in float v_radius;
+        out vec4 outColor;
+        void main() {
+          if (v_alpha <= 0.0) discard;
+          float radial = length(gl_PointCoord - vec2(0.5)) * 2.0;
+          float feather = min(1.0, 1.0 / max(v_radius, 1.0));
+          float coverage = 1.0 - smoothstep(1.0 - feather, 1.0, radial);
+          if (coverage <= 0.0) discard;
+          float contribution = v_alpha * coverage;
+          outColor = vec4(v_colour * contribution, contribution);
+        }
+      `);
+
+      const pointData = new Float32Array(renderPoints.length * 7);
+      const categoryIndex = { core: 0, tests: 1, dependencies: 2 };
+      renderPoints.forEach((point, index) => {
+        const offset = index * 7;
+        pointData[offset] = point.position[0];
+        pointData[offset + 1] = point.position[1];
+        pointData[offset + 2] = point.position[2];
+        pointData[offset + 3] = point.base * (.62 + point.signal * .46);
+        pointData[offset + 4] = clamp(.14 + point.signal * .105, .12, point.hub ? .86 : .7);
+        pointData[offset + 5] = categoryIndex[point.category];
+        pointData[offset + 6] = point.hub ? 5.2 : 3.2;
+      });
+
+      const pointVao = gl.createVertexArray();
+      const pointBuffer = gl.createBuffer();
+      gl.bindVertexArray(pointVao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, pointBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, pointData, gl.STATIC_DRAW);
+      const stride = 7 * Float32Array.BYTES_PER_ELEMENT;
+      [[0, 3, 0], [1, 1, 3], [2, 1, 4], [3, 1, 5], [4, 1, 6]].forEach(([location, size, offset]) => {
+        gl.enableVertexAttribArray(location);
+        gl.vertexAttribPointer(location, size, gl.FLOAT, false, stride, offset * Float32Array.BYTES_PER_ELEMENT);
+      });
+      gl.bindVertexArray(null);
+
+      const backgroundUniforms = {
+        resolution: gl.getUniformLocation(backgroundProgram, "u_resolution"),
+        center: gl.getUniformLocation(backgroundProgram, "u_center"),
+        backgroundGlow: gl.getUniformLocation(backgroundProgram, "u_backgroundGlow"),
+      };
+      const pointUniforms = {
+        resolution: gl.getUniformLocation(pointProgram, "u_resolution"),
+        center: gl.getUniformLocation(pointProgram, "u_center"),
+        yaw: gl.getUniformLocation(pointProgram, "u_yaw"),
+        pitch: gl.getUniformLocation(pointProgram, "u_pitch"),
+        zoom: gl.getUniformLocation(pointProgram, "u_zoom"),
+        brightness: gl.getUniformLocation(pointProgram, "u_brightness"),
+        glow: gl.getUniformLocation(pointProgram, "u_glow"),
+        deepDetail: gl.getUniformLocation(pointProgram, "u_deepDetail"),
+        pass: gl.getUniformLocation(pointProgram, "u_pass"),
+      };
+      const pointSizeRange = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE);
+      document.documentElement.dataset.showcaseRenderer = "webgl2";
+      document.documentElement.dataset.pointSizeRange = `${pointSizeRange[0]},${pointSizeRange[1]}`;
+      canvas.style.display = "none";
+
+      return Object.freeze({
+        resize(viewportWidth, viewportHeight) {
+          liveCanvas.width = Math.round(viewportWidth);
+          liveCanvas.height = Math.round(viewportHeight);
+          gl.viewport(0, 0, liveCanvas.width, liveCanvas.height);
+        },
+        render() {
+          const deepDetail = clamp(Math.log2(Math.max(1, zoom)) / 5, 0, 1);
+          gl.disable(gl.BLEND);
+          gl.useProgram(backgroundProgram);
+          gl.bindVertexArray(null);
+          gl.uniform2f(backgroundUniforms.resolution, width, height);
+          gl.uniform2f(backgroundUniforms.center, sceneCenterX, sceneCenterY);
+          gl.uniform1f(backgroundUniforms.backgroundGlow, SHOWCASE_PRESET.backgroundGlowPercent);
+          gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+          gl.enable(gl.BLEND);
+          gl.blendEquation(gl.FUNC_ADD);
+          gl.blendFunc(gl.ONE, gl.ONE);
+          gl.useProgram(pointProgram);
+          gl.bindVertexArray(pointVao);
+          gl.uniform2f(pointUniforms.resolution, width, height);
+          gl.uniform2f(pointUniforms.center, sceneCenterX, sceneCenterY);
+          gl.uniform1f(pointUniforms.yaw, yaw);
+          gl.uniform1f(pointUniforms.pitch, pitch);
+          gl.uniform1f(pointUniforms.zoom, zoom);
+          gl.uniform1f(pointUniforms.brightness, SHOWCASE_PRESET.starBrightnessPercent);
+          gl.uniform1f(pointUniforms.glow, SHOWCASE_PRESET.pointGlowPercent);
+          gl.uniform1f(pointUniforms.deepDetail, deepDetail);
+          for (let pass = 0; pass < 3; pass += 1) {
+            gl.uniform1i(pointUniforms.pass, pass);
+            gl.drawArrays(gl.POINTS, 0, renderPoints.length);
+          }
+          gl.bindVertexArray(null);
+          gl.disable(gl.BLEND);
+        },
+      });
+    }
+
+    if (showcaseMode) {
+      try {
+        showcaseRenderer = createShowcaseRenderer();
+      } catch (error) {
+        document.getElementById("showcase-cosmos")?.remove();
+        canvas.style.display = "";
+        document.documentElement.dataset.showcaseRenderer = "canvas2d-fallback";
+        document.documentElement.dataset.showcaseRendererError = error.message;
+      }
+    }
     const totals = model.totals;
     const renderedDependencyStars = model.totals.renderedDependencyStars;
     const directGemCount = model.packages.filter(row => row[1] === 0).length;
@@ -146,10 +435,8 @@
       tests: { title: "Tests", rubyCounts: model.categoryStats.tests, metricIndexes: testRubyMetricIndexes, focusZoom: 1.35 },
       dependencies: { title: "Gems", summary: `${totals.packages.toLocaleString()} dependency gems`, rubyCounts: dependencyRubyCounts, metricIndexes: allRubyMetricIndexes, note: `${directGemCount.toLocaleString()} direct · ${transitiveGemCount.toLocaleString()} transitive`, focusZoom: .72 },
     };
-    if (captureMode) {
-      model.namespaceNames = [];
+    if (showcaseMode) {
       model.namespaces = [];
-      model.packageNames = [];
       model.packages = [];
       model.dependencyStars = [];
     }
@@ -641,7 +928,47 @@
       }
     }
 
+    function configureShowcaseStage() {
+      if (!showcaseStage) return;
+      const stageScale = SHOWCASE_PRESET.stageWidth / SHOWCASE_PRESET.layoutReferenceWidth;
+      const textScale = SHOWCASE_PRESET.textScalePercent / 100;
+      showcaseStage.style.width = `${SHOWCASE_PRESET.stageWidth}px`;
+      showcaseStage.style.height = `${SHOWCASE_PRESET.stageHeight}px`;
+      const masthead = showcaseStage.querySelector(".masthead");
+      masthead.style.left = `${SHOWCASE_PRESET.mastheadLeft * stageScale}px`;
+      masthead.style.top = `${SHOWCASE_PRESET.mastheadTop * stageScale}px`;
+      masthead.style.width = `${SHOWCASE_PRESET.mastheadWidth / textScale}px`;
+      masthead.style.transform = `scale(${stageScale * textScale})`;
+    }
+
+    function fitShowcaseStage() {
+      if (!showcaseStage) return;
+      const scale = Math.min(window.innerWidth / SHOWCASE_PRESET.stageWidth, window.innerHeight / SHOWCASE_PRESET.stageHeight);
+      const fittedWidth = SHOWCASE_PRESET.stageWidth * scale;
+      const fittedHeight = SHOWCASE_PRESET.stageHeight * scale;
+      showcaseStage.style.left = `${(window.innerWidth - fittedWidth) / 2}px`;
+      showcaseStage.style.top = `${(window.innerHeight - fittedHeight) / 2}px`;
+      showcaseStage.style.transform = `scale(${scale})`;
+      document.documentElement.dataset.showcaseStageScale = String(scale);
+    }
+
     function resize() {
+      if (showcaseMode) {
+        dpr = 1;
+        width = SHOWCASE_PRESET.stageWidth;
+        height = SHOWCASE_PRESET.stageHeight;
+        if (showcaseRenderer) showcaseRenderer.resize(width, height);
+        else {
+          canvas.width = width;
+          canvas.height = height;
+          context.setTransform(1, 0, 0, 1, 0, 0);
+        }
+        fitShowcaseStage();
+        updateSceneViewport();
+        if (reducedMotionQuery.matches) applyShowcaseCamera(0);
+        requestRender();
+        return;
+      }
       dpr = Math.min(window.devicePixelRatio || 1, 2);
       width = window.innerWidth; height = window.innerHeight;
       canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
@@ -651,11 +978,11 @@
     }
 
     function updateSceneViewport() {
-      if (captureMode) {
+      if (showcaseMode) {
         sceneRight = width;
         sceneBottom = height;
-        sceneCenterX = width * CAPTURE_CAMERA.centerX;
-        sceneCenterY = height * CAPTURE_CAMERA.centerY;
+        sceneCenterX = width * SHOWCASE_PRESET.centerXPercent / 100;
+        sceneCenterY = height * SHOWCASE_PRESET.centerYPercent / 100;
         return;
       }
       const panelBounds = panel.getBoundingClientRect();
@@ -736,10 +1063,59 @@
       return [sceneCenterX + panX + x1 * perspective, sceneCenterY + panY + y2 * perspective, perspective];
     }
 
+    function renderShowcaseFallback() {
+      context.globalCompositeOperation = "source-over";
+      context.fillStyle = "#03040a";
+      context.fillRect(0, 0, width, height);
+      const vignette = context.createRadialGradient(sceneCenterX, sceneCenterY, 0, sceneCenterX, sceneCenterY, Math.max(width, height) * .72);
+      vignette.addColorStop(0, `rgba(30,16,45,${Math.min(.5, .18 * SHOWCASE_PRESET.backgroundGlowPercent / 100)})`);
+      vignette.addColorStop(1, "rgba(0,0,0,.6)");
+      context.fillStyle = vignette;
+      context.fillRect(0, 0, width, height);
+      context.globalCompositeOperation = "lighter";
+      const matrix = [Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch)];
+      const deepDetail = clamp(Math.log2(Math.max(1, zoom)) / 5, 0, 1);
+      for (const point of renderPoints) {
+        const projected = project(point, matrix);
+        if (!projected) continue;
+        const [x, y, perspective] = projected;
+        if (x < -20 || x > sceneRight + 20 || y < -20 || y > sceneBottom + 20) continue;
+        const size = clamp(point.base * (.62 + point.signal * .46) * perspective, .35, point.hub ? 5.2 : 3.2);
+        const alpha = clamp(.14 + point.signal * .105, .12, point.hub ? .86 : .7) * SHOWCASE_PRESET.starBrightnessPercent / 100;
+        const colour = colours[point.category];
+        if (size > 1.35) {
+          const glowScale = (3.4 - deepDetail * 1.3) * (.75 + .25 * SHOWCASE_PRESET.pointGlowPercent / 100);
+          context.beginPath();
+          context.arc(x, y, size * glowScale, 0, Math.PI * 2);
+          context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${alpha * .055 * SHOWCASE_PRESET.pointGlowPercent / 100})`;
+          context.fill();
+        }
+        context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${alpha})`;
+        if (size < .85) context.fillRect(x, y, 1, 1);
+        else {
+          context.beginPath();
+          context.arc(x, y, size, 0, Math.PI * 2);
+          context.fill();
+        }
+        if (size > 1.1) {
+          context.beginPath();
+          context.arc(x, y, Math.max(.45 + deepDetail * .25, size * (.24 + deepDetail * .06)), 0, Math.PI * 2);
+          context.fillStyle = `rgba(255,248,244,${Math.min(.9, alpha * 1.25)})`;
+          context.fill();
+        }
+      }
+      context.globalCompositeOperation = "source-over";
+    }
+
     function render(timestamp) {
       animationFrame = 0;
       updateCameraFlight(timestamp);
-      document.getElementById("zoom-level").value = `${Math.round(zoom * 100)}%`;
+      if (showcaseMode) {
+        if (showcaseRenderer) showcaseRenderer.render();
+        else renderShowcaseFallback();
+        return;
+      }
+      if (interactiveMode) document.getElementById("zoom-level").value = `${Math.round(zoom * 100)}%`;
       context.globalCompositeOperation = "source-over";
       context.fillStyle = "#03040a";
       context.fillRect(0, 0, width, height);
@@ -798,39 +1174,52 @@
         else positionTooltip(selectedPoint);
       }
       if (cameraFlight) requestRender();
-      else if (drifting && !dragging && !selectedPoint) { yaw += .00055; requestRender(); }
+      else if (interactiveMode && drifting && !dragging && !selectedPoint) { yaw += .00055; requestRender(); }
     }
 
     function requestRender() {
       if (!animationFrame) animationFrame = requestAnimationFrame(render);
     }
 
-    function renderCaptureFrame(index, total) {
-      if (!captureMode) throw new Error("RubyLens capture mode is not active");
-      if (!Number.isInteger(index) || !Number.isInteger(total) || total < 1) throw new Error("Invalid capture frame");
-      if (animationFrame) cancelAnimationFrame(animationFrame);
-      animationFrame = 0;
-      cameraFlight = null;
-      cancelPendingHover();
-      selectedPoint = null;
-      selectionLocked = false;
-      focusedCategory = null;
-      expandedPackageIndex = null;
-      tooltip.hidden = true;
-      Object.keys(visibleCategories).forEach(category => { visibleCategories[category] = true; });
-      const progress = ((index % total) + total) % total / total;
-      const phase = progress * Math.PI * 2 * CAPTURE_CAMERA.turns;
-      const viewportScale = Math.min(width / CAPTURE_CAMERA.referenceWidth, height / CAPTURE_CAMERA.referenceHeight);
-      yaw = CAPTURE_CAMERA.startYaw + phase;
-      pitch = CAPTURE_CAMERA.pitch + Math.sin(phase) * CAPTURE_CAMERA.pitchSway;
-      zoom = (CAPTURE_CAMERA.zoom + (1 - Math.cos(phase)) * CAPTURE_CAMERA.zoomBreath) * viewportScale;
+    function applyShowcaseCamera(progress) {
+      const wrapped = ((Number(progress) % 1) + 1) % 1;
+      const direction = SHOWCASE_PRESET.direction === "clockwise" ? 1 : -1;
+      const phase = wrapped * Math.PI * 2 * SHOWCASE_PRESET.turns * direction;
+      const viewportScale = Math.min(width / SHOWCASE_PRESET.layoutReferenceWidth, height / SHOWCASE_PRESET.layoutReferenceHeight);
+      yaw = SHOWCASE_PRESET.startAngleDegrees * Math.PI / 180 + phase;
+      pitch = (SHOWCASE_PRESET.elevationDegrees + Math.sin(phase) * SHOWCASE_PRESET.elevationSwayDegrees) * Math.PI / 180;
+      zoom = SHOWCASE_PRESET.zoom * (1 + ((1 - Math.cos(phase)) / 2) * SHOWCASE_PRESET.zoomBreathPercent / 100) * viewportScale;
       panX = 0;
       panY = 0;
-      render(performance.now());
-      return { index, total, yaw, pitch, zoom, viewportScale, renderedPoints: renderPoints.length };
     }
 
-    function populateCaptureStats() {
+    function renderShowcase(timestamp) {
+      showcaseStartedAt ??= timestamp;
+      const frameCount = SHOWCASE_PRESET.targetFps * SHOWCASE_PRESET.durationMs / 1000;
+      const rawProgress = ((timestamp - showcaseStartedAt) % SHOWCASE_PRESET.durationMs) / SHOWCASE_PRESET.durationMs;
+      const progress = Math.floor(rawProgress * frameCount) / frameCount;
+      applyShowcaseCamera(progress);
+      render(timestamp);
+      document.documentElement.dataset.showcaseReady = "true";
+      if (!reducedMotionQuery.matches) animationFrame = requestAnimationFrame(renderShowcase);
+    }
+
+    function startShowcase() {
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      animationFrame = 0;
+      showcaseStartedAt = null;
+      if (reducedMotionQuery.matches) {
+        applyShowcaseCamera(0);
+        render(performance.now());
+        document.documentElement.dataset.showcaseReady = "true";
+        document.documentElement.dataset.showcaseMotion = "reduced";
+      } else {
+        document.documentElement.dataset.showcaseMotion = "active";
+        animationFrame = requestAnimationFrame(renderShowcase);
+      }
+    }
+
+    function populateShowcaseStats() {
       const core = model.categoryStats?.core || [0, 0, 0, 0];
       const tests = model.categoryStats?.tests || [0, 0, 0, 0];
       const format = value => Number(value || 0).toLocaleString("en-US");
@@ -867,6 +1256,7 @@
       canvas.classList.remove("is-dragging-pan");
       requestRender();
     };
+    if (interactiveMode) {
     canvas.addEventListener("pointerdown", event => {
       cancelCameraFlight();
       canvas.focus({ preventScroll: true });
@@ -972,7 +1362,6 @@
       if (event.key === "Escape") clearExplorationFocus();
       else moveViewWithArrow(event);
     });
-    window.addEventListener("resize", resize);
     document.getElementById("motion").addEventListener("click", () => setDrifting(!drifting));
     document.getElementById("pan-mode").addEventListener("click", () => { cancelCameraFlight(); setNavigationMode(navigationMode === "pan" ? "orbit" : "pan"); });
     document.getElementById("zoom-in").addEventListener("click", () => { if (pointers.size === 0) { cancelCameraFlight(); zoomBetween(zoom * ZOOM_STEP, sceneCenterX, sceneCenterY); } requestRender(); });
@@ -992,30 +1381,28 @@
       completeCameraFlight();
       setDrifting(false);
     });
+    }
 
-    document.getElementById("coverage").textContent = `${renderedDependencyStars.toLocaleString()} dependency stars shown`;
-    const warningTotal = Object.values(model.warningCounts).reduce((sum, count) => sum + count, 0);
-    if (warningTotal > 0) { const status = document.getElementById("status"); status.hidden = false; status.textContent = `${warningTotal.toLocaleString()} partial-index warning${warningTotal === 1 ? "" : "s"}`; }
-    setDrifting(drifting);
-    setNavigationMode(navigationMode);
+    window.addEventListener("resize", resize);
     document.querySelector("h1").textContent = model.projectName;
-    document.title = `RubyLens · ${model.projectName}`;
-    canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class and module stars for Ruby code details or gem clouds for package summaries. Sidebar highlights open a top-down view. Double-click a gem cloud, press Enter or F on a selected gem marker, or tap that marker again to expand its stars. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, and use arrow keys to move the view. Escape exits a focused gem system.`);
-    if (captureMode) {
-      document.querySelector(".eyebrow").textContent = "RubyLens · codebase galaxy";
-      populateCaptureStats();
+    if (showcaseMode) {
+      document.title = `${model.projectName} · RubyLens showcase`;
+      const showcaseLabel = `Autonomous stellar artwork of ${model.projectName}, completing one slow rotation each minute.`;
+      canvas.setAttribute("aria-label", showcaseLabel);
+      document.getElementById("showcase-cosmos")?.setAttribute("aria-label", showcaseLabel);
+      populateShowcaseStats();
+      reducedMotionQuery.addEventListener("change", startShowcase);
+      configureShowcaseStage();
       resize();
-      renderCaptureFrame(0, 1);
-      window.RubyLensCapture = Object.freeze({
-        ready: true,
-        renderFrame: renderCaptureFrame,
-        renderedPoints: renderPoints.length,
-        totalPoints: points.length,
-        renderedGemHubs: renderPoints.filter(point => point.hub).length,
-        totalGemHubs: dependencyHubs.length,
-      });
-      document.documentElement.dataset.captureReady = "true";
+      startShowcase();
     } else {
+      document.title = `RubyLens · ${model.projectName}`;
+      canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class and module stars for Ruby code details or gem clouds for package summaries. Sidebar highlights open a top-down view. Double-click a gem cloud, press Enter or F on a selected gem marker, or tap that marker again to expand its stars. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, and use arrow keys to move the view. Escape exits a focused gem system.`);
+      document.getElementById("coverage").textContent = `${renderedDependencyStars.toLocaleString()} dependency stars shown`;
+      const warningTotal = Object.values(model.warningCounts).reduce((sum, count) => sum + count, 0);
+      if (warningTotal > 0) { const status = document.getElementById("status"); status.hidden = false; status.textContent = `${warningTotal.toLocaleString()} partial-index warning${warningTotal === 1 ? "" : "s"}`; }
+      setDrifting(drifting);
+      setNavigationMode(navigationMode);
       createExplorer();
       setPanelCollapsed(window.matchMedia("(max-width: 760px)").matches);
       resize();

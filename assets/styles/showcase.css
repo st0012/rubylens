@@ -1,0 +1,15 @@
+    :root { color-scheme: dark; font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #03040a; color: #f6f2ff; }
+    .showcase-stage { position: absolute; overflow: hidden; transform-origin: top left; background: #03040a; }
+    .showcase-stage::before { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 42% 45%, rgba(78, 36, 112, .14), transparent 34%), radial-gradient(circle at 68% 22%, rgba(29, 91, 114, .08), transparent 28%); }
+    canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .masthead { position: absolute; z-index: 2; pointer-events: none; text-shadow: 0 2px 14px #03040a, 0 0 4px #03040a; transform-origin: top left; }
+    .eyebrow { margin: 0 0 10px; color: #c2b3d4; font-size: 11px; font-weight: 750; letter-spacing: .18em; text-transform: uppercase; }
+    h1 { display: -webkit-box; margin: 0; overflow: hidden; overflow-wrap: anywhere; color: #f6f2ff; font: 500 38.88px/.95 ui-serif, Georgia, serif; letter-spacing: -.045em; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+    .cinema-stats { display: grid; grid-template-columns: repeat(4, minmax(72px, auto)); gap: 10px 24px; margin: 20px 0 0; }
+    .cinema-stats div { min-width: 0; }
+    .cinema-stats dt, .cinema-stats dd { margin: 0; }
+    .cinema-stats dt { color: #8e8799; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+    .cinema-stats dd { margin-top: 3px; color: #f5eff9; font-size: 15px; font-weight: 720; font-variant-numeric: tabular-nums; }
+    .cinema-secondary { margin: 14px 0 0; color: #91899b; font-size: 10px; letter-spacing: .025em; }

@@ -107,11 +107,11 @@ The overview is a clustered, compound graph whose primary objects are systems—
 
 The explorer should show `Core systems · N`, offer search, and virtualize the group list. Desktop keeps the list in the side panel. Mobile portrait defaults to one selected system plus a searchable bottom sheet rather than shrinking the entire monorepo into an unusable view.
 
-## Cinematic export
+## Autonomous Showcase
 
-Capture mode should frame the bounding volume of all configured systems rather than reusing a camera tuned for one Core cloud. Its bounded sample must keep every group hub and a minimum quota from every nonempty group before distributing the remaining points by group size. This prevents a small application or component from disappearing in a large monorepo GIF.
+Showcase should frame the bounding volume of all configured systems rather than reusing a camera tuned for one Core cloud. Its bounded sample must keep every group hub and a minimum quota from every nonempty group before distributing the remaining points by group size. This prevents a small application or component from disappearing in a large monorepo presentation.
 
-The default share overlay should say `Core systems · N` alongside repository-wide Ruby counts. Configured group labels can reveal internal product names, so they stay out of GIF pixels unless the user explicitly opts in. A later system-flyover preset can visit selected groups, but the first implementation should remain one stable overview loop.
+The default share overlay should say `Core systems · N` alongside repository-wide Ruby counts. Configured group labels can reveal internal product names, so they stay out of the Showcase payload and pixels. A later system-flyover preset can visit selected groups, but the first implementation should remain one stable overview loop.
 
 ## Shopify-scale safeguards
 

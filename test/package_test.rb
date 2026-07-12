@@ -9,12 +9,15 @@ class PackageTest < Minitest::Test
     assert_includes(specification.files, "exe/rubylens")
     assert_includes(specification.files, "assets/runtime/report.js")
     assert_includes(specification.files, "assets/shells/report.html")
+    assert_includes(specification.files, "assets/shells/showcase.html")
     assert_includes(specification.files, "assets/styles/report.css")
+    assert_includes(specification.files, "assets/styles/showcase.css")
     assert_includes(specification.files, "docs/MONOREPO_BOUNDARIES.md")
     assert_includes(specification.files, "docs/REFERENCE_ROUTES_FUTURE.md")
-    assert_includes(specification.files, "lib/rubylens/gif_generator.rb")
-    assert_includes(specification.files, "lib/rubylens/gif_writer.rb")
     assert_includes(specification.files, "lib/rubylens/report_asset_assembler.rb")
+    assert_includes(specification.files, "lib/rubylens/showcase_generator.rb")
+    assert_includes(specification.files, "lib/rubylens/showcase_model.rb")
+    assert_includes(specification.files, "lib/rubylens/showcase_writer.rb")
     assert_includes(specification.files, "lib/rubylens/index/rubydex_adapter.rb")
     refute(specification.files.any? { |path| path.start_with?("docs/assets/") })
     refute(specification.files.any? { |path| path.start_with?("prototype/") })
@@ -23,12 +26,11 @@ class PackageTest < Minitest::Test
     refute_includes(specification.files, "assets/report.html")
   end
 
-  def test_gem_pins_the_capture_browser_dependency
+  def test_gem_has_no_browser_or_gif_runtime_dependencies
     specification = Gem::Specification.load(File.expand_path("../rubylens.gemspec", __dir__))
-    ferrum = specification.runtime_dependencies.find { |dependency| dependency.name == "ferrum" }
 
-    refute_nil(ferrum)
-    assert_equal(Gem::Requirement.new("= 0.17.2"), ferrum.requirement)
+    refute(specification.runtime_dependencies.any? { |dependency| dependency.name == "ferrum" })
+    refute(specification.files.any? { |path| path.match?(/gif|ffmpeg|ferrum/i) })
   end
 
   def test_gem_supports_the_rubydex_ruby_range

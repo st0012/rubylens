@@ -44,7 +44,7 @@ The upstream [API reference](https://shopify.github.io/rubydex/) should remain t
 - How dependency depth, direct versus transitive gems, and workspace packages should be grouped below the waterline.
 - The level-of-detail and search strategy needed for very large repositories.
 - How configurable monorepo boundaries become stable, independently focusable Core systems; see [the boundary design](docs/MONOREPO_BOUNDARIES.md).
-- Which additional shareable formats should follow the cinematic GIF export without weakening local-first privacy.
+- Which additional shareable formats should follow the autonomous Showcase without weakening local-first privacy.
 - Whether the production report remains a single HTML file or becomes a fully local report directory; either form must stay offline at runtime.
 - Whether a hosted product is worth building, and what explicit redaction and upload controls it would require.
 
@@ -52,9 +52,9 @@ The upstream [API reference](https://shopify.github.io/rubydex/) should remain t
 
 1. An explicit Git-selected manifest is the only file list passed to `Graph#index_all`; exact locked gem files are containment-audited and RubyLens's tool-only dependency closure is removed.
 2. The Rubydex adapter emits the signals and workspace/package names needed for local hover proof. Dependency declaration identities, source text, comments, and paths do not cross into the report payload.
-3. `RubyLens.generate` and `rubylens build` write one owner-only, self-contained HTML report with guided core, tests, and gems exploration plus RubyDex-powered clickable facts.
+3. `RubyLens.generate_report` and `rubylens report` write one owner-only, self-contained HTML report with guided core, tests, and gems exploration plus RubyDex-powered clickable facts. `RubyLens.generate` remains a compatibility alias.
 4. The production Canvas renderer implements the approved galaxy morphology without requiring Node at report runtime. The Three.js prototype remains a design lab for HDR bloom, point-spread shaders, dust attenuation, and higher-scale rendering.
-5. `RubyLens.generate_gif` and `rubylens gif` reuse the local indexing pipeline to render a fixed 20-second galaxy loop with familiar Ruby statistics, bounded capture detail, private temporary files, and an owner-only GIF output.
+5. `RubyLens.generate_showcase` and `rubylens showcase` write a standalone, owner-only HTML presentation with a one-minute autonomous orbit, bounded visual detail, aggregate statistics, and a privacy-reduced numeric payload.
 
 The next production slice is configurable multi-system monorepo boundaries, without changing the local-only privacy boundary. Resolved reference routes are paused; their findings and revival criteria are preserved in [the archived route design](docs/REFERENCE_ROUTES_FUTURE.md).
 
