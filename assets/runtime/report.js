@@ -139,6 +139,9 @@
         ? workspaceSystemRadius + cloudRadius + 18 + 72 * Math.pow(unit(seed, 14), .72)
         : 70 + 72 * Math.pow(unit(seed, 14), .72);
       const theta = unit(seed, 15) * Math.PI * 2;
+      if (groupedMode && interactiveMode && model.explorerLayout === "atlas") {
+        return [Math.cos(theta) * radius, Math.sin(theta) * radius, 0, cloudRadius, index];
+      }
       const vertical = normal(seed, 16) * 24;
       return [Math.cos(theta) * radius, vertical, Math.sin(theta) * radius, cloudRadius, index];
     });
@@ -147,6 +150,9 @@
       const anchor = packageAnchors[packageIndex] || [0, 0, 0, 2];
       const radius = Math.min(anchor[3], -anchor[3] * .34 * Math.log(Math.max(1e-5, 1 - unit(seed, 18))));
       const theta = unit(seed, 19) * Math.PI * 2;
+      if (groupedMode && interactiveMode && model.explorerLayout === "atlas") {
+        return [anchor[0] + Math.cos(theta) * radius, anchor[1] + Math.sin(theta) * radius, 0];
+      }
       const lift = normal(seed, 20) * anchor[3] * .17;
       const tilt = (unit(model.packages[packageIndex]?.[0] || seed, 21) - .5) * .75;
       return [
@@ -309,6 +315,7 @@
       }
       const localDistances = { core: { sum: 0, count: 0 }, tests: { sum: 0, count: 0 } };
       let minimumDependencyRadius = Infinity;
+      let minimumDependencyProjectedRadius = Infinity;
       for (const point of points) {
         if (Number.isInteger(point.groupIndex) && !point.systemHub) {
           const anchor = groupAnchors[point.groupIndex];
@@ -316,12 +323,14 @@
           localDistances[point.category].count += 1;
         } else if (point.category === "dependencies") {
           minimumDependencyRadius = Math.min(minimumDependencyRadius, Math.hypot(point.position[0], point.position[1], point.position[2]));
+          minimumDependencyProjectedRadius = Math.min(minimumDependencyProjectedRadius, Math.hypot(point.position[0], point.position[1]));
         }
       }
       document.documentElement.dataset.rubylensCentroidSeparation = Number.isFinite(minimumCentroidDistance) ? minimumCentroidDistance.toFixed(3) : "0";
       document.documentElement.dataset.rubylensCoreMeanRadius = (localDistances.core.sum / Math.max(1, localDistances.core.count)).toFixed(3);
       document.documentElement.dataset.rubylensTestMeanRadius = (localDistances.tests.sum / Math.max(1, localDistances.tests.count)).toFixed(3);
       document.documentElement.dataset.rubylensDependencyMargin = Number.isFinite(minimumDependencyRadius) ? (minimumDependencyRadius - workspaceSystemRadius).toFixed(3) : "0";
+      document.documentElement.dataset.rubylensDependencyProjectedMargin = Number.isFinite(minimumDependencyProjectedRadius) ? (minimumDependencyProjectedRadius - workspaceSystemRadius).toFixed(3) : "0";
       updateQaDrawCounts();
     }
 
