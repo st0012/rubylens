@@ -55,6 +55,22 @@ class ArtModelBuilderTest < Minitest::Test
     assert_equal(expected, all.fetch("domains"))
   end
 
+  def test_mid_lod_uses_the_bounded_sqrt_multiplier
+    snapshot = configured_snapshot
+    12.times do |index|
+      snapshot.fetch("namespace_names") << "Beta::Extra#{index}"
+      snapshot.fetch("namespaces") << [1, 0, 0, index, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0]
+      snapshot.fetch("groups")[1].fetch("namespace_counts")[0] += 1
+      snapshot.fetch("components")[1] += 1
+    end
+
+    model = RubyLens::ArtModelBuilder.new(seed: 12, namespace_budget: 16).build(snapshot)
+
+    beta_length = model.fetch("groupRanges")[1][1]
+    expected_mid = [(Math.sqrt(beta_length) * 3).ceil, beta_length].min
+    assert_equal(expected_mid, model.fetch("groupLods")[1][0])
+  end
+
   def test_empty_group_keeps_its_ordinal_without_affecting_visible_system_geometry
     snapshot = configured_snapshot
     snapshot.fetch("groups") << {
