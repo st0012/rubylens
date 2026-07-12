@@ -18,13 +18,19 @@ class ArtModelBuilderTest < Minitest::Test
     assert_equal(3, model.dig("totals", "renderedNamespaces"))
     assert_equal(2, model.dig("totals", "groups"))
     assert_equal([[0, 2], [2, 1]], model.fetch("groupRanges"))
+    assert_equal([[2, 2], [1, 1]], model.fetch("groupLods"))
     assert_equal(["System Alpha", "System Beta"], model.fetch("groupNames"))
     assert(model.fetch("groups").all? { |row| row.length == 13 && row.all?(Integer) })
     assert(model.fetch("groupAnchors").all? { |row| row.length == 3 && row.all?(Integer) })
+    assert_equal([4_278, 4_050], model.fetch("groupRadii"))
+    assert_equal("association", model.fetch("explorerLayout"))
+    assert_nil(model.fetch("explorerAnchors"))
     refute(model.key?("componentCounts"))
     model.fetch("groupRanges").each_with_index do |(first, length), group_index|
       assert(model.fetch("namespaces").slice(first, length).all? { |row| row.fetch(1) == group_index })
     end
+    alpha_first, alpha_length = model.fetch("groupRanges").first
+    assert_equal([0, 1], model.fetch("namespaces").slice(alpha_first, alpha_length).map { |row| row[3] }.sort)
     private_name_rank = Digest::SHA256.digest("rubylens.namespace\0#{12}\0Alpha::One").unpack1("N")
     private_group_seed = snapshot.fetch("groups").first.fetch("anchor_seed")
     refute_includes(model.fetch("namespaces").map(&:first), private_name_rank)
@@ -47,6 +53,25 @@ class ArtModelBuilderTest < Minitest::Test
     expected = RubyLens::ArtModelBuilder::SIGNAL_FIELDS.zip([99, 98, 97, 96, 95, 94]).to_h
     assert_equal(expected, one.fetch("domains"))
     assert_equal(expected, all.fetch("domains"))
+  end
+
+  def test_empty_group_keeps_its_ordinal_without_affecting_visible_system_geometry
+    snapshot = configured_snapshot
+    snapshot.fetch("groups") << {
+      "id" => "empty", "name" => "Empty", "anchor_seed" => 999,
+      "namespace_counts" => [0, 0, 0],
+      "ruby_counts" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
+      "cross_group_namespaces" => 0,
+    }
+    snapshot.fetch("components") << 0
+
+    model = RubyLens::ArtModelBuilder.new(seed: 12, namespace_budget: 4).build(snapshot)
+
+    assert_equal([4, 0], model.fetch("groupRanges").last)
+    assert_equal([0, 0], model.fetch("groupLods").last)
+    assert_equal([0, 0, 0], model.fetch("groupAnchors").last)
+    assert_equal(0, model.fetch("groupRadii").last)
+    assert_equal(3, model.dig("totals", "groups"))
   end
 
   def test_rejects_configured_dependency_rows_above_the_bounded_snapshot_contract
@@ -221,6 +246,7 @@ class ArtModelBuilderTest < Minitest::Test
   def configured_snapshot
     {
       "schema" => "rubylens.snapshot.v6",
+      "explorer_layout" => "association",
       "project_name" => "Synthetic Systems",
       "components" => [3, 1],
       "namespace_names" => %w[Alpha::One Alpha::Two Alpha::Test Beta::One],

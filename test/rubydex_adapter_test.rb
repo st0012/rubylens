@@ -48,6 +48,7 @@ class RubydexAdapterTest < Minitest::Test
 
       assert_equal(first, second)
       assert_equal("rubylens.snapshot.v6", first.fetch("schema"))
+      assert_equal("association", first.fetch("explorer_layout"))
       assert_equal(
         [
           {

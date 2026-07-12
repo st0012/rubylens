@@ -5,7 +5,7 @@ module RubyLens
     class Boundaries
       Group = Data.define(:id, :label, :rule_order, :paths)
 
-      attr_reader :groups, :ungrouped, :source
+      attr_reader :groups, :ungrouped, :source, :explorer_layout
 
       def self.build(root:, workspace_files:, configuration:)
         new(root:, workspace_files:, configuration:).build
@@ -21,6 +21,7 @@ module RubyLens
 
       def build
         @source = @configuration.source
+        @explorer_layout = @configuration.explorer_layout
         @groups = @configuration.rules.flat_map do |rule|
           rule.each ? expanded_groups(rule) : explicit_group(rule)
         end

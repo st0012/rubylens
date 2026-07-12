@@ -54,7 +54,11 @@ class ShowcaseModelTest < Minitest::Test
       "groupNames" => [private_value],
       "groups" => [[0, 1, 0, 0, 0, 1, 0, 2, 3, 0, 0, 0, 0]],
       "groupRanges" => [[0, 1]],
+      "groupLods" => [[1, 1]],
       "groupAnchors" => [[-12, 0, 12]],
+      "groupRadii" => [4_000],
+      "explorerLayout" => "atlas",
+      "explorerAnchors" => [[0, 12, 0]],
       "namespaceNames" => ["Acme::Private"],
       "packageNames" => ["private-package"],
     )
@@ -64,7 +68,7 @@ class ShowcaseModelTest < Minitest::Test
 
     assert_equal("rubylens.showcase.v2", showcase.fetch("schema"))
     assert_equal(
-      %w[categoryStats dependencyStars domains groupAnchors groupRanges groups namespaces packages projectName schema totals],
+      %w[categoryStats dependencyStars domains groupAnchors groupLods groupRadii groupRanges groups namespaces packages projectName schema totals],
       showcase.keys.sort,
     )
     assert_equal([[0, 1, 0, 0, 0, 1, 0, 2, 3, 0, 0, 0, 0]], showcase.fetch("groups"))
@@ -74,6 +78,8 @@ class ShowcaseModelTest < Minitest::Test
     refute_includes(encoded, "groupNames")
     refute_includes(encoded, "namespaceNames")
     refute_includes(encoded, "packageNames")
+    refute_includes(encoded, "explorerLayout")
+    refute_includes(encoded, "explorerAnchors")
   end
 
   private

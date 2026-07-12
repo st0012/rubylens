@@ -87,10 +87,20 @@ module RubyLens
     def build_configured(snapshot)
       source_groups = snapshot.fetch("groups")
       sizes = source_groups.map { |group| group.fetch("namespace_counts").sum }
+      core_namespace_counts = source_groups.map do |group|
+        core, _tests, mixed = group.fetch("namespace_counts")
+        core + mixed
+      end
       seeds = source_groups.map { |group| group.fetch("anchor_seed") }
       budget = @namespace_budget.nil? ? sizes.sum : Integer(@namespace_budget)
+      category_minimums = Array.new(source_groups.length, 0)
+      snapshot.fetch("namespaces").each do |row|
+        group_index = row.fetch(0)
+        category_minimums[group_index] |= row.fetch(2) == 1 ? 2 : 1
+      end
+      category_minimums.map! { |mask| (mask & 1) + ((mask >> 1) & 1) }
       quotas = Model::NamespaceAllocation.new(
-        sizes:, keys: source_groups.map { |group| group.fetch("id") }, budget:
+        sizes:, keys: source_groups.map { |group| group.fetch("id") }, budget:, minimums: category_minimums,
       ).quotas
       candidates = Array.new(source_groups.length) { [] }
       snapshot.fetch("namespaces").each_with_index do |row, index|
@@ -102,15 +112,21 @@ module RubyLens
       namespaces = []
       namespace_names = []
       group_ranges = []
+      group_lods = []
       source_groups.each_index do |group_index|
-        selected = candidates.fetch(group_index).sort_by { |seed, name, _row| [seed, name] }
-          .first(quotas.fetch(group_index))
+        selected = select_candidates(candidates.fetch(group_index), quotas.fetch(group_index))
         first = namespaces.length
         selected.each_with_index do |(_rank, name, row), selected_index|
           namespaces << [visual_namespace_seed(group_index, selected_index), *row]
           namespace_names << name
         end
         group_ranges << [first, selected.length]
+        category_minimum = [
+          selected.any? { |_rank, _name, row| row.fetch(2) != 1 },
+          selected.any? { |_rank, _name, row| row.fetch(2) == 1 },
+        ].count(true)
+        mid_length = [selected.length, [category_minimum, Math.sqrt(selected.length).ceil].max].min
+        group_lods << [mid_length, selected.length]
       end
 
       groups = source_groups.each_with_index.map do |group, index|
@@ -122,7 +138,13 @@ module RubyLens
           *core, *tests,
         ]
       end
-      group_anchors = Model::GroupLayout.new(seeds:, namespace_counts: sizes).anchors
+      association_layout = Model::GroupLayout.new(seeds:, core_namespace_counts:, total_namespace_counts: sizes)
+      group_anchors = association_layout.anchors
+      group_radii = association_layout.radii.map { |radius| (radius * 1000).round }
+      explorer_layout = snapshot.fetch("explorer_layout", "association")
+      explorer_anchors = if explorer_layout == "atlas"
+        Model::GroupLayout.new(seeds:, core_namespace_counts:, total_namespace_counts: sizes, mode: :atlas).anchors
+      end
       package_model = build_configured_packages(snapshot)
       {
         "schema" => "rubylens.art.v8",
@@ -140,7 +162,11 @@ module RubyLens
         "groupNames" => source_groups.map { |group| group.fetch("name") },
         "groups" => groups,
         "groupRanges" => group_ranges,
+        "groupLods" => group_lods,
         "groupAnchors" => group_anchors,
+        "groupRadii" => group_radii,
+        "explorerLayout" => explorer_layout,
+        "explorerAnchors" => explorer_anchors,
         "namespaceNames" => namespace_names,
         "namespaces" => namespaces,
         "packageNames" => package_model.fetch(:package_names),
@@ -176,6 +202,22 @@ module RubyLens
         end
       end
       { packages:, package_names:, indexed_dependency_count:, dependencies: }
+    end
+
+    def select_candidates(candidates, quota)
+      ranked = candidates.sort_by { |rank, name, _row| [rank, name] }
+      return [] if quota.zero?
+
+      selected = []
+      core = ranked.find { |_rank, _name, row| row.fetch(2) != 1 }
+      tests = ranked.find { |_rank, _name, row| row.fetch(2) == 1 }
+      selected << core if core
+      selected << tests if tests && selected.length < quota
+      ranked.each do |candidate|
+        break if selected.length >= quota
+        selected << candidate unless candidate.equal?(core) || candidate.equal?(tests)
+      end
+      selected.first(quota)
     end
 
     def stable_namespace_rank(name)

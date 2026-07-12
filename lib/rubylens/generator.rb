@@ -31,11 +31,12 @@ module RubyLens
 
   class Generator
     DEFAULT_REPORT_NAME = "rubylens-report.html"
+    DEFAULT_NAMESPACE_BUDGET = 100_000
 
     def initialize(
       manifest_builder: Index::Manifest,
       adapter: Index::RubydexAdapter.new,
-      model_builder: ArtModelBuilder.new,
+      model_builder: ArtModelBuilder.new(namespace_budget: DEFAULT_NAMESPACE_BUDGET),
       report_writer: ReportWriter.new,
       pipeline: nil
     )

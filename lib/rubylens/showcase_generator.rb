@@ -7,11 +7,12 @@ require_relative "showcase_writer"
 module RubyLens
   class ShowcaseGenerator
     DEFAULT_SHOWCASE_NAME = "rubylens-showcase.html"
+    DEFAULT_NAMESPACE_BUDGET = 50_000
 
     def initialize(
       manifest_builder: Index::Manifest,
       adapter: Index::RubydexAdapter.new,
-      model_builder: ArtModelBuilder.new,
+      model_builder: ArtModelBuilder.new(namespace_budget: DEFAULT_NAMESPACE_BUDGET),
       showcase_model: ShowcaseModel.new,
       showcase_writer: ShowcaseWriter.new,
       pipeline: nil
