@@ -74,9 +74,9 @@ A Ruby class or module can be reopened across files and boundaries. RubyLens emi
 
 `cross_group_namespaces` records the exact number of owned namespaces reopened across multiple systems. Report can expose that aggregate span count without serializing definition sites or duplicating stars. Core/Test scope still controls colour and local morphology.
 
-Configured indexing uses `rubylens.snapshot.v6`. Each group contains its stable ID and name, a derived anchor seed, `[core, tests, mixed]` namespace counts, exact Core/Test `[classes, modules, methods, constants]` counts, and the cross-system namespace count. Namespace rows add only the compact owner ordinal needed for plotting. Paths, patterns, configuration locations, source, comments, and raw definition sites are excluded.
+Current configured indexing uses `rubylens.snapshot.v7`. Each group contains its stable ID and name, a derived anchor seed, `[core, tests, mixed]` namespace counts, exact Core/Test `[classes, modules, methods, constants]` counts, and the cross-system namespace count. Namespace rows add only the compact owner ordinal needed for plotting. Paths, patterns, configuration locations, source, comments, and raw definition sites are excluded. The model builder still accepts the pre-route configured snapshot v6 contract.
 
-Configured presentation uses `rubylens.art.v8`:
+Current configured presentation uses `rubylens.art.v9`:
 
 ```text
 groupNames:     [Report label, ...]
@@ -89,7 +89,7 @@ groupRadii:     radius in thousandths
 namespaces:     existing compact visual row plus owner ordinal
 ```
 
-All plotted namespace rows for a system are contiguous. Report is the only group-identity-bearing surface: it may contain group labels, namespace names, and package names. Showcase still includes the project name by design, but `rubylens.showcase.v2` otherwise retains only numeric rows and aggregate statistics, stripping group IDs and labels, namespace names, package names, and the Explorer layout choice.
+All plotted namespace rows for a system are contiguous. Aggregated constant-reference routes are filtered after sampling, so any workspace source or target omitted from `groupRanges` cannot survive in the art model. Routes do not affect ownership, allocation, anchors, radii, or LOD selection. Report is the only group-identity-bearing surface: it may contain group labels, namespace names, package names, and route endpoints. Showcase still includes the project name by design, but `rubylens.showcase.v2` otherwise retains only numeric rows and aggregate statistics, stripping routes, group IDs and labels, namespace names, package names, and the Explorer layout choice.
 
 ## Core-system geometry
 
@@ -125,7 +125,8 @@ Generic synthetic fixtures cover 100,000 namespaces and 1,000 groups at explicit
 - contiguous ranges, nested per-artifact LODs, and direct range slicing;
 - stable anchors, an empty barycenter, no active system at the origin, bounded overlap resolution, and the documented radius transform;
 - exact aggregate reconciliation and privacy separation between Report and Showcase;
-- unchanged unconfigured `snapshot.v5`/`art.v7` digest and presentation behavior;
+- legacy unconfigured `snapshot.v5`/`art.v7` and configured `snapshot.v6`/`art.v8` compatibility;
+- current unified `snapshot.v7`/`art.v9` output, including routes filtered to plotted endpoints;
 - desktop, portrait, landscape, reduced-motion, atlas, WebGL, and Canvas fallback behavior;
 - payload size, model/runtime timing, and peak resident memory at each explicit budget.
 
@@ -133,4 +134,4 @@ The numeric fixtures are synthetic and are not measurements of any company or pr
 
 ## Deferred work
 
-Search and virtualization, a mobile bottom sheet, system camera tours, WebGL picking/readback, reference routes, relationship edges, and new animation presets are outside this slice. The atlas remains an explicit high-group-count Report fallback, not the default Showcase layout.
+Search and virtualization, a mobile bottom sheet, system camera tours, WebGL picking/readback, cross-system aggregate relationship edges, and new animation presets remain deferred. The atlas remains an explicit high-group-count Report fallback, not the default Showcase layout. Selected-node reference routes and the frozen Core route map are Report features; neither changes system geometry or enters Showcase.

@@ -25,7 +25,8 @@ Accuracy note: this brief uses the preferred narrative spelling **RubyDex**. The
 - Make deep inspection spatially navigable: zoom toward the cursor or pinch midpoint, preserve orbit controls, and support explicit mouse, touch, and keyboard panning through dense clouds.
 - Treat dependency focus as a lightweight level-of-detail state: double-click one existing gem system to pause drift, expand its current points, and sharpen its stars without duplicating dependency models in memory.
 - Keep Galaxy A as the selected direction. City Blocks is paused until the stellar direction and gem pipeline are mature.
-- Keep 3D coordinates and layout simulation renderer-owned rather than embedding positions in the compact `rubylens.art.v7` model.
+- Keep 3D coordinates and layout simulation renderer-owned rather than embedding positions in the compact `rubylens.art.v9` model.
+- Treat resolved constant references as aggregated static routes, not runtime calls: selected declarations and gem hubs expose a bounded strongest-neighborhood list, while the optional Core route map is a frozen overview with no per-edge picking.
 
 ## Confirmed RubyDex reality
 
@@ -43,7 +44,7 @@ The upstream [API reference](https://shopify.github.io/rubydex/) should remain t
 - What visual properties represent size, type, ownership, and risk without turning the scene into an unreadable dashboard.
 - How dependency depth, direct versus transitive gems, and workspace packages should be grouped below the waterline.
 - The level-of-detail and search strategy needed for very large repositories.
-- How configurable monorepo boundaries become stable, independently focusable Core systems; see [the boundary design](docs/MONOREPO_BOUNDARIES.md).
+- Which additional aggregate relationships best explain independently focusable Core systems without turning the overview into a dependency diagram; see [the boundary design](docs/MONOREPO_BOUNDARIES.md).
 - Which additional shareable formats should follow the autonomous Showcase without weakening local-first privacy.
 - Whether the production report remains a single HTML file or becomes a fully local report directory; either form must stay offline at runtime.
 - Whether a hosted product is worth building, and what explicit redaction and upload controls it would require.
@@ -55,8 +56,9 @@ The upstream [API reference](https://shopify.github.io/rubydex/) should remain t
 3. `RubyLens.generate_report` and `rubylens report` write one owner-only, self-contained HTML report with guided core, tests, and gems exploration plus RubyDex-powered clickable facts. `RubyLens.generate` remains a compatibility alias.
 4. The production Canvas renderer implements the approved galaxy morphology without requiring Node at report runtime. The Three.js prototype remains a design lab for HDR bloom, point-spread shaders, dust attenuation, and higher-scale rendering.
 5. `RubyLens.generate_showcase` and `rubylens showcase` write a standalone, owner-only HTML presentation with a one-minute autonomous orbit, bounded visual detail, aggregate statistics, and a privacy-reduced numeric payload.
+6. Resolved constant references are aggregated into integer route rows for the private Report. A locked selection ranks its visible incoming and outgoing routes together, and the Core route map builds a static cached overview without adding edge hover or picking. Showcase strips route identities and rows.
 
-The next production slice is configurable multi-system monorepo boundaries, without changing the local-only privacy boundary. Resolved reference routes are paused; their findings and revival criteria are preserved in [the archived route design](docs/REFERENCE_ROUTES_FUTURE.md).
+Configurable multi-system monorepo boundaries preserve the same local-only privacy boundary and filter routes to endpoints that survived bounded plotting. The active route contract and remaining rendering limits are documented in [the reference-route design](docs/REFERENCE_ROUTES.md).
 
 ## Privacy guardrails
 

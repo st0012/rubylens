@@ -11,7 +11,7 @@ class RubydexAdapterTest < Minitest::Test
     snapshot = adapter.index(manifest)
     serialized = JSON.generate(snapshot)
 
-    assert_equal("rubylens.snapshot.v5", snapshot.fetch("schema"))
+    assert_equal("rubylens.snapshot.v7", snapshot.fetch("schema"))
     refute(snapshot.key?("groups"))
     assert_equal("Tiny Repo", snapshot.fetch("project_name"))
     assert_equal(9, snapshot.fetch("namespaces").length)
@@ -25,6 +25,22 @@ class RubydexAdapterTest < Minitest::Test
     assert_equal([1, 0, 2, 1, 1], snapshot.fetch("namespaces").fetch(order_index).last(5))
     order_test_index = snapshot.fetch("namespace_names").index("Demo::OrderTest")
     assert_equal(0, snapshot.fetch("namespaces").fetch(order_test_index).last)
+    route_map = snapshot.fetch("reference_routes").to_h do |source, target_kind, target, count|
+      assert_equal(0, target_kind)
+      [[snapshot.fetch("namespace_names").fetch(source), snapshot.fetch("namespace_names").fetch(target)], count]
+    end
+    assert_equal(
+      {
+        ["Demo::Order", "Demo"] => 2,
+        ["Demo::Order", "Demo::Auditable"] => 1,
+        ["Demo::Order", "Demo::Base"] => 3,
+        ["Demo::Order", "Demo::Helper"] => 2,
+        ["Demo::Order", "Demo::Trackable"] => 3,
+        ["Demo::OrderTest", "Demo::Order"] => 1,
+      },
+      route_map,
+    )
+    assert(snapshot.fetch("reference_routes").all? { |row| row.length == 4 && row.all?(Integer) })
     refute_includes(serialized, FIXTURE.to_s)
     refute_includes(serialized, "domain.rb")
     refute_includes(serialized, "PRIVATE_VALUE")
@@ -47,7 +63,7 @@ class RubydexAdapterTest < Minitest::Test
       second = RubyLens::Index::RubydexAdapter.new.index(manifest)
 
       assert_equal(first, second)
-      assert_equal("rubylens.snapshot.v6", first.fetch("schema"))
+      assert_equal("rubylens.snapshot.v7", first.fetch("schema"))
       assert_equal("association", first.fetch("explorer_layout"))
       assert_equal(
         [
@@ -108,7 +124,7 @@ class RubydexAdapterTest < Minitest::Test
       refute_includes(serialized, "file://")
 
       art = RubyLens::ArtModelBuilder.new(seed: 12).build(first)
-      assert_equal("rubylens.art.v8", art.fetch("schema"))
+      assert_equal("rubylens.art.v9", art.fetch("schema"))
       assert_equal(first.fetch("namespaces").length, art.dig("totals", "renderedNamespaces"))
     end
   end
@@ -128,6 +144,68 @@ class RubydexAdapterTest < Minitest::Test
     assert_equal(7, adapter.send(:safe_length, Struct.new(:records).new(sized), :records))
     assert_equal(4, adapter.send(:safe_length, Struct.new(:records).new(counted), :records))
     assert_equal(5, adapter.send(:safe_length, Struct.new(:records).new(raised_size), :records))
+  end
+
+  def test_high_fanout_references_collapse_to_aggregated_integer_edges
+    location = Struct.new(:uri, :start_line, :start_column, :end_line, :end_column)
+    definition = Struct.new(:location)
+    target = Struct.new(:name, :ordinal)
+    reference = Struct.new(:declaration, :location)
+    source_location = location.new("file:///workspace/source.rb", 0, 0, 500, 0)
+    workspace = {
+      records: [[Struct.new(:name).new("Source"), [definition.new(source_location)]]],
+      ordinal_by_name: { "Source" => 0 },
+    }
+    references = 64.times.flat_map do |ordinal|
+      declaration = target.new("Target#{ordinal}", ordinal + 1)
+      3.times.flat_map do |line|
+        occurrence = reference.new(declaration, location.new(source_location.uri, line + 1, 2, line + 1, 8))
+        Array.new(5, occurrence)
+      end
+    end
+    graph = Struct.new(:constant_references).new(references)
+    adapter = RubyLens::Index::RubydexAdapter.new
+    adapter.define_singleton_method(:workspace_location?) { |_location, _manifest| true }
+    adapter.define_singleton_method(:route_target) { |declaration, _manifest, _ordinals| [0, declaration.ordinal] }
+
+    data = adapter.send(:workspace_reference_data, graph, Object.new, workspace)
+
+    assert_equal(64, data.fetch(:routes).length)
+    assert(data.fetch(:routes).all? { |row| row.length == 4 && row.all?(Integer) })
+    assert(data.fetch(:routes).all? { |row| row.last == 3 })
+  end
+
+  def test_dense_single_file_source_lookup_uses_an_index_instead_of_scanning_every_range
+    adapter = RubyLens::Index::RubydexAdapter.new
+    range_count = 2_048
+    ranges = range_count.times.map { |index| [index * 2, 0, index * 2, 20, index] }
+    comparisons = 0
+    contains = adapter.method(:source_range_contains?)
+    adapter.define_singleton_method(:source_range_contains?) do |container, candidate|
+      comparisons += 1
+      contains.call(container, candidate)
+    end
+    uri = "file:///workspace/dense.rb"
+    source_ranges = { uri => adapter.send(:index_source_ranges, ranges) }
+
+    actual = range_count.times.map do |index|
+      adapter.send(:source_namespace_ordinal, uri, [index * 2, 2, index * 2, 8], source_ranges)
+    end
+
+    assert_equal((0...range_count).to_a, actual)
+    assert_operator(comparisons, :<, range_count * 3)
+  end
+
+  def test_source_lookup_prefers_the_innermost_containing_namespace
+    adapter = RubyLens::Index::RubydexAdapter.new
+    uri = "file:///workspace/nested.rb"
+    ranges = adapter.send(
+      :index_source_ranges,
+      [[0, 0, 20, 0, 1], [5, 2, 15, 0, 2], [5, 2, 10, 0, 3], [6, 0, 12, 0, 4]],
+    )
+
+    assert_equal(4, adapter.send(:source_namespace_ordinal, uri, [7, 0, 8, 0], { uri => ranges }))
+    assert_nil(adapter.send(:source_namespace_ordinal, uri, [21, 0, 22, 0], { uri => ranges }))
   end
 
   def test_configured_group_totals_cannot_silently_undercount
@@ -210,12 +288,16 @@ class RubydexAdapterTest < Minitest::Test
       system("git", "-C", directory, "add", "lib/client.rb", "Gemfile.lock", exception: true)
 
       snapshot = RubyLens::Index::RubydexAdapter.new.index(RubyLens::Index::Manifest.build(root: directory))
-      package = snapshot.fetch("packages").find { |row| row.fetch("name") == "minitest" }
+      source = snapshot.fetch("namespace_names").index("DependencyClient")
+      package_index = snapshot.fetch("packages").index { |row| row.fetch("name") == "minitest" }
+      package = snapshot.fetch("packages").fetch(package_index)
 
+      assert(source)
       assert(package)
       assert_equal(package.fetch("declarations").length, package.fetch("declaration_count"))
       refute_empty(package.fetch("declarations"))
       assert(package.fetch("declarations").all? { |row| row.length == 7 && row.all?(Integer) })
+      assert_equal([[source, 1, package_index, 2]], snapshot.fetch("reference_routes"))
       refute_includes(JSON.generate(snapshot), directory)
       refute_includes(JSON.generate(snapshot), "Minitest::Test")
     end

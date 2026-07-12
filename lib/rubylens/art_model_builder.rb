@@ -16,10 +16,11 @@ module RubyLens
     end
 
     def build(snapshot)
-      return build_configured(snapshot) if snapshot["schema"] == "rubylens.snapshot.v6"
+      return build_configured(snapshot) if snapshot.key?("groups")
 
       random = Random.new(@seed)
       namespace_order = (0...snapshot.fetch("namespaces").length).to_a.shuffle(random: random)
+      namespace_index = namespace_order.each_with_index.to_h
       namespaces = namespace_order.map do |index|
         row = snapshot.fetch("namespaces").fetch(index)
         [random.rand(0..0xffff_ffff), *row]
@@ -62,8 +63,8 @@ module RubyLens
           ]
         end
       end
-      {
-        "schema" => "rubylens.art.v7",
+      model = {
+        "schema" => snapshot["schema"] == "rubylens.snapshot.v7" ? "rubylens.art.v9" : "rubylens.art.v7",
         "projectName" => snapshot.fetch("project_name"),
         "totals" => {
           "namespaces" => namespaces.length,
@@ -81,6 +82,10 @@ module RubyLens
         "dependencyStars" => dependencies,
         "warningCounts" => snapshot.fetch("warning_counts"),
       }
+      if snapshot.key?("reference_routes")
+        model["referenceRoutes"] = build_reference_routes(snapshot.fetch("reference_routes"), namespace_index, package_index)
+      end
+      model
     end
 
     private
@@ -107,24 +112,26 @@ module RubyLens
       snapshot.fetch("namespaces").each_with_index do |row, index|
         name = snapshot.fetch("namespace_names").fetch(index)
         rank = stable_namespace_rank(name)
-        candidates.fetch(row.fetch(0)) << [rank, name, row]
+        candidates.fetch(row.fetch(0)) << [rank, name, index, row]
       end
 
       namespaces = []
       namespace_names = []
+      namespace_index = {}
       group_ranges = []
       group_lods = []
       source_groups.each_index do |group_index|
         selected = select_candidates(candidates.fetch(group_index), quotas.fetch(group_index))
         first = namespaces.length
-        selected.each_with_index do |(_rank, name, row), selected_index|
+        selected.each_with_index do |(_rank, name, source_index, row), selected_index|
+          namespace_index[source_index] = namespaces.length
           namespaces << [visual_namespace_seed(group_index, selected_index), *row]
           namespace_names << name
         end
         group_ranges << [first, selected.length]
         category_minimum = [
-          selected.any? { |_rank, _name, row| row.fetch(2) != 1 },
-          selected.any? { |_rank, _name, row| row.fetch(2) == 1 },
+          selected.any? { |_rank, _name, _source_index, row| row.fetch(2) != 1 },
+          selected.any? { |_rank, _name, _source_index, row| row.fetch(2) == 1 },
         ].count(true)
         scaled_mid_length = (Math.sqrt(selected.length) * MID_LOD_SQRT_MULTIPLIER).ceil
         mid_length = [selected.length, [category_minimum, scaled_mid_length].max].min
@@ -148,8 +155,8 @@ module RubyLens
         Model::GroupLayout.new(seeds:, core_namespace_counts:, total_namespace_counts: sizes, mode: :atlas).anchors
       end
       package_model = build_configured_packages(snapshot)
-      {
-        "schema" => "rubylens.art.v8",
+      model = {
+        "schema" => snapshot["schema"] == "rubylens.snapshot.v7" ? "rubylens.art.v9" : "rubylens.art.v8",
         "projectName" => snapshot.fetch("project_name"),
         "totals" => {
           "namespaces" => snapshot.fetch("namespaces").length,
@@ -176,6 +183,12 @@ module RubyLens
         "dependencyStars" => package_model.fetch(:dependencies),
         "warningCounts" => snapshot.fetch("warning_counts"),
       }
+      if snapshot.key?("reference_routes")
+        model["referenceRoutes"] = build_reference_routes(
+          snapshot.fetch("reference_routes"), namespace_index, package_model.fetch(:package_index)
+        )
+      end
+      model
     end
 
     def build_configured_packages(snapshot)
@@ -203,16 +216,16 @@ module RubyLens
           dependencies << [random.rand(0..0xffff_ffff), package_index.fetch(old_index), *declaration.drop(1)]
         end
       end
-      { packages:, package_names:, indexed_dependency_count:, dependencies: }
+      { packages:, package_names:, package_index:, indexed_dependency_count:, dependencies: }
     end
 
     def select_candidates(candidates, quota)
-      ranked = candidates.sort_by { |rank, name, _row| [rank, name] }
+      ranked = candidates.sort_by { |rank, name, _source_index, _row| [rank, name] }
       return [] if quota.zero?
 
       selected = []
-      core = ranked.find { |_rank, _name, row| row.fetch(2) != 1 }
-      tests = ranked.find { |_rank, _name, row| row.fetch(2) == 1 }
+      core = ranked.find { |_rank, _name, _source_index, row| row.fetch(2) != 1 }
+      tests = ranked.find { |_rank, _name, _source_index, row| row.fetch(2) == 1 }
       selected << core if core
       selected << tests if tests && selected.length < quota
       ranked.each do |candidate|
@@ -220,6 +233,16 @@ module RubyLens
         selected << candidate unless candidate.equal?(core) || candidate.equal?(tests)
       end
       selected.first(quota)
+    end
+
+    def build_reference_routes(routes, namespace_index, package_index)
+      routes.filter_map do |source, target_kind, target, count|
+        next unless namespace_index.key?(source)
+        next if target_kind.zero? && !namespace_index.key?(target)
+
+        remapped_target = target_kind.zero? ? namespace_index.fetch(target) : package_index.fetch(target)
+        [namespace_index.fetch(source), target_kind, remapped_target, count]
+      end
     end
 
     def stable_namespace_rank(name)

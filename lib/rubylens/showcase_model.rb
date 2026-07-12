@@ -10,7 +10,7 @@ module RubyLens
     CATEGORY_FIELDS = %w[core tests].freeze
 
     def call(model)
-      return configured_model(model) if model["schema"] == "rubylens.art.v8"
+      return configured_model(model) if model.key?("groups")
 
       {
         "schema" => "rubylens.showcase.v1",

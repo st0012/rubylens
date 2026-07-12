@@ -2,7 +2,7 @@
     const model = JSON.parse(atob("{{MODEL_BASE64}}"));
     const showcaseMode = document.body.dataset.rubylensMode === "showcase";
     const interactiveMode = !showcaseMode;
-    const groupedMode = model.schema === "rubylens.art.v8" || model.schema === "rubylens.showcase.v2";
+    const groupedMode = Array.isArray(model.groups) && Array.isArray(model.groupRanges);
     if (groupedMode) document.body.classList.add("has-core-systems");
     const qaMode = window.__RUBYLENS_QA__ === true;
     const canvas = document.getElementById("cosmos");
@@ -11,11 +11,19 @@
     const panel = document.getElementById("panel");
     const panelBody = document.getElementById("panel-body");
     const panelToggle = document.getElementById("panel-toggle");
+    const coreRoutesButton = document.getElementById("core-routes");
+    const routeModeStatus = document.getElementById("route-mode-status");
     const tooltip = document.getElementById("tooltip");
     const tooltipCategory = document.getElementById("tooltip-category");
     const tooltipName = document.getElementById("tooltip-name");
     const tooltipContext = document.getElementById("tooltip-context");
     const tooltipMetrics = document.getElementById("tooltip-metrics");
+    const routePanel = document.getElementById("route-panel");
+    const routeCount = document.getElementById("route-count");
+    const routeSummary = document.getElementById("route-summary");
+    const routeGroups = document.getElementById("route-groups");
+    const routeMapCanvas = interactiveMode ? document.createElement("canvas") : null;
+    const routeMapContext = routeMapCanvas?.getContext("2d");
     const fields = ["ancestorDepth", "definitionSites", "reopenings", "descendants", "references", "members"];
     const rubyMetricLabels = ["Classes", "Modules", "Methods", "Constants"];
     const signalWeights = {
@@ -23,7 +31,7 @@
       tests: { ancestorDepth: .18, definitionSites: .25, reopenings: .18, descendants: .42, references: .85, members: .55 },
       dependencies: { ancestorDepth: .12, definitionSites: .35, reopenings: .2, descendants: .32, references: .48, members: .4 },
     };
-    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, focusedGroupIndex = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, showcaseRenderer = null;
+    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, focusedGroupIndex = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, showcaseRenderer = null, routeMapState = "idle", routeMapBuildFrame = 0, routeMapBuildIndex = 0, routeMapDrawnCount = 0, routeMapBuildToken = 0, routeMapLastAnnouncement = 0, routeMapLineAlpha = 0, routeMapRestoreDrift = false, routeMapRestoreCamera = null, routeMapProjectionState = null, routeMapProjectionX = null, routeMapProjectionY = null, routeMapMatrix = null;
     const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35, SHOWCASE_POINT_LIMIT = 50_000;
     const SHOWCASE_PRESET = Object.freeze({
       "stageWidth": 1920,
@@ -50,16 +58,22 @@
       "mastheadWidth": 632
     });
     const TOP_DOWN_PITCH = Math.PI / 2;
+    const ROUTE_LIMIT = 16, COARSE_ROUTE_LIMIT = 8;
+    const ROUTE_MAP_BATCH_SIZE = 256, ROUTE_MAP_FRAME_BUDGET = 7, ROUTE_MAP_ANNOUNCE_INTERVAL = 500;
+    const EMPTY_SELECTED_ROUTE_CACHE = Object.freeze({ point: null, outgoingCount: 0, incomingCount: 0, entries: Object.freeze([]) });
     const contextVisibility = { selection: .75, category: .16, package: .75, system: .75 };
     const pointers = new Map();
     const visibleCategories = { core: true, tests: true, dependencies: true };
     const visibilityInputs = {};
     const focusButtons = {};
     const systemFocusButtons = {};
+    const routeMapMutationKeys = new Set(["+", "=", "-", "0", "p", "enter", "f"]);
     const excludedTriviaNames = new Set(["Object", "Kernel", "BasicObject"]);
     const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const coarsePointerQuery = window.matchMedia("(pointer: coarse)");
     const configuredMobile = () => groupedMode && Math.min(window.innerWidth, window.innerHeight) <= 430;
     let drifting = interactiveMode && !reducedMotionQuery.matches && !(groupedMode && model.explorerLayout === "atlas");
+    let selectedRouteCache = EMPTY_SELECTED_ROUTE_CACHE;
     const colours = { core: [244, 82, 132], tests: [87, 204, 255], dependencies: [255, 184, 77] };
 
     const hash = (seed, channel = 0) => {
@@ -232,6 +246,42 @@
       return { points, namespacePoints, interactivePoints, dependencyHubs, systemHubs };
     }
     const { points, namespacePoints, interactivePoints, dependencyHubs, systemHubs } = buildPoints();
+    const coreReferenceRoutes = [];
+    const outgoingRoutesByPoint = new Map();
+    const incomingRoutesByPoint = new Map();
+    const appendRoute = (routesByPoint, point, route) => {
+      const routes = routesByPoint.get(point);
+      if (routes) routes.push(route);
+      else routesByPoint.set(point, [route]);
+    };
+    let routeProjectionCount = 0;
+    let coreReferenceOccurrenceCount = 0;
+    function decodeReferenceRoutes(rows) {
+      for (const row of rows) {
+        const source = namespacePoints[row[0]];
+        const target = row[1] === 0 ? namespacePoints[row[2]] : dependencyHubs[row[2]];
+        if (!source || !target) continue;
+        const route = { source, target, count: Number(row[3]) || 0 };
+        appendRoute(outgoingRoutesByPoint, source, route);
+        appendRoute(incomingRoutesByPoint, target, route);
+        if (source.category === "core" || target.category === "core") {
+          coreReferenceRoutes.push(route);
+          coreReferenceOccurrenceCount += route.count;
+        }
+      }
+    }
+    if (interactiveMode) {
+      namespacePoints.forEach(point => {
+        point.routeProjectionIndex = routeProjectionCount;
+        routeProjectionCount += 1;
+      });
+      dependencyHubs.forEach(point => {
+        point.routeProjectionIndex = routeProjectionCount;
+        routeProjectionCount += 1;
+      });
+      decodeReferenceRoutes(model.referenceRoutes || []);
+    }
+    delete model.referenceRoutes;
     function showcasePointSample() {
       if (groupedMode || !showcaseMode || points.length <= SHOWCASE_POINT_LIMIT) return points;
       const hubs = points.filter(point => point.hub);
@@ -704,6 +754,7 @@
     }
 
     function flyCamera(target) {
+      if (routeMapOpen()) return;
       cancelCameraFlight();
       cancelPendingHover();
       const yawDelta = Math.atan2(Math.sin(target.yaw - yaw), Math.cos(target.yaw - yaw));
@@ -822,12 +873,138 @@
       }
     }
 
+    function routeCategoryLabel(point) {
+      return point.hub ? "Gem" : point.category === "tests" ? "Tests" : "Core code";
+    }
+
+    function routeVisible(route) {
+      return visibleCategories[route.source.category] && visibleCategories[route.target.category];
+    }
+
+    function compareRouteEntries(left, right) {
+      const countOrder = right.route.count - left.route.count;
+      if (countOrder) return countOrder;
+      const nameOrder = left.destination.name === right.destination.name ? 0 : left.destination.name < right.destination.name ? -1 : 1;
+      if (nameOrder) return nameOrder;
+      if (left.direction !== right.direction) return left.direction === "outgoing" ? -1 : 1;
+      const categoryOrder = left.destination.category === right.destination.category ? 0 : left.destination.category < right.destination.category ? -1 : 1;
+      if (categoryOrder) return categoryOrder;
+      return (left.destination.routeProjectionIndex || 0) - (right.destination.routeProjectionIndex || 0);
+    }
+
+    function insertBoundedRouteEntry(entries, entry, limit) {
+      let low = 0, high = entries.length;
+      while (low < high) {
+        const middle = (low + high) >>> 1;
+        if (compareRouteEntries(entry, entries[middle]) < 0) high = middle;
+        else low = middle + 1;
+      }
+      if (low >= limit) return;
+      entries.splice(low, 0, entry);
+      if (entries.length > limit) entries.pop();
+    }
+
+    function buildSelectedRouteCache(point) {
+      const limit = coarsePointerQuery.matches ? COARSE_ROUTE_LIMIT : ROUTE_LIMIT;
+      const entries = [];
+      let outgoingCount = 0, incomingCount = 0;
+      for (const route of outgoingRoutesByPoint.get(point) || []) {
+        if (!routeVisible(route)) continue;
+        outgoingCount += 1;
+        if (!point.hub) insertBoundedRouteEntry(entries, { route, direction: "outgoing", destination: route.target }, limit);
+      }
+      for (const route of incomingRoutesByPoint.get(point) || []) {
+        if (!routeVisible(route)) continue;
+        incomingCount += 1;
+        insertBoundedRouteEntry(entries, { route, direction: "incoming", destination: route.source }, limit);
+      }
+      return { point, outgoingCount, incomingCount, entries };
+    }
+
+    function refreshSelectedRouteCache() {
+      selectedRouteCache = selectionLocked && selectedPoint && !selectedPoint.systemHub
+        ? buildSelectedRouteCache(selectedPoint)
+        : EMPTY_SELECTED_ROUTE_CACHE;
+      return selectedRouteCache;
+    }
+
+    function selectedRouteEntries() {
+      return selectedRouteCache.entries;
+    }
+
+    function createRouteGroup(title, entries) {
+      const group = document.createElement("section");
+      group.className = "route-group";
+      const heading = document.createElement("h4");
+      heading.textContent = title;
+      const list = document.createElement("div");
+      list.className = "route-list";
+      for (const entry of entries) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "route-link";
+        const direction = document.createElement("span");
+        direction.className = "route-direction";
+        direction.textContent = entry.direction === "outgoing" ? "→" : "←";
+        direction.setAttribute("aria-hidden", "true");
+        const identity = document.createElement("span");
+        identity.className = "route-identity";
+        const name = document.createElement("span");
+        name.className = "route-name";
+        name.textContent = entry.destination.name;
+        const meta = document.createElement("span");
+        meta.className = "route-meta";
+        meta.textContent = routeCategoryLabel(entry.destination);
+        identity.append(name, meta);
+        const weight = document.createElement("span");
+        weight.className = "route-weight";
+        weight.textContent = `×${entry.route.count.toLocaleString()}`;
+        const directionLabel = entry.direction === "outgoing" ? "Outgoing to" : "Incoming from";
+        const referenceLabel = entry.route.count === 1 ? "reference" : "references";
+        button.setAttribute("aria-label", `${directionLabel} ${entry.destination.name}, ${routeCategoryLabel(entry.destination)}, ${entry.route.count.toLocaleString()} resolved ${referenceLabel}`);
+        button.append(direction, identity, weight);
+        button.addEventListener("click", () => travelAlongRoute(entry));
+        list.append(button);
+      }
+      group.append(heading, list);
+      return group;
+    }
+
+    function updateRoutePanel() {
+      routeGroups.textContent = "";
+      if (!selectionLocked || !selectedPoint || selectedPoint.systemHub) {
+        routePanel.hidden = true;
+        routeCount.textContent = "";
+        routeSummary.textContent = "";
+        return;
+      }
+
+      const cache = selectedRouteCache;
+      const entries = cache.entries;
+      const total = cache.outgoingCount + cache.incomingCount;
+      routePanel.hidden = false;
+      routeCount.textContent = total > entries.length ? `${entries.length} of ${total}` : `${total}`;
+      if (!total) {
+        routeSummary.textContent = `No resolved constant-reference routes connect ${selectedPoint.name} to another plotted star or gem.`;
+        return;
+      }
+
+      const shown = total > entries.length ? ` Strongest ${entries.length} shown.` : "";
+      routeSummary.textContent = `${cache.outgoingCount} outgoing · ${cache.incomingCount} incoming for ${selectedPoint.name}.${shown}`;
+      const outgoing = entries.filter(entry => entry.direction === "outgoing");
+      const incoming = entries.filter(entry => entry.direction === "incoming");
+      if (outgoing.length) routeGroups.append(createRouteGroup("Outgoing to", outgoing));
+      if (incoming.length) routeGroups.append(createRouteGroup("Incoming from", incoming));
+    }
+
     function selectPoint(point, locked = false) {
       if (locked && selectionLocked && selectedPoint === point) point = null;
       selectedPoint = point;
       selectionLocked = Boolean(point) && locked;
       if (point) updateTooltipContent(point);
       else tooltip.hidden = true;
+      refreshSelectedRouteCache();
+      updateRoutePanel();
       requestRender();
     }
 
@@ -915,7 +1092,7 @@
     }
 
     function queueHover(x, y) {
-      if (cameraFlight || selectionLocked || dragging || pointers.size > 0) return;
+      if (routeMapOpen() || cameraFlight || selectionLocked || dragging || pointers.size > 0) return;
       pendingHover = [x, y];
       if (hoverFrame) return;
       hoverFrame = requestAnimationFrame(() => {
@@ -931,6 +1108,189 @@
       pendingHover = null;
       if (hoverFrame) cancelAnimationFrame(hoverFrame);
       hoverFrame = 0;
+    }
+
+    function coreRouteLabel() {
+      return coreReferenceRoutes.length === 1 ? "1 Core route" : `${coreReferenceRoutes.length.toLocaleString()} Core routes`;
+    }
+
+    function routeMapOpen() {
+      return routeMapState !== "idle";
+    }
+
+    function setRouteMapControlsDisabled(disabled) {
+      Object.values(visibilityInputs).forEach(input => { input.disabled = disabled; });
+      Object.values(focusButtons).forEach(button => { button.disabled = disabled; });
+      Object.values(systemFocusButtons).forEach(button => { button.disabled = disabled; });
+      document.querySelectorAll(".fact, .route-link").forEach(button => { button.disabled = disabled; });
+      ["motion", "pan-mode", "zoom-in", "zoom-out"].forEach(id => { document.getElementById(id).disabled = disabled; });
+      panelToggle.disabled = disabled;
+      canvas.classList.toggle("is-route-map", disabled);
+      canvas.tabIndex = disabled ? -1 : 0;
+      if (disabled) canvas.setAttribute("aria-disabled", "true");
+      else canvas.removeAttribute("aria-disabled");
+    }
+
+    function clearRouteMapBuildData() {
+      routeMapProjectionState = null;
+      routeMapProjectionX = null;
+      routeMapProjectionY = null;
+      routeMapMatrix = null;
+    }
+
+    function cachedRouteProjection(point) {
+      const index = point.routeProjectionIndex;
+      if (routeMapProjectionState[index] === 0) {
+        const projected = project(point, routeMapMatrix);
+        if (projected) {
+          routeMapProjectionState[index] = 1;
+          routeMapProjectionX[index] = projected[0];
+          routeMapProjectionY[index] = projected[1];
+        } else {
+          routeMapProjectionState[index] = 2;
+        }
+      }
+      return routeMapProjectionState[index] === 1 ? index : -1;
+    }
+
+    function completeRouteMapBuild(token) {
+      if (token !== routeMapBuildToken || routeMapState !== "building") return;
+      routeMapState = "active";
+      routeMapBuildFrame = 0;
+      clearRouteMapBuildData();
+      canvas.dataset.routeMapState = routeMapState;
+      canvas.dataset.referenceRoutesDrawn = String(routeMapDrawnCount);
+      canvas.removeAttribute("aria-busy");
+      coreRoutesButton.removeAttribute("aria-busy");
+      coreRoutesButton.textContent = "Exit routes";
+      coreRoutesButton.setAttribute("aria-label", "Exit Core route map");
+      coreRoutesButton.title = `Exit the map of ${coreRouteLabel()}`;
+      const rendered = routeMapDrawnCount === coreReferenceRoutes.length
+        ? coreRouteLabel()
+        : `${routeMapDrawnCount.toLocaleString()} of ${coreRouteLabel()}`;
+      routeModeStatus.textContent = `Core route map · ${rendered} rendered · ${coreReferenceOccurrenceCount.toLocaleString()} resolved references touching Core code`;
+      requestRender();
+    }
+
+    function drawRouteMapBatch() {
+      const batchEnd = Math.min(routeMapBuildIndex + ROUTE_MAP_BATCH_SIZE, coreReferenceRoutes.length);
+      let drawnInBatch = 0;
+      routeMapContext.save();
+      routeMapContext.beginPath();
+      routeMapContext.rect(0, 0, sceneRight, sceneBottom);
+      routeMapContext.clip();
+      routeMapContext.beginPath();
+      while (routeMapBuildIndex < batchEnd) {
+        const route = coreReferenceRoutes[routeMapBuildIndex];
+        const sourceIndex = cachedRouteProjection(route.source);
+        const targetIndex = cachedRouteProjection(route.target);
+        if (sourceIndex >= 0 && targetIndex >= 0) {
+          routeMapContext.moveTo(routeMapProjectionX[sourceIndex], routeMapProjectionY[sourceIndex]);
+          routeMapContext.lineTo(routeMapProjectionX[targetIndex], routeMapProjectionY[targetIndex]);
+          routeMapDrawnCount += 1;
+          drawnInBatch += 1;
+        }
+        routeMapBuildIndex += 1;
+      }
+      if (drawnInBatch > 0) {
+        routeMapContext.strokeStyle = `rgba(184,216,255,${routeMapLineAlpha})`;
+        routeMapContext.lineWidth = .65;
+        routeMapContext.stroke();
+      }
+      routeMapContext.restore();
+    }
+
+    function buildRouteMapChunk(token) {
+      if (token !== routeMapBuildToken || routeMapState !== "building") return;
+      const startedAt = performance.now();
+      do {
+        drawRouteMapBatch();
+      } while (routeMapBuildIndex < coreReferenceRoutes.length && performance.now() - startedAt < ROUTE_MAP_FRAME_BUDGET);
+      canvas.dataset.referenceRoutesProcessed = String(routeMapBuildIndex);
+      const now = performance.now();
+      if (now - routeMapLastAnnouncement >= ROUTE_MAP_ANNOUNCE_INTERVAL) {
+        routeMapLastAnnouncement = now;
+        routeModeStatus.textContent = `Building Core route map · ${routeMapBuildIndex.toLocaleString()} of ${coreReferenceRoutes.length.toLocaleString()} routes`;
+      }
+      if (routeMapBuildIndex >= coreReferenceRoutes.length) completeRouteMapBuild(token);
+      else routeMapBuildFrame = requestAnimationFrame(() => buildRouteMapChunk(token));
+    }
+
+    function stopCoreRouteMap(focusButton = false) {
+      const resumeDrift = routeMapOpen() ? routeMapRestoreDrift && !reducedMotionQuery.matches : drifting;
+      const restoreCamera = routeMapRestoreCamera;
+      routeMapBuildToken += 1;
+      if (routeMapBuildFrame) cancelAnimationFrame(routeMapBuildFrame);
+      routeMapBuildFrame = 0;
+      routeMapBuildIndex = 0;
+      routeMapDrawnCount = 0;
+      routeMapLastAnnouncement = 0;
+      routeMapLineAlpha = 0;
+      routeMapRestoreDrift = false;
+      routeMapRestoreCamera = null;
+      routeMapState = "idle";
+      clearRouteMapBuildData();
+      routeMapCanvas.width = 0;
+      routeMapCanvas.height = 0;
+      canvas.dataset.routeMapState = routeMapState;
+      canvas.dataset.referenceRoutesProcessed = "0";
+      canvas.dataset.referenceRoutesDrawn = "0";
+      canvas.removeAttribute("aria-busy");
+      coreRoutesButton.removeAttribute("aria-busy");
+      coreRoutesButton.textContent = "Core routes";
+      coreRoutesButton.setAttribute("aria-pressed", "false");
+      coreRoutesButton.setAttribute("aria-label", "Build Core route map");
+      coreRoutesButton.title = `Build a map of ${coreRouteLabel()}`;
+      routeModeStatus.hidden = true;
+      routeModeStatus.textContent = "";
+      setRouteMapControlsDisabled(false);
+      if (restoreCamera) applyCameraTarget(restoreCamera);
+      setDrifting(resumeDrift);
+      requestRender();
+      if (focusButton) coreRoutesButton.focus({ preventScroll: true });
+    }
+
+    function startCoreRouteMap() {
+      if (!routeMapContext || !coreReferenceRoutes.length || routeMapState !== "idle") return;
+      completeCameraFlight();
+      cancelPendingHover();
+      routeMapRestoreDrift = drifting;
+      routeMapRestoreCamera = { yaw, pitch, zoom, panX, panY };
+      resetCamera();
+      routeMapState = "building";
+      routeMapBuildToken += 1;
+      const token = routeMapBuildToken;
+      routeMapBuildIndex = 0;
+      routeMapDrawnCount = 0;
+      setDrifting(false);
+      setRouteMapControlsDisabled(true);
+      routeMapCanvas.width = Math.max(1, Math.ceil(width));
+      routeMapCanvas.height = Math.max(1, Math.ceil(height));
+      routeMapContext.clearRect(0, 0, routeMapCanvas.width, routeMapCanvas.height);
+      routeMapProjectionState = new Uint8Array(routeProjectionCount);
+      routeMapProjectionX = new Float32Array(routeProjectionCount);
+      routeMapProjectionY = new Float32Array(routeProjectionCount);
+      routeMapMatrix = [Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch)];
+      routeMapLineAlpha = clamp(.46 / Math.sqrt(Math.log2(coreReferenceRoutes.length + 1)), .08, .22);
+      canvas.dataset.routeMapState = routeMapState;
+      canvas.dataset.referenceRoutesProcessed = "0";
+      canvas.dataset.referenceRoutesDrawn = "0";
+      canvas.setAttribute("aria-busy", "true");
+      coreRoutesButton.setAttribute("aria-busy", "true");
+      coreRoutesButton.setAttribute("aria-pressed", "true");
+      coreRoutesButton.setAttribute("aria-label", "Cancel Core route map build");
+      coreRoutesButton.textContent = "Cancel";
+      coreRoutesButton.title = `Cancel building ${coreRouteLabel()}`;
+      routeModeStatus.hidden = false;
+      routeModeStatus.textContent = `Building Core route map · 0 of ${coreReferenceRoutes.length.toLocaleString()} routes`;
+      routeMapLastAnnouncement = performance.now();
+      requestRender();
+      routeMapBuildFrame = requestAnimationFrame(() => buildRouteMapChunk(token));
+    }
+
+    function setCoreRouteMap(next, focusButton = false) {
+      if (Boolean(next) && coreReferenceRoutes.length > 0) startCoreRouteMap();
+      else stopCoreRouteMap(focusButton);
     }
 
     function setPanelCollapsed(collapsed) {
@@ -1042,9 +1402,14 @@
     }
 
     function setCategoryVisible(category, visible) {
+      const changed = visibleCategories[category] !== visible;
       visibleCategories[category] = visible;
       if (visibilityInputs[category]) visibilityInputs[category].checked = visible;
       if (!visible && (selectedPoint?.category === category || focusedCategory === category)) clearExplorationFocus();
+      else {
+        if (changed) refreshSelectedRouteCache();
+        updateRoutePanel();
+      }
       requestRender();
     }
 
@@ -1066,13 +1431,13 @@
       flyCamera({ yaw: -.36, pitch: .34, zoom: categoryMeta[category].focusZoom, panX: 0, panY: 0 });
     }
 
-    function focusPoint(point, button) {
-      if (activeFactButton === button) {
+    function focusPoint(point, button = null) {
+      if (button && activeFactButton === button) {
         clearExplorationFocus();
         return;
       }
       if (point.hub) {
-        focusDependencyPackage(point.packageIndex, button);
+        focusDependencyPackage(point.packageIndex, button, Boolean(button));
         return;
       }
       setCategoryVisible(point.category, true);
@@ -1080,8 +1445,10 @@
       clearSystemFocus();
       if (Number.isInteger(point.groupIndex)) activateSystemRange(point.groupIndex);
       clearExpandedPackage();
-      activeFactButton = button;
-      activeFactButton.setAttribute("aria-pressed", "true");
+      if (button) {
+        activeFactButton = button;
+        activeFactButton.setAttribute("aria-pressed", "true");
+      }
       clearCategoryFocus();
       setDrifting(false);
       selectedPoint = null;
@@ -1121,7 +1488,7 @@
       });
     }
 
-    function focusDependencyPackage(packageIndex, button = null) {
+    function focusDependencyPackage(packageIndex, button = null, topDown = false) {
       const hub = dependencyHubs.find(point => point.packageIndex === packageIndex);
       if (!hub) return false;
 
@@ -1139,8 +1506,18 @@
       selectedPoint = null;
       selectionLocked = false;
       selectPoint(hub, true);
-      flyCamera(button ? topDownCameraTargetForPoint(hub, 4) : cameraTargetForPoint(hub, 4));
+      flyCamera(button || topDown ? topDownCameraTargetForPoint(hub, 4) : cameraTargetForPoint(hub, 4));
       return true;
+    }
+
+    function travelAlongRoute(entry) {
+      const destination = entry.destination;
+      if (destination.hub) focusDependencyPackage(destination.packageIndex, null, true);
+      else focusPoint(destination);
+      requestAnimationFrame(() => {
+        const nextRoute = routeGroups.querySelector(".route-link");
+        (nextRoute || routeSummary).focus({ preventScroll: true });
+      });
     }
 
     function createExplorer() {
@@ -1310,6 +1687,7 @@
         requestRender();
         return;
       }
+      if (routeMapOpen()) stopCoreRouteMap();
       dpr = Math.min(window.devicePixelRatio || 1, configuredMobile() ? 1.25 : 2);
       width = window.innerWidth; height = window.innerHeight;
       canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
@@ -1358,6 +1736,10 @@
     function moveViewWithArrow(event) {
       if (!event.key.startsWith("Arrow") || pointers.size > 0) return false;
       if (event.metaKey || event.ctrlKey || event.altKey || isEditableTarget(event.target)) return false;
+      if (routeMapOpen()) {
+        event.preventDefault();
+        return true;
+      }
       cancelCameraFlight();
       const distance = event.shiftKey ? 96 : 32;
       if (event.key === "ArrowLeft") panBy(distance, 0);
@@ -1404,6 +1786,131 @@
       if (depth <= 35) return null;
       const perspective = 440 / depth * zoom;
       return [sceneCenterX + panX + x1 * perspective, sceneCenterY + panY + y2 * perspective, perspective];
+    }
+
+    function clipSegmentToScene(start, end, padding = 18) {
+      const xMin = padding, xMax = sceneRight - padding;
+      const yMin = padding, yMax = sceneBottom - padding;
+      const dx = end[0] - start[0], dy = end[1] - start[1];
+      let startTime = 0, endTime = 1;
+      const boundaries = [
+        [-dx, start[0] - xMin],
+        [dx, xMax - start[0]],
+        [-dy, start[1] - yMin],
+        [dy, yMax - start[1]],
+      ];
+      for (const [direction, distance] of boundaries) {
+        if (Math.abs(direction) < 1e-7) {
+          if (distance < 0) return null;
+          continue;
+        }
+        const time = distance / direction;
+        if (direction < 0) {
+          if (time > endTime) return null;
+          startTime = Math.max(startTime, time);
+        } else {
+          if (time < startTime) return null;
+          endTime = Math.min(endTime, time);
+        }
+      }
+      return {
+        start: [start[0] + dx * startTime, start[1] + dy * startTime],
+        end: [start[0] + dx * endTime, start[1] + dy * endTime],
+        startGated: startTime > .001,
+        endGated: endTime < .999,
+      };
+    }
+
+    function referenceRouteGeometry(route, matrix) {
+      const projectedSource = project(route.source, matrix);
+      const projectedTarget = project(route.target, matrix);
+      if (!projectedSource || !projectedTarget) return null;
+      const clipped = clipSegmentToScene(projectedSource, projectedTarget);
+      if (!clipped) return null;
+      const dx = clipped.end[0] - clipped.start[0];
+      const dy = clipped.end[1] - clipped.start[1];
+      const length = Math.hypot(dx, dy);
+      if (length < 4) return null;
+
+      const routeSeed = hash(route.source.seed, route.target.seed ^ 0x51a7);
+      const side = unit(routeSeed, 31) < .5 ? -1 : 1;
+      const bend = Math.min(48, length * (.08 + unit(routeSeed, 32) * .08)) * side;
+      const middleX = (clipped.start[0] + clipped.end[0]) / 2;
+      const middleY = (clipped.start[1] + clipped.end[1]) / 2;
+      const control = [
+        clamp(middleX - dy / length * bend, 12, sceneRight - 12),
+        clamp(middleY + dx / length * bend, 12, sceneBottom - 12),
+      ];
+      return { ...clipped, control };
+    }
+
+    function drawRouteEndpoint(position, point, gated) {
+      const colour = colours[point.category];
+      context.beginPath();
+      context.arc(position[0], position[1], gated ? 3.2 : 2.1, 0, Math.PI * 2);
+      context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},.92)`;
+      context.fill();
+      if (gated) {
+        context.beginPath();
+        context.arc(position[0], position[1], 5.2, 0, Math.PI * 2);
+        context.strokeStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},.48)`;
+        context.lineWidth = 1;
+        context.stroke();
+      }
+    }
+
+    function drawRouteArrow(geometry, width) {
+      const dx = geometry.end[0] - geometry.control[0];
+      const dy = geometry.end[1] - geometry.control[1];
+      const length = Math.hypot(dx, dy);
+      if (length < 1) return;
+      const ux = dx / length, uy = dy / length;
+      const arrowLength = 5.5 + width;
+      const arrowWidth = 3 + width * .45;
+      const backX = geometry.end[0] - ux * arrowLength;
+      const backY = geometry.end[1] - uy * arrowLength;
+      context.beginPath();
+      context.moveTo(geometry.end[0], geometry.end[1]);
+      context.lineTo(backX - uy * arrowWidth, backY + ux * arrowWidth);
+      context.lineTo(backX + uy * arrowWidth, backY - ux * arrowWidth);
+      context.closePath();
+      context.fillStyle = "rgba(225,239,255,.72)";
+      context.fill();
+    }
+
+    function drawCoreRouteMap() {
+      if (routeMapState !== "active" || routeMapCanvas.width === 0) return;
+      context.save();
+      context.globalCompositeOperation = "screen";
+      context.globalAlpha = .92;
+      context.drawImage(routeMapCanvas, 0, 0, width, height);
+      context.restore();
+    }
+
+    function drawSelectedReferenceRoutes(matrix) {
+      if (!selectionLocked || !selectedPoint || selectedPoint.systemHub || cameraFlight) return;
+      const entries = selectedRouteEntries();
+      if (!entries.length) return;
+
+      context.save();
+      context.globalCompositeOperation = "source-over";
+      context.lineCap = "round";
+      context.lineJoin = "round";
+      for (const entry of entries) {
+        const geometry = referenceRouteGeometry(entry.route, matrix);
+        if (!geometry) continue;
+        const width = .8 + Math.min(1.4, .35 * Math.log2(entry.route.count + 1));
+        context.beginPath();
+        context.moveTo(geometry.start[0], geometry.start[1]);
+        context.quadraticCurveTo(geometry.control[0], geometry.control[1], geometry.end[0], geometry.end[1]);
+        context.strokeStyle = "rgba(213,232,255,.36)";
+        context.lineWidth = width;
+        context.stroke();
+        drawRouteEndpoint(geometry.start, entry.route.source, geometry.startGated);
+        drawRouteEndpoint(geometry.end, entry.route.target, geometry.endGated);
+        drawRouteArrow(geometry, width);
+      }
+      context.restore();
     }
 
     function renderShowcaseFallback() {
@@ -1468,15 +1975,17 @@
       const vignette = context.createRadialGradient(sceneCenterX + panX, sceneCenterY + panY, 0, sceneCenterX + panX, sceneCenterY + panY, Math.max(width, height) * .72);
       vignette.addColorStop(0, "rgba(30,16,45,.18)"); vignette.addColorStop(1, "rgba(0,0,0,.6)");
       context.fillStyle = vignette; context.fillRect(0, 0, width, height);
-      context.globalCompositeOperation = "lighter";
       const matrix = [Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch)];
+      drawSelectedReferenceRoutes(matrix);
+      context.globalCompositeOperation = "lighter";
       const deepDetail = clamp(Math.log2(Math.max(1, zoom)) / 5, 0, 1);
-      for (const [first, length] of visibleDrawRanges()) {
+      const drawRanges = routeMapOpen() ? [[0, renderPoints.length]] : visibleDrawRanges();
+      for (const [first, length] of drawRanges) {
       for (let index = first; index < first + length; index += 1) {
         const point = renderPoints[index];
         point.screen = null;
         if (point.hub) point.cloudScreenRadius = null;
-        if (!visibleCategories[point.category]) continue;
+        if (!routeMapOpen() && !visibleCategories[point.category]) continue;
         const projected = project(point, matrix);
         if (!projected) continue;
         const [x, y, perspective] = projected;
@@ -1493,9 +2002,11 @@
         const selectionEmphasis = selectionLocked && selectedPoint
           ? (selectedPoint.systemHub ? 1 : point === selectedPoint ? 1 : contextVisibility.selection)
           : focusedCategory && point.category !== focusedCategory ? contextVisibility.category : 1;
-        const emphasis = (expandedPackageIndex !== null
-          ? (focusedPackagePoint ? 1 : contextVisibility.package)
-          : selectionEmphasis) * systemEmphasis;
+        const emphasis = routeMapOpen()
+          ? 1
+          : (expandedPackageIndex !== null
+            ? (focusedPackagePoint ? 1 : contextVisibility.package)
+            : selectionEmphasis) * systemEmphasis;
         const visibleAlpha = focusedPackagePoint ? Math.max(.34, alpha) : alpha * emphasis;
         const colour = colours[point.category];
         point.screen = [x, y, size, perspective];
@@ -1503,7 +2014,7 @@
           const expansion = expandedPackageIndex === point.packageIndex ? DEPENDENCY_EXPANSION : 1;
           point.cloudScreenRadius = Math.max(12, packageAnchors[point.packageIndex][3] * perspective * expansion * 1.2);
         }
-        const detailedPoint = expandedPackageIndex !== null ? focusedPackagePoint : emphasis >= .1;
+        const detailedPoint = point.systemHub || point.hub || (!routeMapOpen() && (expandedPackageIndex !== null ? focusedPackagePoint : emphasis >= .1));
         if (size > 1.35 && detailedPoint && !focusedSystemTest) {
           const glowScale = (focusedPackagePoint ? 2.2 - deepDetail * .8 : 3.4 - deepDetail * 1.3) * (configuredMobile() ? .7 : 1);
           context.beginPath(); context.arc(x, y, size * glowScale, 0, Math.PI * 2);
@@ -1524,6 +2035,7 @@
         }
       }}
       context.globalCompositeOperation = "source-over";
+      drawCoreRouteMap();
       if (selectedPoint) {
         if (cameraFlight) tooltip.hidden = true;
         else positionTooltip(selectedPoint);
@@ -1592,6 +2104,7 @@
     }
 
     function setDrifting(next) {
+      if (next && routeMapOpen()) return;
       if (next) cancelCameraFlight();
       drifting = next;
       const motion = document.getElementById("motion");
@@ -1619,6 +2132,10 @@
     };
     if (interactiveMode) {
     canvas.addEventListener("pointerdown", event => {
+      if (routeMapOpen()) {
+        event.preventDefault();
+        return;
+      }
       cancelCameraFlight();
       canvas.focus({ preventScroll: true });
       const firstPointer = pointers.size === 0;
@@ -1691,14 +2208,14 @@
     window.addEventListener("blur", clearGestureState);
     canvas.addEventListener("wheel", event => {
       event.preventDefault();
-      if (pointers.size > 0) return;
+      if (routeMapOpen() || pointers.size > 0) return;
       cancelCameraFlight();
       const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? height : 1);
       zoomBetween(zoom * Math.exp(-delta * .0012), event.clientX, event.clientY);
       requestRender();
     }, { passive: false });
     canvas.addEventListener("dblclick", event => {
-      if (pointers.size > 0) return;
+      if (routeMapOpen() || pointers.size > 0) return;
       const dependency = dependencyPackageAt(event.clientX, event.clientY);
       if (dependency) {
         focusDependencyPackage(dependency.packageIndex);
@@ -1711,6 +2228,10 @@
     canvas.addEventListener("keydown", event => {
       if (pointers.size > 0) return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (routeMapOpen()) {
+        if (routeMapMutationKeys.has(event.key.toLowerCase())) event.preventDefault();
+        return;
+      }
       if (event.key === "+" || event.key === "=") { cancelCameraFlight(); zoomBetween(zoom * ZOOM_STEP, sceneCenterX, sceneCenterY); }
       else if (event.key === "-") { cancelCameraFlight(); zoomBetween(zoom / ZOOM_STEP, sceneCenterX, sceneCenterY); }
       else if (event.key === "0") { cancelCameraFlight(); resetCamera(); }
@@ -1722,7 +2243,10 @@
       requestRender();
     });
     window.addEventListener("keydown", event => {
-      if (event.key === "Escape") clearExplorationFocus();
+      if (event.key === "Escape" && routeMapOpen()) {
+        event.preventDefault();
+        setCoreRouteMap(false, true);
+      } else if (event.key === "Escape") clearExplorationFocus();
       else moveViewWithArrow(event);
     });
     document.getElementById("motion").addEventListener("click", () => setDrifting(!drifting));
@@ -1731,18 +2255,25 @@
     document.getElementById("zoom-out").addEventListener("click", () => { if (pointers.size === 0) { cancelCameraFlight(); zoomBetween(zoom / ZOOM_STEP, sceneCenterX, sceneCenterY); } requestRender(); });
     document.getElementById("view").addEventListener("click", () => {
       cancelCameraFlight();
+      setCoreRouteMap(false);
       resetCamera();
       setNavigationMode("orbit");
       for (const category of Object.keys(visibleCategories)) setCategoryVisible(category, true);
       clearExplorationFocus();
       requestRender();
     });
+    coreRoutesButton.addEventListener("click", () => setCoreRouteMap(!routeMapOpen()));
     panelToggle.addEventListener("click", () => setPanelCollapsed(panelToggle.getAttribute("aria-expanded") === "true"));
     panel.addEventListener("transitionend", event => { if (event.propertyName === "width") { updateSceneViewport(); requestRender(); } });
     reducedMotionQuery.addEventListener("change", event => {
       if (!event.matches) return;
       completeCameraFlight();
       setDrifting(false);
+    });
+    coarsePointerQuery.addEventListener("change", () => {
+      refreshSelectedRouteCache();
+      updateRoutePanel();
+      requestRender();
     });
     }
 
@@ -1760,10 +2291,12 @@
       startShowcase();
     } else {
       document.title = `RubyLens · ${model.projectName}`;
-      canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class and module stars for Ruby code details or gem clouds for package summaries. Sidebar highlights open a top-down view. Double-click a gem cloud, press Enter or F on a selected gem marker, or tap that marker again to expand its stars. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, and use arrow keys to move the view. Escape exits a focused gem system.`);
+      canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class and module stars for Ruby code details or gem clouds for package summaries. Select a star or gem to reveal its strongest resolved constant-reference routes; route destinations are also available as buttons in the explorer, and the Core routes control builds a frozen map of routes touching Core code. Sidebar highlights open a top-down view. Double-click a gem cloud, press Enter or F on a selected gem marker, or tap that marker again to expand its stars. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, and use arrow keys to move the view. Escape exits focused exploration or the Core route map.`);
       document.getElementById("coverage").textContent = `${renderedDependencyStars.toLocaleString()} dependency stars shown`;
       const warningTotal = Object.values(model.warningCounts).reduce((sum, count) => sum + count, 0);
       if (warningTotal > 0) { const status = document.getElementById("status"); status.hidden = false; status.textContent = `${warningTotal.toLocaleString()} partial-index warning${warningTotal === 1 ? "" : "s"}`; }
+      coreRoutesButton.disabled = coreReferenceRoutes.length === 0 || !routeMapContext;
+      setCoreRouteMap(false);
       resetCamera();
       setDrifting(drifting);
       setNavigationMode(navigationMode);

@@ -2,6 +2,7 @@
 
 require "digest"
 require "rubydex"
+require "set"
 require "uri"
 require_relative "../model/dependency_aggregation"
 
@@ -24,14 +25,15 @@ module RubyLens
         integrity_failures = Array(graph.check_integrity)
         collected = collect_declarations(graph.declarations, manifest)
         workspace = workspace_namespaces(collected.fetch(:workspace_records), manifest)
-        inbound_references = inbound_workspace_references(graph, manifest, workspace.fetch(:ordinal_by_name))
+        reference_data = workspace_reference_data(graph, manifest, workspace)
 
         snapshot = {
-          "schema" => "rubylens.snapshot.v5",
+          "schema" => "rubylens.snapshot.v7",
           "project_name" => project_name(manifest),
           "components" => workspace.fetch(:component_counts),
           "namespace_names" => workspace.fetch(:records).map { |declaration, _definitions| declaration.name },
-          "namespaces" => build_workspace_rows(workspace, inbound_references, manifest),
+          "namespaces" => build_workspace_rows(workspace, reference_data.fetch(:inbound), manifest),
+          "reference_routes" => reference_data.fetch(:routes),
           "category_stats" => collected.fetch(:category_stats),
           "dependency_signal_maxima" => collected.fetch(:dependency_aggregation).signal_maxima,
           "packages" => build_package_rows(collected.fetch(:dependency_aggregation), manifest),
@@ -42,7 +44,6 @@ module RubyLens
           },
         }
         if configured_boundaries?(manifest)
-          snapshot["schema"] = "rubylens.snapshot.v6"
           snapshot["explorer_layout"] = manifest.boundaries.explorer_layout
           snapshot["groups"] = build_group_rows(workspace, collected.fetch(:group_ruby_counts), manifest)
           validate_group_totals!(snapshot.fetch("groups"), collected.fetch(:category_stats))
@@ -196,18 +197,135 @@ module RubyLens
         aggregation.add(package_index:, row:, construct_index: ruby_construct_index(declaration))
       end
 
-      def inbound_workspace_references(graph, manifest, ordinal_by_name)
-        graph.constant_references.each_with_object(Hash.new(0)) do |reference, counts|
+      def workspace_reference_data(graph, manifest, workspace)
+        ordinal_by_name = workspace.fetch(:ordinal_by_name)
+        source_ranges = workspace_source_ranges(workspace)
+        inbound = Hash.new(0)
+        route_counts = Hash.new(0)
+        occurrences_by_uri = Hash.new { |hash, uri| hash[uri] = Set.new }
+        target_cache = {}
+
+        graph.constant_references.each do |reference|
           next unless reference.respond_to?(:declaration)
 
-          next unless workspace_location?(reference.location, manifest)
+          location = reference.location
+          next unless workspace_location?(location, manifest)
 
-          target = reference.declaration
-          ordinal = ordinal_by_name[target.name]
-          counts[ordinal] += 1 if ordinal
+          target_declaration = reference.declaration
+          inbound_ordinal = ordinal_by_name[target_declaration.name]
+          inbound[inbound_ordinal] += 1 if inbound_ordinal
+
+          uri = location.uri
+          span = location_span(location)
+          source_ordinal = source_namespace_ordinal(uri, span, source_ranges)
+          next unless source_ordinal
+
+          target_key = [target_declaration.class.name, target_declaration.name]
+          target = target_cache.fetch(target_key) do
+            target_cache[target_key] = route_target(target_declaration, manifest, ordinal_by_name)
+          end
+          next unless target
+
+          target_kind, target_ordinal = target
+          occurrence = [source_ordinal, target_kind, target_ordinal, *span]
+          next unless occurrences_by_uri[uri].add?(occurrence)
+          next if target_kind.zero? && source_ordinal == target_ordinal
+
+          route_counts[[source_ordinal, target_kind, target_ordinal]] += 1
         rescue StandardError
           next
         end
+
+        routes = route_counts.sort_by { |(source, kind, target), _count| [source, kind, target] }
+          .map { |(source, kind, target), count| [source, kind, target, count] }
+        { inbound:, routes: }
+      end
+
+      def workspace_source_ranges(workspace)
+        ranges = Hash.new { |hash, uri| hash[uri] = [] }
+        workspace.fetch(:records).each_with_index do |(_declaration, definitions), ordinal|
+          definitions.each do |definition|
+            location = definition.location
+            ranges[location.uri] << [*location_span(location), ordinal]
+          end
+        end
+        ranges.transform_values { |records| index_source_ranges(records) }
+      end
+
+      def source_namespace_ordinal(uri, span, source_ranges)
+        start_line, start_column = span
+        ranges = source_ranges.fetch(uri, [])
+        low = 0
+        high = ranges.length
+        while low < high
+          middle = (low + high) / 2
+          range_start_line, range_start_column = ranges.fetch(middle)
+          if range_start_line < start_line || (range_start_line == start_line && range_start_column <= start_column)
+            low = middle + 1
+          else
+            high = middle
+          end
+        end
+        index = low - 1
+        while index >= 0
+          range = ranges.fetch(index)
+          return range.fetch(4) if source_range_contains?(range, span)
+
+          index = range.fetch(5) || -1
+        end
+        nil
+      end
+
+      def index_source_ranges(ranges)
+        indexed = []
+        parents = []
+        ranges.sort_by { |start_line, start_column, end_line, end_column, ordinal| [start_line, start_column, -end_line, -end_column, ordinal] }
+          .each do |range|
+            parents.pop while parents.any? && !source_range_contains?(indexed.fetch(parents.last), range)
+            indexed << [*range, parents.last]
+            parents << indexed.length - 1
+          end
+        indexed
+      end
+
+      def source_range_contains?(container, candidate)
+        starts_before = container.fetch(0) < candidate.fetch(0) ||
+          (container.fetch(0) == candidate.fetch(0) && container.fetch(1) <= candidate.fetch(1))
+        ends_after = container.fetch(2) > candidate.fetch(2) ||
+          (container.fetch(2) == candidate.fetch(2) && container.fetch(3) >= candidate.fetch(3))
+        starts_before && ends_after
+      end
+
+      def route_target(declaration, manifest, ordinal_by_name)
+        normalized = normalize_singleton_class(declaration)
+        workspace_ordinal = workspace_namespace_ordinal(normalized, ordinal_by_name)
+        return [0, workspace_ordinal] if workspace_ordinal
+
+        package_index, = dominant_package_definitions(declaration, manifest)
+        package_index, = dominant_package_definitions(normalized, manifest) unless package_index || normalized.equal?(declaration)
+        package_index ? [1, package_index] : nil
+      end
+
+      def workspace_namespace_ordinal(declaration, ordinal_by_name)
+        current = normalize_singleton_class(declaration)
+        seen = Set.new
+        while current
+          identity = [current.class.name, current.name]
+          break unless seen.add?(identity)
+
+          return ordinal_by_name.fetch(current.name) if namespace?(current) && ordinal_by_name.key?(current.name)
+
+          current = normalize_singleton_class(current.owner)
+        end
+        nil
+      rescue StandardError
+        nil
+      end
+
+      def normalize_singleton_class(declaration)
+        declaration.is_a?(Rubydex::SingletonClass) ? declaration.attached_class : declaration
+      rescue StandardError
+        declaration
       end
 
       def dominant_package_definitions(declaration, manifest)
@@ -358,7 +476,11 @@ module RubyLens
       end
 
       def site_key(location)
-        [location_path(location), location.start_line, location.start_column, location.end_line, location.end_column]
+        [location_path(location), *location_span(location)]
+      end
+
+      def location_span(location)
+        [location.start_line, location.start_column, location.end_line, location.end_column]
       end
 
       def namespace?(declaration)

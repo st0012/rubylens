@@ -27,7 +27,7 @@ Passing `output:` selects a custom path. Custom paths are written exactly where 
 
 `RubyLens.generate` remains a thin alias for `RubyLens.generate_report`.
 
-The report is fully local: it makes no network requests and needs neither Node nor a server to open. Drag to orbit, zoom toward the cursor, Shift-drag or use Pan mode to traverse dense clouds, or use the arrow keys to move the view. Show or focus core code, tests, and gems independently; sidebar highlights fly to a top-down view of the relevant star or system. Double-clicking a gem cloud pauses drift and expands that one existing system for a sharper, more separated view without loading another model.
+The report is fully local: it makes no network requests and needs neither Node nor a server to open. Drag to orbit, zoom toward the cursor, Shift-drag or use Pan mode to traverse dense clouds, or use the arrow keys to move the view. Show or focus core code, tests, and gems independently; sidebar highlights fly to a top-down view of the relevant star or system. Select a class, module, or gem to follow its strongest resolved constant-reference routes. The Core routes control builds a frozen overview of routes touching Core code. Double-clicking a gem cloud pauses drift and expands that one existing system for a sharper, more separated view without loading another model.
 
 ## Generate a Showcase
 
@@ -50,7 +50,7 @@ puts result.output_path
 
 Showcase generation and viewing need no Chrome, Chromium, Ferrum, FFmpeg, Node, or HTTP server. The HTML discloses enough aggregate structure to characterize a codebase, so review it before sharing.
 
-Repositories with many first-class applications or components can add a strict versioned `.rubylens.yml`, or pass `--config FILE`, to render them as separate Core systems. Use `--no-config` to force the unchanged single-system behavior. The full matching, ownership, privacy, geometry, and bounded-plotting contract is documented in [`docs/MONOREPO_BOUNDARIES.md`](docs/MONOREPO_BOUNDARIES.md). Reference-route experiments are paused and preserved in [`docs/REFERENCE_ROUTES_FUTURE.md`](docs/REFERENCE_ROUTES_FUTURE.md).
+Repositories with many first-class applications or components can add a strict versioned `.rubylens.yml`, or pass `--config FILE`, to render them as separate Core systems. Use `--no-config` to force the unchanged single-system behavior. The full matching, ownership, privacy, geometry, and bounded-plotting contract is documented in [`docs/MONOREPO_BOUNDARIES.md`](docs/MONOREPO_BOUNDARIES.md). The meaning, interaction, privacy, and scale contract for reference routes is documented in [`docs/REFERENCE_ROUTES.md`](docs/REFERENCE_ROUTES.md).
 
 ## Development
 

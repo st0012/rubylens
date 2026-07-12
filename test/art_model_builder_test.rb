@@ -107,6 +107,7 @@ class ArtModelBuilderTest < Minitest::Test
 
   def test_builds_a_deterministic_local_art_contract_with_hover_identity
     snapshot = {
+      "schema" => "rubylens.snapshot.v7",
       "project_name" => "Demo",
       "components" => [2],
       "namespace_names" => ["Demo::Core", "Demo::TestCase"],
@@ -124,6 +125,7 @@ class ArtModelBuilderTest < Minitest::Test
           "declarations" => [[0, 2, 1, 0, 1, 3, 4]],
         },
       ],
+      "reference_routes" => [[0, 0, 1, 3], [1, 1, 0, 2]],
       "warning_counts" => { "manifest" => 0, "index" => 0, "integrity" => 0 },
     }
     builder = RubyLens::ArtModelBuilder.new(seed: 12)
@@ -133,10 +135,10 @@ class ArtModelBuilderTest < Minitest::Test
 
     assert_equal(first, second)
     assert_equal(
-      "836e963fd7d1b593276605a78a807d0950837a937ff68670ab77e7629f04a1c6",
+      "a2b5f3d0a0c5564840d64d60817d3c36b661aeea609f702abc50edde1ea9a1b4",
       Digest::SHA256.hexdigest(JSON.generate(first)),
     )
-    assert_equal("rubylens.art.v7", first.fetch("schema"))
+    assert_equal("rubylens.art.v9", first.fetch("schema"))
     assert_equal("Demo", first.fetch("projectName"))
     assert_equal(2, first.dig("totals", "namespaces"))
     assert_equal(1, first.dig("totals", "dependencyStars"))
@@ -145,12 +147,72 @@ class ArtModelBuilderTest < Minitest::Test
     assert_equal(["Demo::Core", "Demo::TestCase"].sort, first.fetch("namespaceNames").sort)
     assert_equal(["example-gem"], first.fetch("packageNames"))
     assert_equal([0, 1, 1, 2, 1, 4, 3], first.fetch("packages").first.drop(1))
+    route_map = first.fetch("referenceRoutes").to_h do |source, target_kind, target, count|
+      target_name = target_kind.zero? ? first.fetch("namespaceNames").fetch(target) : first.fetch("packageNames").fetch(target)
+      [[first.fetch("namespaceNames").fetch(source), target_kind, target_name], count]
+    end
+    assert_equal(
+      {
+        ["Demo::Core", 0, "Demo::TestCase"] => 3,
+        ["Demo::TestCase", 1, "example-gem"] => 2,
+      },
+      route_map,
+    )
     refute(first.key?("dependencyDeclarationNames"))
     refute(first.key?("dependencyDeclarations"))
     refute_includes(JSON.generate(first), "Example::Client")
     assert(first.fetch("namespaces").all? { |row| row.length == 15 && row.all?(Integer) })
     assert_equal(4, first.fetch("namespaces").find { |row| row[2].zero? }.last)
     assert(first.fetch("dependencyStars").all? { |row| row.length == 8 && row.all?(Integer) })
+    assert(first.fetch("referenceRoutes").all? { |row| row.length == 4 && row.all?(Integer) })
+  end
+
+  def test_preserves_deterministic_snapshot_route_order_while_remapping
+    source_routes = [[2, 0, 0, 1], [0, 0, 1, 2], [1, 0, 2, 3]]
+    snapshot = {
+      "schema" => "rubylens.snapshot.v7",
+      "project_name" => "Route order",
+      "components" => [3],
+      "namespace_names" => ["A", "B", "C"],
+      "namespaces" => Array.new(3) { |index| [0, index, 0, *Array.new(11, 0)] },
+      "category_stats" => { "core" => [3, 0, 0, 0], "tests" => [0, 0, 0, 0] },
+      "packages" => [],
+      "reference_routes" => source_routes,
+      "warning_counts" => { "manifest" => 0, "index" => 0, "integrity" => 0 },
+    }
+
+    model = RubyLens::ArtModelBuilder.new(seed: 12).build(snapshot)
+    remapped_names = model.fetch("namespaceNames")
+    old_to_new = snapshot.fetch("namespace_names").to_h { |name| [snapshot.fetch("namespace_names").index(name), remapped_names.index(name)] }
+    expected = source_routes.map do |source, target_kind, target, count|
+      [old_to_new.fetch(source), target_kind, old_to_new.fetch(target), count]
+    end
+
+    refute_equal(expected.sort, expected, "fixture must distinguish order preservation from a second tuple sort")
+    assert_equal(expected, model.fetch("referenceRoutes"))
+  end
+
+  def test_configured_routes_only_keep_plotted_namespace_endpoints
+    snapshot = configured_snapshot.merge("schema" => "rubylens.snapshot.v7")
+    builder = RubyLens::ArtModelBuilder.new(seed: 12, namespace_budget: 3)
+    selected = builder.build(snapshot).fetch("namespaceNames")
+    selected_indexes = selected.map { |name| snapshot.fetch("namespace_names").index(name) }
+    omitted_index = (0...snapshot.fetch("namespace_names").length).find { |index| !selected_indexes.include?(index) }
+    source, target = selected_indexes.first(2)
+    snapshot["reference_routes"] = [
+      [source, 0, target, 9],
+      [omitted_index, 0, source, 8],
+      [source, 0, omitted_index, 7],
+    ]
+
+    model = builder.build(snapshot)
+
+    assert_equal("rubylens.art.v9", model.fetch("schema"))
+    assert_equal(1, model.fetch("referenceRoutes").length)
+    route = model.fetch("referenceRoutes").first
+    assert_equal(9, route.last)
+    assert_operator(route.fetch(0), :<, model.fetch("namespaces").length)
+    assert_operator(route.fetch(2), :<, model.fetch("namespaces").length)
   end
 
   def test_keeps_snapshot_v4_compatibility_without_bounded_aggregate_fields
