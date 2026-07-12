@@ -259,9 +259,17 @@
     const essentialMidPointCount = firstFaintDependency < 0 ? midPointCount : Math.min(midPointCount, firstFaintDependency);
     const groupNearDrawRanges = groupedMode ? model.groups.map(() => [0, 0]) : [];
     const groupMidDrawRanges = groupedMode ? model.groups.map(() => [0, 0]) : [];
+    const packageMidDrawRanges = groupedMode ? model.packages.map(() => []) : [];
     if (groupedMode) {
       for (let index = farPointCount; index < midPointCount; index += 1) {
-        const groupIndex = renderPoints[index].groupIndex;
+        const point = renderPoints[index];
+        if (point.category === "dependencies" && Number.isInteger(point.packageIndex) && !point.hub) {
+          const ranges = packageMidDrawRanges[point.packageIndex];
+          const previous = ranges[ranges.length - 1];
+          if (previous && previous[0] + previous[1] === index) previous[1] += 1;
+          else ranges.push([index, 1]);
+        }
+        const groupIndex = point.groupIndex;
         if (!Number.isInteger(groupIndex)) continue;
         const range = groupMidDrawRanges[groupIndex];
         if (range[1] === 0) range[0] = index;
@@ -284,7 +292,15 @@
         return [[0, farPointCount], mid, near].filter(range => range[1] > 0);
       }
       const overviewCount = interactiveMode && model.explorerLayout === "atlas" ? farPointCount : basePointCount;
-      return [[0, overviewCount]];
+      const ranges = [[0, overviewCount]];
+      if (expandedPackageIndex !== null) {
+        for (const [first, length] of packageMidDrawRanges[expandedPackageIndex] || []) {
+          const supplementalFirst = Math.max(first, overviewCount);
+          const supplementalLength = first + length - supplementalFirst;
+          if (supplementalLength > 0) ranges.push([supplementalFirst, supplementalLength]);
+        }
+      }
+      return ranges;
     }
     function updateQaDrawCounts() {
       if (!groupedMode || !qaMode) return;
@@ -627,7 +643,14 @@
       panY = target.panY;
     }
 
+    function atlasFaceOnCameraTargetForPoint(point, targetZoom) {
+      const [x, y, z] = point.position;
+      const perspective = 440 / (270 - z) * targetZoom;
+      return { yaw: 0, pitch: 0, zoom: targetZoom, panX: -x * perspective, panY: -y * perspective };
+    }
+
     function cameraTargetForPoint(point, targetZoom = point.hub ? 4 : point.category === "dependencies" ? 5 : 7) {
+      if (groupedMode && interactiveMode && model.explorerLayout === "atlas") return atlasFaceOnCameraTargetForPoint(point, targetZoom);
       const [x, y, z] = point.position;
       return {
         yaw: Math.atan2(x, z),
@@ -639,6 +662,7 @@
     }
 
     function topDownCameraTargetForPoint(point, targetZoom = point.hub ? 4 : point.category === "dependencies" ? 5 : 7) {
+      if (groupedMode && interactiveMode && model.explorerLayout === "atlas") return atlasFaceOnCameraTargetForPoint(point, targetZoom);
       const targetYaw = yaw;
       const [x, y, z] = point.position;
       const cy = Math.cos(targetYaw), sy = Math.sin(targetYaw);
@@ -985,7 +1009,9 @@
     }
 
     function clearExpandedPackage() {
+      if (expandedPackageIndex === null) return;
       expandedPackageIndex = null;
+      updateQaDrawCounts();
     }
 
     function clearSystemFocus() {
@@ -995,6 +1021,14 @@
       if (systemFocusButtons[previous]) systemFocusButtons[previous].setAttribute("aria-pressed", "false");
       document.body.removeAttribute("data-focused-group-index");
       document.dispatchEvent(new CustomEvent("rubylens:core-system-focus", { detail: { groupIndex: null } }));
+      updateQaDrawCounts();
+    }
+
+    function activateSystemRange(groupIndex, button = systemFocusButtons[groupIndex]) {
+      focusedGroupIndex = groupIndex;
+      if (button) button.setAttribute("aria-pressed", "true");
+      document.body.dataset.focusedGroupIndex = String(groupIndex);
+      document.dispatchEvent(new CustomEvent("rubylens:core-system-focus", { detail: { groupIndex } }));
       updateQaDrawCounts();
     }
 
@@ -1044,6 +1078,7 @@
       setCategoryVisible(point.category, true);
       clearActiveFact();
       clearSystemFocus();
+      if (Number.isInteger(point.groupIndex)) activateSystemRange(point.groupIndex);
       clearExpandedPackage();
       activeFactButton = button;
       activeFactButton.setAttribute("aria-pressed", "true");
@@ -1067,11 +1102,7 @@
       clearCategoryFocus();
       clearExpandedPackage();
       clearSystemFocus();
-      focusedGroupIndex = hub.groupIndex;
-      if (button) button.setAttribute("aria-pressed", "true");
-      document.body.dataset.focusedGroupIndex = String(hub.groupIndex);
-      document.dispatchEvent(new CustomEvent("rubylens:core-system-focus", { detail: { groupIndex: hub.groupIndex } }));
-      updateQaDrawCounts();
+      activateSystemRange(hub.groupIndex, button);
       setDrifting(false);
       selectedPoint = null;
       selectionLocked = false;
@@ -1103,6 +1134,7 @@
       }
       clearCategoryFocus();
       expandedPackageIndex = packageIndex;
+      updateQaDrawCounts();
       setDrifting(false);
       selectedPoint = null;
       selectionLocked = false;
