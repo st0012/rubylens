@@ -105,6 +105,29 @@ class IndexManifestTest < Minitest::Test
     end
   end
 
+  def test_normal_checkout_keeps_its_package_root_when_the_gemspec_is_an_internal_symlink
+    with_git_bundle([["git-widget", "1.2.3"]]) do |target, lockfile, checkout, parser, _source|
+      write_git_gem(
+        checkout,
+        name: "git-widget",
+        version: "1.2.3",
+        require_paths: ["lib"],
+        files: { "lib/git_widget.rb" => "class GitWidget\nend\n" },
+      )
+      metadata = checkout.join("metadata")
+      FileUtils.mkdir_p(metadata)
+      FileUtils.mv(checkout.join("git-widget.gemspec"), metadata.join("git-widget.gemspec"))
+      File.symlink(metadata.join("git-widget.gemspec"), checkout.join("git-widget.gemspec"))
+
+      manifest = build_manifest_with_parser(parser, root: target, lockfile: lockfile)
+      package = manifest.packages.fetch(0)
+
+      assert_equal(checkout.realpath, package.root)
+      assert_equal([checkout.join("lib/git_widget.rb").realpath.to_s], package.files)
+      assert_empty(manifest.dependency_warnings)
+    end
+  end
+
   def test_indexes_an_immutable_symlink_farm_through_logical_require_paths
     with_git_bundle([["git-widget", "1.2.3"]]) do |target, lockfile, checkout, parser, _source|
       store_root = target.parent.join("immutable-store")

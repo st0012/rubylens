@@ -226,11 +226,15 @@ module RubyLens
         return unless logical_gemspec.file? && logical_root.directory?
 
         canonical_checkout = checkout.realpath
-        canonical_root = logical_gemspec.realpath.dirname
+        resolved_gemspec_root = logical_gemspec.realpath.dirname
         logical_canonical_root = logical_root.realpath
-        return unless canonical_root.directory?
-        normal_checkout = !checkout.symlink? && Paths.inside?(canonical_root, canonical_checkout)
-        return unless normal_checkout || immutable_git_store_provider.trusted?(canonical_root)
+        return unless resolved_gemspec_root.directory?
+        normal_checkout = !checkout.symlink? &&
+          Paths.inside?(resolved_gemspec_root, canonical_checkout) &&
+          Paths.inside?(logical_canonical_root, canonical_checkout)
+        return unless normal_checkout || immutable_git_store_provider.trusted?(resolved_gemspec_root)
+
+        canonical_root = normal_checkout ? logical_canonical_root : resolved_gemspec_root
 
         GitPackagePaths.new(
           logical_root: logical_root,
