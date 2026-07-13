@@ -6,34 +6,6 @@ require "open3"
 class IndexManifestTest < Minitest::Test
   include SnapshotHelpers
 
-  OPEN3_CAPTURE_GUARD = Module.new do
-    def capture3(...)
-      if Thread.current[:rubylens_forbid_git_subprocess]
-        raise "unexpected Git subprocess"
-      end
-
-      super
-    end
-  end
-  LOCKFILE_PARSER_OVERRIDE = Module.new do
-    def new(...)
-      Thread.current[:rubylens_lockfile_parser] || super
-    end
-  end
-  GIT_REPOSITORY_OVERRIDE = Module.new do
-    def new(...)
-      if Thread.current.key?(:rubylens_workspace_files)
-        files = Thread.current[:rubylens_workspace_files]
-        Object.new.tap { |repository| repository.define_singleton_method(:selected_files) { files } }
-      else
-        super
-      end
-    end
-  end
-  Open3.singleton_class.prepend(OPEN3_CAPTURE_GUARD)
-  Bundler::LockfileParser.singleton_class.prepend(LOCKFILE_PARSER_OVERRIDE)
-  RubyLens::GitRepository.singleton_class.prepend(GIT_REPOSITORY_OVERRIDE)
-
   def test_builds_an_explicit_git_selected_workspace_manifest
     manifest = RubyLens::Index::Manifest.build(root: FIXTURE)
     relative = manifest.workspace_files.map { |path| Pathname(path).relative_path_from(FIXTURE).to_s }
@@ -84,11 +56,10 @@ class IndexManifestTest < Minitest::Test
       manifest = RubyLens::Index::Manifest.new(root: target, lockfile: lockfile)
       caller_bundle_root = Bundler.root
       caller_bundle_path = Bundler.bundle_path
-      caller_checkout = without_git_subprocesses { source.path }
+      Open3.expects(:capture3).never
+      caller_checkout = source.path
 
-      package = without_git_subprocesses do
-        manifest.send(:package_for, locked, Set["git-widget"])
-      end
+      package = manifest.send(:package_for, locked, Set["git-widget"])
 
       refute_equal(checkout.realpath, caller_checkout)
       refute(source.allow_git_ops?)
@@ -269,13 +240,12 @@ class IndexManifestTest < Minitest::Test
         require_paths: ["lib"],
         files: {},
       )
-      spec_index = without_git_subprocesses do
-        source.__send__(:set_install_path!, checkout)
-        source.specs
-      end
+      Open3.expects(:capture3).never
+      source.__send__(:set_install_path!, checkout)
+      spec_index = source.specs
       specification = spec_index.search(parser.specs.first).first
-      specification.define_singleton_method(:require_paths) { ["lib\0private"] }
-      source.define_singleton_method(:specs) { spec_index }
+      specification.stubs(:require_paths).returns(["lib\0private"])
+      source.stubs(:specs).returns(spec_index)
 
       manifest = build_manifest_with_parser(parser, root: target, lockfile: lockfile)
 
@@ -424,13 +394,12 @@ class IndexManifestTest < Minitest::Test
       [["private-git-gem", "4.5.6"]],
       remote: "https://secret-user@example.invalid/private/repository.git",
     ) do |target, lockfile, missing, parser, source|
-      source.define_singleton_method(:path) { raise "Git source path must not be used" }
-      source.define_singleton_method(:specs) { raise "Git source specs must not be used" }
+      source.expects(:path).never
+      source.expects(:specs).never
+      Open3.expects(:capture3).never
       manifest = RubyLens::Index::Manifest.new(root: target, lockfile: lockfile)
 
-      package = without_git_subprocesses do
-        manifest.send(:package_for, parser.specs.first, Set["private-git-gem"])
-      end
+      package = manifest.send(:package_for, parser.specs.first, Set["private-git-gem"])
 
       assert_nil(package)
       refute(source.allow_git_ops?)
@@ -453,12 +422,11 @@ class IndexManifestTest < Minitest::Test
       [["remote-enabled-gem", "1.0.0"]],
     ) do |target, lockfile, _checkout, parser, source|
       source.remote!
-      source.define_singleton_method(:extension_dir_name) { raise "Git checkout must not be resolved" }
+      source.expects(:extension_dir_name).never
+      Open3.expects(:capture3).never
       manifest = RubyLens::Index::Manifest.new(root: target, lockfile: lockfile)
 
-      package = without_git_subprocesses do
-        manifest.send(:package_for, parser.specs.first, Set["remote-enabled-gem"])
-      end
+      package = manifest.send(:package_for, parser.specs.first, Set["remote-enabled-gem"])
 
       assert_nil(package)
       assert(source.allow_git_ops?)
@@ -486,11 +454,10 @@ class IndexManifestTest < Minitest::Test
         require_paths: ["lib"],
         files: { "lib/inner_gem.rb" => "class InnerGem\nend\n" },
       )
-      spec_index_calls = 0
-      source.define_singleton_method(:specs) do
-        spec_index_calls += 1
-        super()
-      end
+      Open3.expects(:capture3).never
+      source.__send__(:set_install_path!, checkout)
+      spec_index = source.specs
+      source.expects(:specs).twice.returns(spec_index)
 
       manifest = build_manifest_with_parser(parser, root: target, lockfile: lockfile)
       repeated = build_manifest_with_parser(parser, root: target, lockfile: lockfile)
@@ -499,7 +466,6 @@ class IndexManifestTest < Minitest::Test
       outer_file = checkout.join("lib/outer_gem.rb").realpath.to_s
       overlapping_file = checkout.join("inner/lib/inner_gem.rb").realpath.to_s
 
-      assert_equal(2, spec_index_calls)
       assert_equal(outer_index, manifest.package_index_for(outer_file))
       assert_equal(inner_index, manifest.package_index_for(overlapping_file))
       assert_includes(manifest.packages.fetch(outer_index).files, overlapping_file)
@@ -555,19 +521,20 @@ class IndexManifestTest < Minitest::Test
       { "/tmp/gems/exact.rb" => 0, "/tmp/workspace.rb" => nil },
     )
     manifest.instance_variable_set(:@package_index_cache, {})
-    fallback_calls = 0
-    manifest.define_singleton_method(:uncached_package_index_for) do |path|
-      fallback_calls += 1
-      super(path)
-    end
+    nested = "/tmp/gems/nested/lib/example.rb"
+    elsewhere = "/tmp/elsewhere/example.rb"
+
+    assert_equal(1, manifest.send(:uncached_package_index_for, nested))
+    assert_nil(manifest.send(:uncached_package_index_for, elsewhere))
+    manifest.expects(:uncached_package_index_for).with(nested).once.returns(1)
+    manifest.expects(:uncached_package_index_for).with(elsewhere).once.returns(nil)
 
     assert_equal(0, manifest.package_index_for("/tmp/gems/exact.rb"))
     assert_nil(manifest.package_index_for("/tmp/workspace.rb"))
-    assert_equal(1, manifest.package_index_for("/tmp/gems/nested/lib/example.rb"))
-    assert_equal(1, manifest.package_index_for("/tmp/gems/nested/lib/example.rb"))
-    assert_nil(manifest.package_index_for("/tmp/elsewhere/example.rb"))
-    assert_nil(manifest.package_index_for("/tmp/elsewhere/example.rb"))
-    assert_equal(2, fallback_calls)
+    assert_equal(1, manifest.package_index_for(nested))
+    assert_equal(1, manifest.package_index_for(nested))
+    assert_nil(manifest.package_index_for(elsewhere))
+    assert_nil(manifest.package_index_for(elsewhere))
   end
 
   def test_package_lookup_preserves_package_ownership_for_workspace_overlap
@@ -692,39 +659,22 @@ class IndexManifestTest < Minitest::Test
   def build_manifest_with_parser(parser, root:, lockfile:, immutable_store_root: nil)
     manifest = RubyLens::Index::Manifest.new(root: root, lockfile: lockfile)
     if immutable_store_root
-      provider = Object.new
-      provider.define_singleton_method(:trusted?) do |path|
-        RubyLens::Paths.inside?(path, immutable_store_root)
-      end
-      manifest.define_singleton_method(:immutable_git_store_provider) { provider }
+      provider = mock("immutable Git store provider")
+      provider.stubs(:trusted?).returns(false)
+      provider.stubs(:trusted?).with { |path| RubyLens::Paths.inside?(path, immutable_store_root) }.returns(true)
+      manifest.stubs(:immutable_git_store_provider).returns(provider)
     end
 
-    with_lockfile_parser(parser) do
-      with_workspace_files([]) do
-        without_git_subprocesses { manifest.build }
-      end
+    repository = stub("Git repository", selected_files: [])
+    RubyLens::GitRepository.stubs(:new).with(manifest.root).returns(repository)
+    Bundler::LockfileParser.stubs(:new).with(lockfile.read).returns(parser)
+    Open3.expects(:capture3).never
+    begin
+      manifest.build
+    ensure
+      RubyLens::GitRepository.unstub(:new)
+      Bundler::LockfileParser.unstub(:new)
     end
-  end
-
-  def without_git_subprocesses
-    Thread.current[:rubylens_forbid_git_subprocess] = true
-    yield
-  ensure
-    Thread.current[:rubylens_forbid_git_subprocess] = nil
-  end
-
-  def with_lockfile_parser(parser)
-    Thread.current[:rubylens_lockfile_parser] = parser
-    yield
-  ensure
-    Thread.current[:rubylens_lockfile_parser] = nil
-  end
-
-  def with_workspace_files(files)
-    Thread.current[:rubylens_workspace_files] = files
-    yield
-  ensure
-    Thread.current[:rubylens_workspace_files] = nil
   end
 
   def checkout_snapshot(root)

@@ -2,6 +2,7 @@
 
 require "json"
 require "minitest/autorun"
+require "mocha/minitest"
 require "pathname"
 require "stringio"
 require "tmpdir"
