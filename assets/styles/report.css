@@ -54,6 +54,18 @@
     .systems-summary li button[aria-pressed="true"] { color: #fff; text-decoration: underline; text-underline-offset: 2px; }
     .systems-summary li small, .systems-summary p { color: #756e7e; font-size: 9px; font-variant-numeric: tabular-nums; }
     .systems-summary p { margin: 7px 0 0; }
+    .framework-reference { margin: 0 0 14px; border-block: 1px solid rgba(190,199,209,.13); padding: 12px 0; }
+    .framework-reference-header { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+    .framework-reference-header h3 { margin: 0; color: #e5e8ec; font-size: 11px; }
+    .framework-reference-header small { display: block; margin-top: 3px; color: #858b93; font-size: 9px; }
+    .framework-reference-header button { flex: none; }
+    .framework-reference-header button[aria-pressed="true"] { border-color: rgba(190,199,209,.38); background: rgba(190,199,209,.13); }
+    .framework-reference-header button:disabled { cursor: not-allowed; opacity: .55; }
+    .framework-reference-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+    .framework-reference-metric h4 { margin: 0 0 4px; color: #a8afb8; font-size: 9px; font-weight: 650; }
+    .framework-reference-metrics .ruby-breakdown { grid-template-columns: 1fr; margin: 0; padding: 8px 0; }
+    .framework-reference-scope, .framework-reference-status { margin: 9px 0 0; color: #858b93; font-size: 9px; line-height: 1.45; overflow-wrap: anywhere; }
+    .framework-reference-status { color: #a8afb8; }
     .section-actions button[aria-pressed="true"] { border-color: rgba(216,200,255,.36); background: rgba(216,200,255,.14); color: #fff; }
     .visibility { display: inline-flex; align-items: center; gap: 7px; margin-right: auto; color: #b8b1c0; font-size: 11px; cursor: pointer; }
     .visibility input { width: 15px; height: 15px; margin: 0; accent-color: #d8c8ff; }

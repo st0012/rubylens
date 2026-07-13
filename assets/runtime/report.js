@@ -20,12 +20,13 @@
     const tooltipMetrics = document.getElementById("tooltip-metrics");
     const fields = ["ancestorDepth", "definitionSites", "reopenings", "descendants", "references", "members"];
     const rubyMetricLabels = ["Classes", "Modules", "Methods", "Constants"];
+    const frameworkReference = interactiveMode ? model.frameworkReference : null;
     const signalWeights = {
       core: { ancestorDepth: .28, definitionSites: .2, reopenings: .18, descendants: .72, references: .82, members: .7 },
       tests: { ancestorDepth: .18, definitionSites: .25, reopenings: .18, descendants: .42, references: .85, members: .55 },
       dependencies: { ancestorDepth: .12, definitionSites: .35, reopenings: .2, descendants: .32, references: .48, members: .4 },
     };
-    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, focusedGroupIndex = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, sceneRenderer = null;
+    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, focusedGroupIndex = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, sceneRenderer = null, railsComparisonEnabled = false, railsComparisonNotice = "", railsReferenceVisible = null, railsReferenceToggle = null, railsReferenceStatus = null, railsReferenceMetrics = null;
     const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35, SHOWCASE_POINT_LIMIT = 50_000, OVERVIEW_PICK_LIMIT = 4_000, FOCUSED_PICK_LIMIT = 12_000;
     const SHOWCASE_PRESET = Object.freeze({
       "stageWidth": 1920,
@@ -219,6 +220,10 @@
       return { points, namespacePoints, interactivePoints, dependencyHubs, systemHubs };
     }
     const { points, namespacePoints, interactivePoints, dependencyHubs, systemHubs } = buildPoints();
+    const frameworkLandmark = frameworkReference?.kind === "rails"
+      ? dependencyHubs.find(point => point.packageIndex === frameworkReference.packageIndex)
+      : null;
+    document.documentElement.dataset.rubylensRailsLandmark = String(Boolean(frameworkLandmark));
     function boundedRangeSample(candidates, first, length, limit) {
       const available = Math.max(0, Math.min(length, candidates.length - first));
       if (available <= limit) return candidates.slice(first, first + available);
@@ -850,7 +855,8 @@
       }
       if (point.hub) {
         const expanded = expandedPackageIndex === point.packageIndex ? " · Expanded gem cloud · Escape to exit" : "";
-        tooltipContext.textContent = `${point.packageRole} · ${point.packageLocation}${expanded}`;
+        const landmark = point === frameworkLandmark ? " · Rails framework landmark" : "";
+        tooltipContext.textContent = `${point.packageRole} · ${point.packageLocation}${landmark}${expanded}`;
         addRubyMetrics(point.rubyCounts, allRubyMetricIndexes);
         return;
       }
@@ -1053,6 +1059,109 @@
       return breakdown;
     }
 
+    function railsReferenceUnavailableReason() {
+      if (!frameworkReference) return "";
+      if (Number(model.workspaceDensity[1] || 0) <= 0) return "Comparison unavailable: this report has no Core class or module namespaces.";
+      if (frameworkReference.status === "partial_family") {
+        return `Comparison unavailable: ${Number(frameworkReference.coverage?.[0] || 0)} of ${Number(frameworkReference.coverage?.[1] || 0)} version-aligned framework gems are available for indexing.`;
+      }
+      if (frameworkReference.status === "unsupported_family_shape") return "Comparison unavailable: this Rails framework family shape is not supported.";
+      if (frameworkReference.status === "rails_package_missing") return "Comparison unavailable: the locked Rails landmark was not indexed.";
+      return "Comparison unavailable: indexing coverage is incomplete.";
+    }
+
+    function createFrameworkMetric(title, rubyCounts) {
+      const metric = document.createElement("div");
+      metric.className = "framework-reference-metric";
+      const heading = document.createElement("h4");
+      heading.textContent = title;
+      metric.append(heading, createRubyBreakdown(title, rubyCounts, [0, 1]));
+      return metric;
+    }
+
+    function updateRailsReferenceControl() {
+      if (!frameworkReference || !railsReferenceStatus) return;
+      const comparable = frameworkReference.comparable === true && Number(model.workspaceDensity[1] || 0) > 0;
+      if (railsReferenceToggle) {
+        railsReferenceToggle.disabled = !comparable;
+        railsReferenceToggle.setAttribute("aria-pressed", String(comparable && railsComparisonEnabled));
+        railsReferenceToggle.textContent = comparable && railsComparisonEnabled ? "Comparing with Rails" : "Compare with Rails";
+      }
+      if (railsReferenceMetrics) {
+        railsReferenceMetrics.textContent = "";
+        if (comparable) {
+          railsReferenceMetrics.append(
+            createFrameworkMetric("Core host", model.categoryStats.core),
+            createFrameworkMetric(`Rails ${frameworkReference.version}`, frameworkReference.rubyCounts),
+          );
+        }
+      }
+      railsReferenceStatus.textContent = comparable
+        ? railsComparisonEnabled
+          ? railsReferenceVisible === false
+            ? "Scale glyph unavailable at the current view. Zoom out or reset the view to compare."
+            : `Same-scale glyph on. Rails ${frameworkReference.version} appears beside the whole Core host.`
+          : railsComparisonNotice || `Same-scale glyph off. Rails ${frameworkReference.version} is ready to compare with the whole Core host.`
+        : railsReferenceUnavailableReason();
+    }
+
+    function disableRailsComparison(notice) {
+      if (!railsComparisonEnabled) return;
+      railsComparisonEnabled = false;
+      railsReferenceVisible = null;
+      railsComparisonNotice = notice;
+      updateRailsReferenceControl();
+      requestRender();
+    }
+
+    function createRailsReferenceControl() {
+      const section = document.createElement("section");
+      section.className = "framework-reference";
+      const header = document.createElement("div");
+      header.className = "framework-reference-header";
+      const heading = document.createElement("h3");
+      heading.textContent = `Rails ${frameworkReference.version}`;
+      const coverage = document.createElement("small");
+      coverage.textContent = `${Number(frameworkReference.coverage?.[0] || 0)} / ${Number(frameworkReference.coverage?.[1] || 0)} framework gems available for indexing`;
+      const title = document.createElement("div");
+      title.append(heading, coverage);
+      const toggle = document.createElement("button");
+      toggle.id = "rails-reference-toggle";
+      toggle.type = "button";
+      toggle.setAttribute("aria-pressed", "false");
+      toggle.setAttribute("aria-label", `Compare the whole Core host with Rails ${frameworkReference.version}`);
+      toggle.addEventListener("click", () => {
+        const enabling = !railsComparisonEnabled;
+        railsComparisonNotice = "";
+        if (enabling) {
+          clearExplorationFocus();
+          setCategoryVisible("core", true);
+          setDrifting(false);
+          railsComparisonEnabled = true;
+          flyCamera({ yaw: -.36, pitch: .34, zoom: 1, panX: 0, panY: 0 });
+        } else {
+          railsComparisonEnabled = false;
+        }
+        railsReferenceVisible = null;
+        updateRailsReferenceControl();
+        requestRender();
+      });
+      railsReferenceToggle = toggle;
+      header.append(title, toggle);
+      railsReferenceMetrics = document.createElement("div");
+      railsReferenceMetrics.className = "framework-reference-metrics";
+      const scope = document.createElement("p");
+      scope.className = "framework-reference-scope";
+      scope.textContent = `First-party framework family: ${frameworkReference.members.join(", ")}. The Rails meta-gem and unrelated transitive gems are excluded.`;
+      railsReferenceStatus = document.createElement("p");
+      railsReferenceStatus.className = "framework-reference-status";
+      railsReferenceStatus.setAttribute("role", "status");
+      railsReferenceStatus.setAttribute("aria-live", "polite");
+      section.append(header, railsReferenceMetrics, scope, railsReferenceStatus);
+      updateRailsReferenceControl();
+      return section;
+    }
+
     function clearActiveFact() {
       if (activeFactButton) activeFactButton.setAttribute("aria-pressed", "false");
       activeFactButton = null;
@@ -1100,6 +1209,9 @@
     }
 
     function setCategoryVisible(category, visible) {
+      if (category === "core" && !visible) {
+        disableRailsComparison("Same-scale comparison turned off because Core code is hidden.");
+      }
       visibleCategories[category] = visible;
       if (visibilityInputs[category]) visibilityInputs[category].checked = visible;
       if (!visible && (selectedPoint?.category === category || focusedCategory === category)) clearExplorationFocus();
@@ -1107,6 +1219,7 @@
     }
 
     function focusCategory(category) {
+      disableRailsComparison("Same-scale comparison turned off because category focus leaves the whole-host overview.");
       if (focusedCategory === category) {
         clearExplorationFocus();
         return;
@@ -1125,6 +1238,7 @@
     }
 
     function focusPoint(point, button) {
+      disableRailsComparison("Same-scale comparison turned off because item focus leaves the whole-host overview.");
       if (activeFactButton === button) {
         clearExplorationFocus();
         return;
@@ -1149,6 +1263,7 @@
     }
 
     function focusSystem(groupIndex, button = systemFocusButtons[groupIndex]) {
+      disableRailsComparison("Same-scale comparison turned off because region focus leaves the whole-host overview.");
       const hub = systemHubs.find(point => point.groupIndex === Number(groupIndex));
       if (!hub) return false;
       if (focusedGroupIndex === hub.groupIndex) {
@@ -1179,6 +1294,7 @@
     }
 
     function focusDependencyPackage(packageIndex, button = null) {
+      disableRailsComparison("Same-scale comparison turned off because gem expansion leaves the whole-host overview.");
       const hub = dependencyHubs.find(point => point.packageIndex === packageIndex);
       if (!hub) return false;
 
@@ -1274,6 +1390,7 @@
           facts.append(button);
         }
         body.append(actions, createRubyBreakdown(meta.title, meta.rubyCounts, meta.metricIndexes));
+        if (category === "core" && frameworkReference) body.append(createRailsReferenceControl());
         if (category === "core" && configuredRegions) {
           const systems = document.createElement("section");
           systems.className = "systems-summary";
@@ -1539,6 +1656,81 @@
       context.strokeStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},.5)`; context.lineWidth = 1; context.stroke();
     }
 
+    function renderFrameworkLandmark() {
+      if (!frameworkLandmark?.screen) return;
+      const [x, y, size] = frameworkLandmark.screen;
+      const offset = Math.max(5, size + 3);
+      context.fillStyle = "rgba(211,218,226,.76)";
+      context.fillRect(x + offset, y - offset, 3, 3);
+    }
+
+    function renderRailsReference(matrix) {
+      if (!railsComparisonEnabled || !frameworkReference?.comparable || Number(model.workspaceDensity[1] || 0) <= 0) return;
+      const projected = project({ position: [0, 0, 0] }, matrix);
+      if (!projected) { setRailsReferenceVisible(false); return; }
+      const hostRadius = workspaceRadius * projected[2];
+      const referenceRadius = Number(frameworkReference.systemRadius || 0) / 1000 * projected[2];
+      if (!(referenceRadius > 0)) { setRailsReferenceVisible(false); return; }
+      context.save();
+      const label = `Rails ${frameworkReference.version} · same scale`;
+      context.font = "600 10px ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif";
+      const labelHalfWidth = context.measureText(label).width / 2;
+      const preferredOffset = hostRadius + referenceRadius + 16;
+      const minimumOffset = hostRadius + referenceRadius + 4;
+      const halfWidth = Math.max(referenceRadius, labelHalfWidth);
+      const padding = 12;
+      const minX = padding + halfWidth;
+      const maxX = sceneRight - padding - halfWidth;
+      const minY = padding + referenceRadius + 14;
+      const maxY = sceneBottom - padding - referenceRadius;
+      const candidates = [
+        [projected[0] + preferredOffset, projected[1]],
+        [projected[0] - preferredOffset, projected[1]],
+        [projected[0], projected[1] - preferredOffset],
+        [projected[0], projected[1] + preferredOffset],
+        [maxX, minY],
+        [minX, minY],
+        [maxX, maxY],
+        [minX, maxY],
+      ];
+      const position = candidates.find(([x, y]) => (
+        minX <= maxX && minY <= maxY && x >= minX && x <= maxX && y >= minY && y <= maxY &&
+        Math.hypot(x - projected[0], y - projected[1]) >= minimumOffset
+      ));
+      if (!position) { context.restore(); setRailsReferenceVisible(false); return; }
+      setRailsReferenceVisible(true);
+      const [x, y] = position;
+      context.fillStyle = "rgba(151,161,173,.06)";
+      context.strokeStyle = "rgba(190,199,209,.72)";
+      context.lineWidth = 1;
+      context.setLineDash([3, 4]);
+      context.beginPath();
+      context.arc(x, y, referenceRadius, 0, Math.PI * 2);
+      context.fill();
+      context.stroke();
+      context.setLineDash([]);
+      context.beginPath();
+      context.moveTo(x - referenceRadius, y);
+      context.lineTo(x + referenceRadius, y);
+      context.moveTo(x - referenceRadius, y - 3);
+      context.lineTo(x - referenceRadius, y + 3);
+      context.moveTo(x + referenceRadius, y - 3);
+      context.lineTo(x + referenceRadius, y + 3);
+      context.strokeStyle = "rgba(190,199,209,.48)";
+      context.stroke();
+      context.fillStyle = "rgba(218,223,230,.86)";
+      context.textAlign = "center";
+      context.fillText(label, x, y - referenceRadius - 5);
+      context.restore();
+    }
+
+    function setRailsReferenceVisible(visible) {
+      if (railsReferenceVisible === visible) return;
+      railsReferenceVisible = visible;
+      document.documentElement.dataset.rubylensRailsReferenceVisible = String(visible);
+      updateRailsReferenceControl();
+    }
+
     function render(timestamp) {
       animationFrame = 0;
       updateCameraFlight(timestamp);
@@ -1556,6 +1748,8 @@
         for (const point of pickingPoints) updateProjectedPoint(point, matrix);
         if (selectedPoint && !pickingPoints.includes(selectedPoint)) updateProjectedPoint(selectedPoint, matrix);
         renderSelectionOverlay();
+        renderFrameworkLandmark();
+        renderRailsReference(matrix);
         if (selectedPoint) {
           if (cameraFlight) tooltip.hidden = true;
           else positionTooltip(selectedPoint);
@@ -1625,6 +1819,8 @@
         }
       }}
       context.globalCompositeOperation = "source-over";
+      renderFrameworkLandmark();
+      renderRailsReference(matrix);
       if (selectedPoint) {
         if (cameraFlight) tooltip.hidden = true;
         else positionTooltip(selectedPoint);

@@ -168,7 +168,53 @@ class ArtModelBuilderTest < Minitest::Test
     )
   end
 
+  def test_maps_the_optional_rails_reference_to_art_v9_and_the_shuffled_package_index
+    snapshot = unconfigured_snapshot
+    snapshot["packages"] = [
+      { "name" => "rack", "role" => 1, "location" => 1, "ruby_counts" => [1, 0, 0, 0], "declarations" => [] },
+      { "name" => "rails", "role" => 0, "location" => 1, "ruby_counts" => [0, 0, 0, 0], "declarations" => [] },
+    ]
+    snapshot["framework_reference"] = ready_rails_reference
+
+    model = RubyLens::ArtModelBuilder.new(seed: 12).build(snapshot)
+    reference = model.fetch("frameworkReference")
+
+    assert_equal("rubylens.art.v9", model.fetch("schema"))
+    assert_equal("rails", reference.fetch("kind"))
+    assert_equal([20, 10], reference.fetch("rubyCounts"))
+    assert_equal((RubyLens::Model::WorkspaceLayout.radius(30) * 1_000).round, reference.fetch("systemRadius"))
+    assert_equal(model.fetch("packageNames").index("rails"), reference.fetch("packageIndex"))
+    refute(reference.key?("declarations"))
+    refute(reference.key?("files"))
+  end
+
+  def test_maps_the_same_whole_host_rails_reference_for_configured_art_v9
+    snapshot = configured_snapshot
+    snapshot["packages"] = [
+      { "name" => "rack", "role" => 1, "location" => 1, "ruby_counts" => [1, 0, 0, 0], "declarations" => [] },
+      { "name" => "rails", "role" => 0, "location" => 1, "ruby_counts" => [0, 0, 0, 0], "declarations" => [] },
+    ]
+    snapshot["framework_reference"] = ready_rails_reference
+
+    model = RubyLens::ArtModelBuilder.new(seed: 12).build(snapshot)
+    reference = model.fetch("frameworkReference")
+
+    assert_equal("rubylens.art.v9", model.fetch("schema"))
+    assert_equal([20, 10], reference.fetch("rubyCounts"))
+    assert_equal((RubyLens::Model::WorkspaceLayout.radius(30) * 1_000).round, reference.fetch("systemRadius"))
+    assert_equal(model.fetch("packageNames").index("rails"), reference.fetch("packageIndex"))
+    assert_equal((RubyLens::Model::WorkspaceLayout.radius(3) * 1_000).round, model.fetch("workspaceRadius"))
+  end
+
   private
+
+  def ready_rails_reference
+    {
+      "kind" => "rails", "version" => "8.1.1", "members" => %w[actionpack railties],
+      "available_members" => %w[actionpack railties], "coverage" => [2, 2], "status" => "ready",
+      "comparable" => true, "ruby_counts" => [20, 10], "package_index" => 1,
+    }
+  end
 
   def empty_snapshot
     {

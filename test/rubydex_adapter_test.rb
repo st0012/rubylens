@@ -182,6 +182,73 @@ class RubydexAdapterTest < Minitest::Test
     assert_nil(RubyLens::Index::RubydexAdapter.new.send(:package_index_for_location, location, manifest))
   end
 
+  def test_counts_one_canonical_rails_namespace_when_any_aligned_definition_is_core
+    Dir.mktmpdir("rubylens-rails-reference-") do |directory|
+      root = Pathname(directory)
+      core = root.join("lib/framework.rb")
+      test = root.join("test/framework_test.rb")
+      core.dirname.mkpath
+      test.dirname.mkpath
+      core.write("# public synthetic fixture\n")
+      test.write("# public synthetic fixture\n")
+      location = Data.define(:uri)
+      definition = Data.define(:location)
+      declaration = Data.define(:definitions)
+      package = Data.define(:root)
+      manifest = Data.define(:packages).new([package.new(root:)])
+      counted = []
+      reference = Object.new
+      reference.define_singleton_method(:detected?) { true }
+      reference.define_singleton_method(:family_package_index?) { |index| index == 0 }
+      reference.define_singleton_method(:add_namespace) { |kind| counted << kind }
+      adapter = RubyLens::Index::RubydexAdapter.new
+      adapter.define_singleton_method(:namespace?) { |_declaration| true }
+      adapter.define_singleton_method(:canonical_namespace_definition?) { |_declaration, _definition| true }
+      adapter.define_singleton_method(:namespace_kind) { |_declaration| 0 }
+      adapter.define_singleton_method(:package_index_for_location) { |_location, _manifest| 0 }
+      rails_namespace = declaration.new(definitions: [
+        definition.new(location: location.new(uri: "file://#{test}")),
+        definition.new(location: location.new(uri: "file://#{core}")),
+        definition.new(location: location.new(uri: "file://#{core}")),
+      ])
+
+      adapter.send(:collect_rails_namespace, reference, rails_namespace, manifest)
+
+      assert_equal([0], counted, "reopened definitions must still count one canonical namespace")
+    end
+  end
+
+  def test_excludes_test_only_rails_namespaces
+    Dir.mktmpdir("rubylens-rails-reference-") do |directory|
+      root = Pathname(directory)
+      test = root.join("spec/framework_spec.rb")
+      test.dirname.mkpath
+      test.write("# public synthetic fixture\n")
+      location = Data.define(:uri)
+      definition = Data.define(:location)
+      declaration = Data.define(:definitions)
+      package = Data.define(:root)
+      manifest = Data.define(:packages).new([package.new(root:)])
+      counted = []
+      reference = Object.new
+      reference.define_singleton_method(:detected?) { true }
+      reference.define_singleton_method(:family_package_index?) { |index| index == 0 }
+      reference.define_singleton_method(:add_namespace) { |kind| counted << kind }
+      adapter = RubyLens::Index::RubydexAdapter.new
+      adapter.define_singleton_method(:namespace?) { |_declaration| true }
+      adapter.define_singleton_method(:canonical_namespace_definition?) { |_declaration, _definition| true }
+      adapter.define_singleton_method(:namespace_kind) { |_declaration| 1 }
+      adapter.define_singleton_method(:package_index_for_location) { |_location, _manifest| 0 }
+      rails_namespace = declaration.new(definitions: [
+        definition.new(location: location.new(uri: "file://#{test}")),
+      ])
+
+      adapter.send(:collect_rails_namespace, reference, rails_namespace, manifest)
+
+      assert_empty(counted)
+    end
+  end
+
   def test_compacts_dependency_declarations_without_embedding_their_names
     Dir.mktmpdir("rubylens-package-declarations-") do |directory|
       lib = File.join(directory, "lib")

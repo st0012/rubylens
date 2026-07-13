@@ -12,8 +12,9 @@ module RubyLens
   module Index
     class Manifest
       Package = Data.define(:name, :version, :role, :location, :root, :files)
+      RailsReference = Data.define(:version, :direct_dependencies)
 
-      attr_reader :root, :files, :workspace_files, :tracked_workspace_files, :packages, :warnings, :boundaries
+      attr_reader :root, :files, :workspace_files, :tracked_workspace_files, :packages, :rails_reference, :warnings, :boundaries
 
       def self.build(root:, lockfile: nil, configuration: Configuration.resolve(root: root))
         new(root: root, lockfile: lockfile, configuration: configuration).tap(&:build)
@@ -101,6 +102,7 @@ module RubyLens
         end
 
         parser = Bundler::LockfileParser.new(@lockfile.read)
+        build_rails_reference(parser)
         direct_names = parser.dependencies.keys.to_set
         excluded_names = tool_only_dependency_names(parser, direct_names)
         parser.specs.uniq { |specification| [specification.name, specification.version.to_s] }.each do |locked|
@@ -111,6 +113,16 @@ module RubyLens
         end
       rescue Bundler::LockfileError, Errno::EACCES => error
         @warnings << "Gemfile.lock could not be read: #{error.class}."
+      end
+
+      def build_rails_reference(parser)
+        locked = parser.specs.find { |specification| specification.name == "rails" }
+        return unless locked
+
+        @rails_reference = RailsReference.new(
+          version: locked.version.to_s,
+          direct_dependencies: locked.dependencies.map(&:name).uniq.sort.freeze,
+        )
       end
 
       def package_for(locked, direct_names)

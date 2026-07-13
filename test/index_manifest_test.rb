@@ -92,6 +92,38 @@ class IndexManifestTest < Minitest::Test
     assert_nil(manifest.package_index_for(ROOT.join("README.md")))
   end
 
+  def test_detects_only_the_exact_locked_rails_spec_and_records_its_direct_shape
+    dependency = Data.define(:name)
+    specification = Data.define(:name, :version, :dependencies)
+    parser = Struct.new(:specs).new([
+      specification.new(name: "rubocop-rails", version: "2.0.0", dependencies: []),
+      specification.new(
+        name: "rails",
+        version: "8.1.1",
+        dependencies: [dependency.new(name: "railties"), dependency.new(name: "actionpack")],
+      ),
+    ])
+    manifest = RubyLens::Index::Manifest.allocate
+
+    manifest.send(:build_rails_reference, parser)
+
+    assert_equal("8.1.1", manifest.rails_reference.version)
+    assert_equal(%w[actionpack railties], manifest.rails_reference.direct_dependencies)
+  end
+
+  def test_does_not_detect_rails_integrations_as_the_rails_meta_gem
+    specification = Data.define(:name, :version, :dependencies)
+    parser = Struct.new(:specs).new([
+      specification.new(name: "rubocop-rails", version: "2.0.0", dependencies: []),
+      specification.new(name: "vite_rails", version: "3.0.0", dependencies: []),
+    ])
+    manifest = RubyLens::Index::Manifest.allocate
+
+    manifest.send(:build_rails_reference, parser)
+
+    assert_nil(manifest.rails_reference)
+  end
+
   def test_package_lookup_preserves_nested_root_priority_and_caches_fallbacks
     manifest = RubyLens::Index::Manifest.allocate
     manifest.instance_variable_set(:@package_roots, [[Pathname("/tmp/gems/nested"), 1], [Pathname("/tmp/gems"), 0]])

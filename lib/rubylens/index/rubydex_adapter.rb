@@ -2,8 +2,10 @@
 
 require "digest"
 require "rubydex"
+require "pathname"
 require "uri"
 require_relative "../model/dependency_aggregation"
+require_relative "../model/rails_framework_reference"
 
 module RubyLens
   module Index
@@ -35,6 +37,9 @@ module RubyLens
           "category_stats" => collected.fetch(:category_stats),
           "dependency_signal_maxima" => collected.fetch(:dependency_aggregation).signal_maxima,
           "packages" => build_package_rows(collected.fetch(:dependency_aggregation), manifest),
+          "framework_reference" => collected.fetch(:rails_reference).build(
+            index_complete: index_errors.empty?, integrity_complete: integrity_failures.empty?
+          ),
           "warning_counts" => {
             "manifest" => manifest.warnings.length,
             "index" => index_errors.length,
@@ -62,6 +67,7 @@ module RubyLens
         group_ruby_counts = if configured_boundaries?(manifest)
           Array.new(manifest.boundaries.groups.length) { { "core" => Array.new(4, 0), "tests" => Array.new(4, 0) } }
         end
+        rails_reference = Model::RailsFrameworkReference.new(manifest)
 
         declarations.each do |declaration|
           if namespace?(declaration)
@@ -72,9 +78,30 @@ module RubyLens
           end
           collect_category_stat(category_stats, declaration, manifest, group_ruby_counts)
           collect_dependency_declaration(aggregation, declaration, manifest)
+          collect_rails_namespace(rails_reference, declaration, manifest)
         end
 
-        { workspace_records: records, category_stats:, dependency_aggregation: aggregation, group_ruby_counts: }
+        { workspace_records: records, category_stats:, dependency_aggregation: aggregation, group_ruby_counts:, rails_reference: }
+      end
+
+      def collect_rails_namespace(reference, declaration, manifest)
+        return unless reference.detected? && namespace?(declaration)
+
+        eligible = declaration.definitions.any? do |definition|
+          next false unless canonical_namespace_definition?(declaration, definition)
+
+          package_index = package_index_for_location(definition.location, manifest)
+          reference.family_package_index?(package_index) && dependency_core_location?(definition.location, package_index, manifest)
+        end
+        reference.add_namespace(namespace_kind(declaration)) if eligible
+      end
+
+      def dependency_core_location?(location, package_index, manifest)
+        package = manifest.packages.fetch(package_index)
+        relative = Pathname(location_path(location)).realpath.relative_path_from(package.root)
+        relative.each_filename.none? { |segment| TEST_SEGMENTS.include?(segment) }
+      rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP, ArgumentError
+        false
       end
 
       def workspace_namespaces(records, manifest)

@@ -80,6 +80,9 @@ module RubyLens
         "warningCounts" => snapshot.fetch("warning_counts"),
       }
       model["regionNames"] = source_regions.map { |region| region.fetch(:name) } if configured
+      if (reference = snapshot["framework_reference"])
+        model["frameworkReference"] = build_framework_reference(reference, package_model.fetch(:package_index))
+      end
       model
     end
 
@@ -224,8 +227,29 @@ module RubyLens
         end
       end
       {
-        packages:, package_names:, indexed_dependency_count:,
+        packages:, package_names:, package_index:, indexed_dependency_count:,
         dependencies: dependencies.first(DEPENDENCY_ROW_LIMIT),
+      }
+    end
+
+    def build_framework_reference(reference, package_index)
+      namespace_count = reference.fetch("ruby_counts").first(2).sum
+      system_radius = if reference.fetch("comparable")
+        scale_geometry(Model::WorkspaceLayout.radius(namespace_count))
+      else
+        0
+      end
+      {
+        "kind" => reference.fetch("kind"),
+        "version" => reference.fetch("version"),
+        "members" => reference.fetch("members"),
+        "availableMembers" => reference.fetch("available_members"),
+        "coverage" => reference.fetch("coverage"),
+        "status" => reference.fetch("status"),
+        "comparable" => reference.fetch("comparable"),
+        "rubyCounts" => reference.fetch("ruby_counts"),
+        "systemRadius" => system_radius,
+        "packageIndex" => reference["package_index"] && package_index.fetch(reference.fetch("package_index")),
       }
     end
 
