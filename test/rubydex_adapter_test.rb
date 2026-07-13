@@ -164,6 +164,50 @@ class RubydexAdapterTest < Minitest::Test
     assert_equal(captured.uniq, captured)
   end
 
+  def test_reuses_indexed_documents_for_package_audit_and_workspace_rspec_projection
+    Dir.mktmpdir("rubylens-rspec-package-documents-") do |directory|
+      root = Pathname(directory).join("workspace")
+      workspace_spec = root.join("spec/workspace_spec.rb")
+      dependency_root = root.join("vendor/bundle/ruby/4.0.0/bundler/gems/dependency-abc123")
+      dependency_spec = dependency_root.join("spec/dependency_spec.rb")
+      FileUtils.mkdir_p(workspace_spec.dirname)
+      FileUtils.mkdir_p(dependency_spec.dirname)
+      workspace_spec.write("describe(\"workspace\") { it(\"kept\") {} }\n")
+      dependency_spec.write("DEPENDENCY_CONST = 1; describe(\"dependency\") { specify(\"hidden\") {} }\n")
+
+      package = RubyLens::Index::Manifest::Package.new(
+        "dependency", "1.0.0", "direct", "external", dependency_root.realpath,
+        [dependency_spec.realpath.to_s].freeze,
+      )
+      manifest = Struct.new(:root, :files, :packages, :warnings, :dependency_warnings).new(
+        root.realpath,
+        [workspace_spec.realpath.to_s, dependency_spec.realpath.to_s].freeze,
+        [package].freeze,
+        [],
+        [],
+      )
+      manifest.define_singleton_method(:workspace_path?) do |path|
+        RubyLens::Paths.inside?(path, root.realpath)
+      end
+      manifest.define_singleton_method(:relative_workspace_path) do |path|
+        Pathname(path).realpath.relative_path_from(root.realpath).to_s
+      rescue ArgumentError, Errno::ENOENT
+        nil
+      end
+      manifest.define_singleton_method(:package_index_for) do |path|
+        Pathname(path).realpath == dependency_spec.realpath ? 0 : nil
+      end
+
+      snapshot = RubyLens::Index::RubydexAdapter.new.index(manifest)
+      package_row = snapshot.fetch("packages").fetch(0)
+
+      assert_equal(["RSpec example group #000001"], snapshot.fetch("namespace_names"))
+      assert_equal(1, snapshot.fetch("category_stats").fetch("tests").fetch(2))
+      assert_equal(1, package_row.fetch("declaration_count"))
+      refute_empty(package_row.fetch("declarations"))
+    end
+  end
+
   def test_compacts_dependency_declarations_without_embedding_their_names
     Dir.mktmpdir("rubylens-package-declarations-") do |directory|
       lib = File.join(directory, "lib")

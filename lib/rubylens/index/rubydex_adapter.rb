@@ -24,7 +24,11 @@ module RubyLens
         graph.resolve
         integrity_failures = Array(graph.check_integrity)
         collected = collect_declarations(graph.declarations, manifest)
-        rspec = RSpecExtractor.new.call(graph: graph, manifest: manifest)
+        rspec = RSpecExtractor.new.call(
+          graph: graph,
+          manifest: manifest,
+          package_document_paths: @indexed_package_document_paths,
+        )
         workspace = workspace_namespaces(collected.fetch(:workspace_records), rspec.groups, manifest)
         inbound_references = inbound_workspace_references(graph, manifest, workspace.fetch(:ordinal_by_name))
         category_stats = collected.fetch(:category_stats)
