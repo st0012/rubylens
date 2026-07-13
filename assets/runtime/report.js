@@ -84,6 +84,11 @@
     const unit = (seed, channel) => hash(seed, channel) / 4294967296;
     const normal = (seed, channel) => Math.sqrt(-2 * Math.log(Math.max(unit(seed, channel), 1e-7))) * Math.cos(6.283185 * unit(seed, channel + 1));
     const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+    function explorerExposureForZoom(zoomLevel) {
+      const zoomStops = Math.max(0, Math.log2(zoomLevel));
+      const easedStops = zoomStops * zoomStops / (zoomStops + .5);
+      return 1 / (1 + .65 * easedStops);
+    }
 
     function normalizedSignals(values) {
       return fields.map((field, index) => Math.log1p(values[index] || 0) / Math.log1p(model.domains[field] || 1));
@@ -1376,6 +1381,7 @@
       context.globalCompositeOperation = "lighter";
       const matrix = [Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch)];
       const deepDetail = clamp(Math.log2(Math.max(1, zoom)) / 5, 0, 1);
+      const exposure = explorerExposureForZoom(zoom);
       for (const point of renderPoints) {
         point.screen = null;
         if (point.hub) point.cloudScreenRadius = null;
@@ -1392,7 +1398,7 @@
         const emphasis = expandedPackageIndex !== null
           ? (focusedPackagePoint ? 1 : contextVisibility.package)
           : selectionLocked && selectedPoint ? (point === selectedPoint ? 1 : contextVisibility.selection) : focusedCategory && point.category !== focusedCategory ? contextVisibility.category : 1;
-        const visibleAlpha = focusedPackagePoint ? Math.max(.34, alpha) : alpha * emphasis;
+        const visibleAlpha = (focusedPackagePoint ? Math.max(.34, alpha) : alpha * emphasis) * exposure;
         const colour = colours[point.category];
         point.screen = [x, y, size];
         if (point.hub) {
