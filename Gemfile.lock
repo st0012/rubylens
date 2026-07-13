@@ -13,8 +13,11 @@ GEM
     minitest (6.0.6)
       drb (~> 2.0)
       prism (~> 1.5)
+    mocha (3.1.0)
+      ruby2_keywords (>= 0.0.5)
     prism (1.9.0)
     rake (13.4.2)
+    ruby2_keywords (0.0.5)
     rubydex (0.2.9)
     rubydex (0.2.9-aarch64-linux)
     rubydex (0.2.9-arm64-darwin)
@@ -30,6 +33,7 @@ PLATFORMS
 
 DEPENDENCIES
   minitest (~> 6.0)
+  mocha (~> 3.1)
   rake (~> 13.3)
   rubylens!
 
@@ -37,8 +41,10 @@ CHECKSUMS
   base64 (0.3.0) sha256=27337aeabad6ffae05c265c450490628ef3ebd4b67be58257393227588f5a97b
   drb (2.2.3) sha256=0b00d6fdb50995fe4a45dea13663493c841112e4068656854646f418fda13373
   minitest (6.0.6) sha256=153ea36d1d987a62942382b61075745042a2b3123b1cd48f4c3675af9cc7d6f1
+  mocha (3.1.0) sha256=75f42d69ebfb1f10b32489dff8f8431d37a418120ecdfc07afe3bc183d4e1d56
   prism (1.9.0) sha256=7b530c6a9f92c24300014919c9dcbc055bf4cdf51ec30aed099b06cd6674ef85
   rake (13.4.2) sha256=cb825b2bd5f1f8e91ca37bddb4b9aaf345551b4731da62949be002fa89283701
+  ruby2_keywords (0.0.5) sha256=ffd13740c573b7301cf7a2e61fc857b2a8e3d3aff32545d6f8300d8bae10e3ef
   rubydex (0.2.9) sha256=c4c0f707586c01e59926b62a8193df38b5d00b7c35d35677dab1fb059903e289
   rubydex (0.2.9-aarch64-linux) sha256=74391fd22c4b4ccca1b695d634daad13326e7cc81567e96549da17c5031265bb
   rubydex (0.2.9-arm64-darwin) sha256=1c014e3c244102739914d528202b1d0f54bdc3d1f85667b81b65ea22aabfa560
