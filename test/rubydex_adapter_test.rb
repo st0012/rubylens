@@ -5,6 +5,8 @@ require_relative "test_helper"
 class RubydexAdapterTest < Minitest::Test
   include SnapshotHelpers
 
+  RSPEC_FIXTURE = ROOT.join("test/fixtures/rspec_repo")
+
   def test_real_adapter_returns_hover_identity_without_paths_or_source
     manifest = RubyLens::Index::Manifest.build(root: FIXTURE)
     adapter = RubyLens::Index::RubydexAdapter.new
@@ -29,6 +31,33 @@ class RubydexAdapterTest < Minitest::Test
     refute_includes(serialized, "PRIVATE_VALUE")
     assert_nil(adapter.instance_variable_get(:@location_path_cache))
     assert_nil(adapter.instance_variable_get(:@workspace_location_cache))
+  end
+
+  def test_models_raw_rspec_references_as_statless_nonidentifying_proxies
+    manifest = RubyLens::Index::Manifest.build(root: RSPEC_FIXTURE)
+    snapshot = RubyLens::Index::RubydexAdapter.new.index(manifest)
+    names = snapshot.fetch("namespace_names")
+    rows = names.zip(snapshot.fetch("namespaces")).select do |name, _row|
+      name.start_with?("RSpec example group #")
+    end
+    serialized = JSON.generate(snapshot)
+
+    assert_equal(9, rows.length)
+    assert_equal([9, 0, 14, 0], snapshot.fetch("category_stats").fetch("tests"))
+    assert(rows.all? { |_name, row| row.length == 14 && row.all?(Integer) })
+    assert(rows.all? { |_name, row| row[1] == 0 && row[2] == 1 })
+    assert(rows.all? { |_name, row| row.drop(3).all?(&:zero?) })
+    assert_equal(rows.length, rows.map(&:first).uniq.length)
+    assert_equal(
+      (1..9).map { |index| format("RSpec example group #%06d", index) },
+      rows.map(&:first),
+    )
+    refute_includes(serialized, RSPEC_FIXTURE.to_s)
+    refute_includes(serialized, "service_spec.rb")
+    refute_includes(serialized, "space café")
+    refute_includes(serialized, "private shared behavior")
+    refute_includes(serialized, "crème brûlée")
+    refute_includes(serialized, "not an RSpec group")
   end
 
   def test_preserves_known_project_acronyms

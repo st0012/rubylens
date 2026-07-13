@@ -37,22 +37,14 @@ module RubyLens
     end
 
     def selected_files
-      output, status = capture("ls-files", "-z", "--cached", "--others", "--exclude-standard")
-      raise ExtractionError, "failed to enumerate tracked and unignored files" unless status.success?
+      indexable_files(
+        "ls-files", "-z", "--cached", "--others", "--exclude-standard",
+        failure: "failed to enumerate tracked and unignored files",
+      )
+    end
 
-      output.split("\0").filter_map do |relative_to_git|
-        next unless INDEXABLE_EXTENSIONS.include?(File.extname(relative_to_git))
-
-        absolute = @git_root.join(relative_to_git).cleanpath
-        next unless Paths.inside?(absolute, @target_root)
-        next unless absolute.file?
-        resolved = absolute.realpath
-        next unless Paths.inside?(resolved, @target_root.realpath)
-
-        resolved.to_s
-      rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP
-        nil
-      end.sort
+    def tracked_files
+      indexable_files("ls-files", "-z", "--cached", failure: "failed to enumerate tracked files")
     end
 
     def exclude_local(path, description: "report")
@@ -92,6 +84,25 @@ module RubyLens
     end
 
     private
+
+    def indexable_files(*arguments, failure:)
+      output, status = capture(*arguments)
+      raise ExtractionError, failure unless status.success?
+
+      output.split("\0").filter_map do |relative_to_git|
+        next unless INDEXABLE_EXTENSIONS.include?(File.extname(relative_to_git))
+
+        absolute = @git_root.join(relative_to_git).cleanpath
+        next unless Paths.inside?(absolute, @target_root)
+        next unless absolute.file?
+        resolved = absolute.realpath
+        next unless Paths.inside?(resolved, @target_root.realpath)
+
+        resolved.to_s
+      rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP
+        nil
+      end.sort
+    end
 
     def escape_ignore_path(path)
       path.gsub(/([\\*?\[\]])/, '\\\\\1')

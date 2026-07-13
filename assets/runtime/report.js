@@ -23,6 +23,7 @@
     let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, showcaseRenderer = null;
     const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35, SHOWCASE_POINT_LIMIT = 50_000;
     const CORE_SCALE_BASELINE = 3_000;
+    const RSPEC_PROXY_PREFIX = "RSpec example group #";
     const SHOWCASE_PRESET = Object.freeze({
       "stageWidth": 1920,
       "stageHeight": 1080,
@@ -148,12 +149,13 @@
         if (point.hub) dependencyHubs.push(point);
       };
       model.namespaces.forEach((row, index) => {
+        const name = interactiveMode ? model.namespaceNames[index] : "";
         const category = row[3] === 1 ? "tests" : "core";
         const values = row.slice(4, 10);
         const rubyCounts = row.slice(10, 14);
         const point = { category, seed: row[0], position: category === "tests" ? testPosition(row[0]) : corePosition(row[0]), signal: weightedSignal(normalizedSignals(values), category), base: category === "core" ? .82 : .68 };
-        if (interactiveMode) Object.assign(point, { name: model.namespaceNames[index], kind: row[2] === 0 ? "Class" : "Module", rubyCounts, instanceVariableCount: row[14] || 0, values });
-        addPoint(point);
+        if (interactiveMode) Object.assign(point, { name, kind: row[2] === 0 ? "Class" : "Module", rubyCounts, instanceVariableCount: row[14] || 0, values });
+        addPoint(point, !name.startsWith(RSPEC_PROXY_PREFIX));
       });
       model.dependencyStars.forEach(row => {
         const values = row.slice(2, 8);

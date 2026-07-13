@@ -168,6 +168,8 @@ class ReportWriterTest < Minitest::Test
       assert_includes(html, "if (event.metaKey || event.ctrlKey || event.altKey) return")
       assert_includes(html, "const interactivePoints = []")
       assert_includes(html, "if (interactive && interactiveMode) interactivePoints.push(point)")
+      assert_includes(html, 'const RSPEC_PROXY_PREFIX = "RSpec example group #"')
+      assert_includes(html, "addPoint(point, !name.startsWith(RSPEC_PROXY_PREFIX))")
       assert_includes(html, "if (interactiveMode) Object.assign(point")
       assert_includes(html, "model.dependencyStars = []")
       assert_includes(html, "function hoverTargetAt")

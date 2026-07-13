@@ -18,6 +18,7 @@ class PackageTest < Minitest::Test
     assert_includes(specification.files, "lib/rubylens/showcase_model.rb")
     assert_includes(specification.files, "lib/rubylens/showcase_writer.rb")
     assert_includes(specification.files, "lib/rubylens/index/rubydex_adapter.rb")
+    assert_includes(specification.files, "lib/rubylens/index/rspec_extractor.rb")
     refute(specification.files.any? { |path| path.start_with?("docs/assets/") })
     refute(specification.files.any? { |path| path.start_with?("prototype/") })
     refute(specification.files.any? { |path| path.start_with?("generated/") })
