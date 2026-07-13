@@ -63,6 +63,7 @@ class RubydexAdapterTest < Minitest::Test
     assert_raises(RuntimeError) { adapter.index(manifest) }
     assert_nil(adapter.instance_variable_get(:@location_path_cache))
     assert_nil(adapter.instance_variable_get(:@workspace_location_cache))
+    assert_nil(adapter.instance_variable_get(:@indexed_package_document_paths))
   end
 
   def test_collects_declarations_without_materializing_the_enumerable
@@ -95,6 +96,43 @@ class RubydexAdapterTest < Minitest::Test
     manifest.define_singleton_method(:package_index_for) { raise "non-file locations must not be indexed" }
 
     assert_nil(RubyLens::Index::RubydexAdapter.new.send(:package_index_for_location, location, manifest))
+  end
+
+  def test_package_attribution_requires_a_document_rubydex_actually_indexed
+    Dir.mktmpdir("rubylens-document-authority-") do |directory|
+      indexed = File.join(directory, "indexed.rb")
+      absent = File.join(directory, "absent.rb")
+      File.write(indexed, "Indexed = 1\n")
+      File.write(absent, "Absent = 1\n")
+      manifest = Object.new
+      manifest.define_singleton_method(:package_index_for) { |_path| 3 }
+      adapter = RubyLens::Index::RubydexAdapter.new
+      adapter.instance_variable_set(:@indexed_package_document_paths, Set[indexed])
+
+      indexed_location = Struct.new(:uri).new("file://#{indexed}")
+      absent_location = Struct.new(:uri).new("file://#{absent}")
+      assert_equal(3, adapter.send(:package_index_for_location, indexed_location, manifest))
+      assert_nil(adapter.send(:package_index_for_location, absent_location, manifest))
+    end
+  end
+
+  def test_passes_the_manifest_unique_file_list_to_rubydex_once
+    captured = nil
+    graph = Object.new
+    graph.define_singleton_method(:index_all) { |files| captured = files; [] }
+    graph.define_singleton_method(:documents) { [] }
+    graph.define_singleton_method(:resolve) { self }
+    graph.define_singleton_method(:check_integrity) { [] }
+    graph.define_singleton_method(:declarations) { [] }
+    graph.define_singleton_method(:constant_references) { [] }
+    manifest = Struct.new(:root, :files, :packages, :warnings, :dependency_warnings).new(
+      Pathname("/tmp/example"), ["/tmp/a.rb", "/tmp/b.rb"].freeze, [], [], []
+    )
+
+    RubyLens::Index::RubydexAdapter.new(graph_factory: ->(_root) { graph }).index(manifest)
+
+    assert_equal(manifest.files, captured)
+    assert_equal(captured.uniq, captured)
   end
 
   def test_compacts_dependency_declarations_without_embedding_their_names

@@ -70,6 +70,9 @@ module RubyLens
         "packageNames" => package_names,
         "packages" => packages,
         "dependencyStars" => dependencies,
+        "dependencyWarnings" => snapshot.fetch("dependency_warnings", []).map do |warning|
+          { "name" => warning.fetch("name"), "reason" => warning.fetch("reason") }
+        end,
         "warningCounts" => snapshot.fetch("warning_counts"),
       }
     end

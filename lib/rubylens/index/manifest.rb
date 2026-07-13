@@ -10,8 +10,16 @@ module RubyLens
   module Index
     class Manifest
       Package = Data.define(:name, :version, :role, :location, :root, :files)
+      GIT_SKIP_REASONS = {
+        checkout_unavailable: "Bundler checkout is unavailable",
+        local_only_required: "Bundler source is not available for local-only indexing",
+        specification_unavailable: "Locked gemspec is unavailable in the Bundler checkout",
+        specification_unreadable: "Locked gemspec could not be loaded from the Bundler checkout",
+        unsafe_specification_root: "Locked gemspec resolves outside the Bundler checkout",
+        no_indexable_files: "Locked require paths contain no indexable Ruby files",
+      }.freeze
 
-      attr_reader :root, :files, :workspace_files, :packages, :warnings
+      attr_reader :root, :files, :workspace_files, :packages, :warnings, :dependency_warnings
 
       def self.build(root:, lockfile: nil)
         new(root: root, lockfile: lockfile).tap(&:build)
@@ -21,20 +29,27 @@ module RubyLens
         @root = Pathname(root).expand_path.realpath
         @lockfile = Pathname(lockfile || @root.join("Gemfile.lock")).expand_path
         @warnings = []
+        @dependency_warnings = []
         @packages = []
         @package_roots = []
         @package_index_by_file = {}
         @package_index_cache = {}
         @relative_workspace_path_cache = {}
+        @git_spec_indexes = {}.compare_by_identity
       end
 
       def build
         @workspace_files = GitRepository.new(@root).selected_files.freeze
         build_packages
         @package_roots = @packages.each_with_index.map { |package, index| [package.root, index] }
-          .sort_by { |package_root, _index| -package_root.to_s.length }
+          .sort_by do |package_root, index|
+            package = @packages.fetch(index)
+            [-package_root.to_s.length, package.name, package.version, index]
+          end
         build_package_index
         @files = (@workspace_files + @packages.flat_map(&:files)).uniq.freeze
+        @dependency_warnings.sort_by! { |warning| [warning.fetch("name"), warning.fetch("reason")] }
+        @dependency_warnings.freeze
         self
       end
 
@@ -113,6 +128,9 @@ module RubyLens
         if source == "path"
           return local_package(locked)
         end
+        if source == "git"
+          return git_package(locked, role)
+        end
         unless source == "rubygems"
           @warnings << "Skipped #{locked.name} #{locked.version}: #{source} dependencies are not indexed yet."
           return nil
@@ -136,6 +154,44 @@ module RubyLens
         )
       rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP => error
         @warnings << "Skipped #{locked.name} #{locked.version}: #{error.class}."
+        nil
+      end
+
+      def git_package(locked, role)
+        source = locked.source
+        return skip_git_dependency(locked, :local_only_required) if source.allow_git_ops?
+
+        checkout = Pathname(source.path.to_s)
+        return skip_git_dependency(locked, :checkout_unavailable) unless checkout.directory?
+
+        checkout = checkout.realpath
+        specification = (@git_spec_indexes[source] ||= source.specs).search(locked).first
+        return skip_git_dependency(locked, :specification_unavailable) unless specification
+
+        root = Pathname(specification.full_gem_path).realpath
+        return skip_git_dependency(locked, :unsafe_specification_root) unless Paths.inside?(root, checkout)
+
+        files = indexable_files(root, specification.require_paths)
+        return skip_git_dependency(locked, :no_indexable_files) if files.empty?
+
+        Package.new(
+          name: locked.name,
+          version: locked.version.to_s,
+          role: role,
+          location: "external",
+          root: root,
+          files: files.freeze,
+        )
+      rescue Bundler::BundlerError, Gem::Exception
+        skip_git_dependency(locked, :specification_unreadable)
+      rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP
+        skip_git_dependency(locked, :checkout_unavailable)
+      end
+
+      def skip_git_dependency(locked, reason_code)
+        reason = GIT_SKIP_REASONS.fetch(reason_code)
+        @warnings << "Skipped #{locked.name} #{locked.version}: #{reason}."
+        @dependency_warnings << { "name" => locked.name, "reason" => reason }.freeze
         nil
       end
 

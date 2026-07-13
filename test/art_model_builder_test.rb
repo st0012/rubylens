@@ -4,6 +4,7 @@ require_relative "test_helper"
 
 class ArtModelBuilderTest < Minitest::Test
   def test_builds_a_deterministic_local_art_contract_with_hover_identity
+    private_git_source = "/Users/private/checkout https://secret@example.invalid/repository.git 0123456789abcdef"
     snapshot = {
       "project_name" => "Demo",
       "components" => [2],
@@ -22,6 +23,11 @@ class ArtModelBuilderTest < Minitest::Test
           "declarations" => [[0, 2, 1, 0, 1, 3, 4]],
         },
       ],
+      "dependency_warnings" => [{
+        "name" => "git-widget",
+        "reason" => "Bundler checkout is unavailable",
+        "source" => private_git_source,
+      }],
       "warning_counts" => { "manifest" => 0, "index" => 0, "integrity" => 0 },
     }
     builder = RubyLens::ArtModelBuilder.new(seed: 12)
@@ -38,10 +44,15 @@ class ArtModelBuilderTest < Minitest::Test
     assert_equal({ "core" => [1, 1, 4, 2], "tests" => [0, 1, 1, 0] }, first.fetch("categoryStats"))
     assert_equal(["Demo::Core", "Demo::TestCase"].sort, first.fetch("namespaceNames").sort)
     assert_equal(["example-gem"], first.fetch("packageNames"))
+    assert_equal(
+      [{ "name" => "git-widget", "reason" => "Bundler checkout is unavailable" }],
+      first.fetch("dependencyWarnings"),
+    )
     assert_equal([0, 1, 1, 2, 1, 4, 3], first.fetch("packages").first.drop(1))
     refute(first.key?("dependencyDeclarationNames"))
     refute(first.key?("dependencyDeclarations"))
     refute_includes(JSON.generate(first), "Example::Client")
+    refute_includes(JSON.generate(first), private_git_source)
     assert(first.fetch("namespaces").all? { |row| row.length == 15 && row.all?(Integer) })
     assert_equal(4, first.fetch("namespaces").find { |row| row[2].zero? }.last)
     assert(first.fetch("dependencyStars").all? { |row| row.length == 8 && row.all?(Integer) })
