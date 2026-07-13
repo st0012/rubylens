@@ -9,9 +9,8 @@ class ShowcaseWriterTest < Minitest::Test
       model = {
         "schema" => "rubylens.showcase.v1",
         "projectName" => "Synthetic App",
-        "totals" => { "namespaces" => 0, "packages" => 0, "dependencyStars" => 0, "renderedDependencyStars" => 0 },
+        "details" => false,
         "domains" => RubyLens::ArtModelBuilder::SIGNAL_FIELDS.to_h { |field| [field, 0] },
-        "categoryStats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
         "namespaces" => [],
         "packages" => [],
         "dependencyStars" => [],
@@ -25,13 +24,16 @@ class ShowcaseWriterTest < Minitest::Test
       assert_includes(html, 'data-rubylens-mode="showcase"')
       assert_includes(html, "const SHOWCASE_PRESET = Object.freeze")
       assert_includes(html, '"durationMs": 60000')
-      assert_includes(html, "if (hubs.length >= SHOWCASE_POINT_LIMIT)")
+      assert_includes(html, "if (hubs.length >= availableAfterPins)")
       assert_includes(html, 'class="showcase-stage"')
       assert_includes(html, 'dataset.showcaseRenderer = "webgl2"')
       assert_includes(html, "function renderShowcase(timestamp)")
       assert_includes(html, 'dataset.showcaseReady = "true"')
       assert_includes(html, 'dataset.showcaseMotion = "reduced"')
       assert_includes(html, 'class="cinema-stats"')
+      assert_includes(html, 'class="cinema-stats" aria-label="Codebase statistics" hidden')
+      assert_includes(html, 'class="cinema-annotation" id="cinema-annotation" aria-hidden="true" hidden')
+      assert_includes(html, "const showcaseDetails = showcaseMode && model.details === true")
       refute_includes(html, "{{MODEL_BASE64}}")
       refute_includes(html, "capture=1")
       refute_includes(html, "RubyLensCapture")

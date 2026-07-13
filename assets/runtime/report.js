@@ -1,10 +1,14 @@
     "use strict";
     const model = JSON.parse(atob("{{MODEL_BASE64}}"));
     const showcaseMode = document.body.dataset.rubylensMode === "showcase";
+    const showcaseDetails = showcaseMode && model.details === true;
     const interactiveMode = !showcaseMode;
     const canvas = document.getElementById("cosmos");
     const context = canvas.getContext("2d", { alpha: false });
     const showcaseStage = document.getElementById("showcase-stage");
+    const showcaseAnnotation = document.getElementById("cinema-annotation");
+    const showcaseAnnotationKind = showcaseAnnotation?.querySelector(".cinema-annotation-kind");
+    const showcaseAnnotationName = showcaseAnnotation?.querySelector(".cinema-annotation-name");
     const panel = document.getElementById("panel");
     const panelBody = document.getElementById("panel-body");
     const panelToggle = document.getElementById("panel-toggle");
@@ -24,7 +28,7 @@
       tests: { ancestorDepth: .18, definitionSites: .25, reopenings: .18, descendants: .42, references: .85, members: .55 },
       dependencies: { ancestorDepth: .12, definitionSites: .35, reopenings: .2, descendants: .32, references: .48, members: .4 },
     };
-    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, showcaseRenderer = null;
+    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, showcaseRenderer = null, showcaseAnnotationSlot = -1, activeShowcaseAnnotation = null;
     const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35, SHOWCASE_POINT_LIMIT = 50_000;
     const CORE_SCALE_BASELINE = 3_000;
     const RSPEC_PROXY_PREFIX = "RSpec example group #";
@@ -64,6 +68,18 @@
       "mastheadTop": 40,
       "mastheadWidth": 632
     });
+    const SHOWCASE_ANNOTATION_PRESET = Object.freeze({
+      "limit": 200,
+      "slotDurationMs": 6000,
+      "revealStartMs": 1350,
+      "revealEndMs": 4650,
+      "fadeInMs": 1200,
+      "fadeOutMs": 900,
+      "safeInsetX": 80,
+      "safeInsetTop": 340,
+      "safeInsetBottom": 90,
+      "labelWidth": 440
+    });
     const TOP_DOWN_PITCH = Math.PI / 2;
     const contextVisibility = { selection: .75, category: .16, package: .75 };
     const pointers = new Map();
@@ -74,6 +90,12 @@
     const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     let drifting = interactiveMode && !reducedMotionQuery.matches;
     const colours = { core: [244, 82, 132], tests: [87, 204, 255], dependencies: [255, 184, 77] };
+    const showcaseAnnotationData = showcaseDetails && Array.isArray(model.annotations)
+      ? model.annotations.slice(0, SHOWCASE_ANNOTATION_PRESET.limit)
+      : [];
+    const showcaseAnnotationKey = (category, anchor) => `${category}:${anchor}`;
+    const showcaseAnnotationAnchors = new Set(showcaseAnnotationData.map(annotation => showcaseAnnotationKey(annotation.category, annotation.anchor)));
+    const showcasePointsByAnchor = new Map();
 
     const hash = (seed, channel = 0) => {
       let value = (seed ^ (channel * 0x9e3779b9)) >>> 0;
@@ -176,6 +198,10 @@
         const rubyCounts = row.slice(10, 14);
         const point = { category, seed: row[0], position: category === "tests" ? testPosition(row[0]) : corePosition(row[0]), signal: weightedSignal(normalizedSignals(values), category), base: category === "core" ? .82 : .68 };
         if (interactiveMode) Object.assign(point, { name, kind: row[2] === 0 ? "Class" : "Module", rubyCounts, instanceVariableCount: row[14] || 0, values });
+        if (showcaseDetails) {
+          const annotationKey = showcaseAnnotationKey(category, index);
+          if (showcaseAnnotationAnchors.has(annotationKey)) showcasePointsByAnchor.set(annotationKey, point);
+        }
         addPoint(point, !name.startsWith(RSPEC_PROXY_PREFIX));
       });
       model.dependencyStars.forEach(row => {
@@ -188,6 +214,10 @@
         const visualValues = [0, packageRow[3], 0, 0, 0, 0];
         const point = { category: "dependencies", packageIndex: index, seed: packageRow[0], position: anchor.slice(0, 3), signal: weightedSignal(normalizedSignals(visualValues), "dependencies"), base: 1.8, hub: true };
         if (interactiveMode) Object.assign(point, { name: model.packageNames[index], packageRole: packageRow[1] === 0 ? "Direct dependency" : "Transitive dependency", packageLocation: packageRow[2] === 0 ? "Workspace package" : "External gem", rubyCounts });
+        if (showcaseDetails) {
+          const annotationKey = showcaseAnnotationKey("dependencies", index);
+          if (showcaseAnnotationAnchors.has(annotationKey)) showcasePointsByAnchor.set(annotationKey, point);
+        }
         addPoint(point);
       });
       return { points, interactivePoints, dependencyHubs };
@@ -195,20 +225,28 @@
     const { points, interactivePoints, dependencyHubs } = buildPoints();
     function showcasePointSample() {
       if (!showcaseMode || points.length <= SHOWCASE_POINT_LIMIT) return points;
-      const hubs = points.filter(point => point.hub);
       const rank = point => [hash(point.seed, 73), point.seed, point];
-      if (hubs.length >= SHOWCASE_POINT_LIMIT) {
+      const pinned = showcaseDetails ? Array.from(showcasePointsByAnchor.values()) : [];
+      const pinnedPoints = new Set(pinned);
+      const hubs = points.filter(point => point.hub && !pinnedPoints.has(point));
+      const availableAfterPins = Math.max(0, SHOWCASE_POINT_LIMIT - pinned.length);
+      if (hubs.length >= availableAfterPins) {
         return hubs.map(rank)
           .sort((left, right) => left[0] - right[0] || left[1] - right[1])
-          .slice(0, SHOWCASE_POINT_LIMIT)
-          .map(candidate => candidate[2]);
+          .slice(0, availableAfterPins)
+          .map(candidate => candidate[2])
+          .concat(pinned);
       }
-      const available = Math.max(0, SHOWCASE_POINT_LIMIT - hubs.length);
-      const candidates = points.filter(point => !point.hub).map(rank);
+      const available = Math.max(0, availableAfterPins - hubs.length);
+      const candidates = points.filter(point => !point.hub && !pinnedPoints.has(point)).map(rank);
       candidates.sort((left, right) => left[0] - right[0] || left[1] - right[1]);
-      return candidates.slice(0, available).map(candidate => candidate[2]).concat(hubs);
+      return candidates.slice(0, available).map(candidate => candidate[2]).concat(hubs, pinned);
     }
     const renderPoints = showcasePointSample();
+    const renderedShowcaseAnnotations = showcaseAnnotationData.map(annotation => {
+      const point = showcasePointsByAnchor.get(showcaseAnnotationKey(annotation.category, annotation.anchor));
+      return point ? Object.freeze({ ...annotation, point }) : null;
+    }).filter(Boolean);
 
     function createShowcaseRenderer() {
       const liveCanvas = document.createElement("canvas");
@@ -473,8 +511,13 @@
         document.documentElement.dataset.showcaseRendererError = error.message;
       }
     }
-    const totals = model.totals;
-    const renderedDependencyStars = model.totals.renderedDependencyStars;
+    const totals = model.totals || {
+      namespaces: model.namespaces.length,
+      packages: model.packages.length,
+      dependencyStars: model.dependencyStars.length,
+      renderedDependencyStars: model.dependencyStars.length,
+    };
+    const renderedDependencyStars = totals.renderedDependencyStars;
     const directGemCount = model.packages.filter(row => row[1] === 0).length;
     const transitiveGemCount = totals.packages - directGemCount;
     const allRubyMetricIndexes = [0, 1, 2, 3];
@@ -484,8 +527,8 @@
       [0, 0, 0, 0],
     );
     const categoryMeta = {
-      core: { title: "Core code", rubyCounts: model.categoryStats.core, metricIndexes: allRubyMetricIndexes, focusZoom: 2.8 },
-      tests: { title: "Tests", rubyCounts: model.categoryStats.tests, metricIndexes: testRubyMetricIndexes, focusZoom: 1.35 },
+      core: { title: "Core code", rubyCounts: model.categoryStats?.core || [0, 0, 0, 0], metricIndexes: allRubyMetricIndexes, focusZoom: 2.8 },
+      tests: { title: "Tests", rubyCounts: model.categoryStats?.tests || [0, 0, 0, 0], metricIndexes: testRubyMetricIndexes, focusZoom: 1.35 },
       dependencies: { title: "Gems", summary: `${totals.packages.toLocaleString()} dependency gems`, rubyCounts: dependencyRubyCounts, metricIndexes: allRubyMetricIndexes, note: `${directGemCount.toLocaleString()} direct · ${transitiveGemCount.toLocaleString()} transitive`, focusZoom: .72 },
     };
     if (showcaseMode) {
@@ -1192,6 +1235,10 @@
       masthead.style.top = `${SHOWCASE_PRESET.mastheadTop * stageScale}px`;
       masthead.style.width = `${SHOWCASE_PRESET.mastheadWidth / textScale}px`;
       masthead.style.transform = `scale(${stageScale * textScale})`;
+      if (showcaseAnnotation) {
+        showcaseAnnotation.style.setProperty("--annotation-fade-in", `${SHOWCASE_ANNOTATION_PRESET.fadeInMs}ms`);
+        showcaseAnnotation.style.setProperty("--annotation-fade-out", `${SHOWCASE_ANNOTATION_PRESET.fadeOutMs}ms`);
+      }
     }
 
     function fitShowcaseStage() {
@@ -1459,6 +1506,84 @@
       panY = 0;
     }
 
+    function hideShowcaseAnnotation() {
+      showcaseAnnotation?.classList.remove("is-visible");
+      document.documentElement.dataset.showcaseAnnotation = "hidden";
+    }
+
+    function showcaseAnnotationKindLabel(annotation) {
+      if (annotation.category === "core") return `Core · ${annotation.kind}`;
+      if (annotation.category === "tests") return `Test · ${annotation.kind}`;
+      return annotation.kind;
+    }
+
+    function showcaseAnnotationFits(x, y, side) {
+      const labelWidth = window.innerWidth <= 600 ? 720 : SHOWCASE_ANNOTATION_PRESET.labelWidth;
+      const horizontalFit = side === "left" ? x > labelWidth : x < width - labelWidth;
+      return x > SHOWCASE_ANNOTATION_PRESET.safeInsetX &&
+        x < width - SHOWCASE_ANNOTATION_PRESET.safeInsetX &&
+        y > SHOWCASE_ANNOTATION_PRESET.safeInsetTop &&
+        y < height - SHOWCASE_ANNOTATION_PRESET.safeInsetBottom &&
+        horizontalFit;
+    }
+
+    function chooseShowcaseAnnotation(slot, matrix) {
+      if (!renderedShowcaseAnnotations.length) return null;
+      const categories = ["core", "dependencies", "tests"];
+      const category = categories[slot % categories.length];
+      const candidates = renderedShowcaseAnnotations.filter(annotation => annotation.category === category);
+      if (!candidates.length) return null;
+      const first = Math.floor(slot / categories.length) % candidates.length;
+      for (let offset = 0; offset < candidates.length; offset += 1) {
+        const annotation = candidates[(first + offset) % candidates.length];
+        const projected = project(annotation.point, matrix);
+        if (!projected) continue;
+        const [x, y] = projected;
+        const side = x > width / 2 ? "left" : "right";
+        if (showcaseAnnotationFits(x, y, side)) return { annotation, side };
+      }
+      return null;
+    }
+
+    function updateShowcaseAnnotation(timestamp) {
+      if (reducedMotionQuery.matches || !showcaseAnnotation || showcaseStartedAt === null) {
+        hideShowcaseAnnotation();
+        return;
+      }
+      const elapsed = Math.max(0, timestamp - showcaseStartedAt);
+      const slot = Math.floor(elapsed / SHOWCASE_ANNOTATION_PRESET.slotDurationMs);
+      const slotElapsed = elapsed % SHOWCASE_ANNOTATION_PRESET.slotDurationMs;
+      const matrix = [Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch)];
+      if (showcaseAnnotationSlot !== slot) {
+        showcaseAnnotationSlot = slot;
+        hideShowcaseAnnotation();
+        activeShowcaseAnnotation = chooseShowcaseAnnotation(slot, matrix);
+        if (activeShowcaseAnnotation) {
+          const annotation = activeShowcaseAnnotation.annotation;
+          showcaseAnnotation.dataset.category = annotation.category;
+          showcaseAnnotation.dataset.side = activeShowcaseAnnotation.side;
+          showcaseAnnotationKind.textContent = showcaseAnnotationKindLabel(annotation);
+          showcaseAnnotationName.textContent = annotation.name;
+        }
+      }
+      if (!activeShowcaseAnnotation) return;
+
+      const projected = project(activeShowcaseAnnotation.annotation.point, matrix);
+      if (!projected) {
+        hideShowcaseAnnotation();
+        return;
+      }
+      const [x, y] = projected;
+      showcaseAnnotation.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+      const revealed = slotElapsed >= SHOWCASE_ANNOTATION_PRESET.revealStartMs &&
+        slotElapsed <= SHOWCASE_ANNOTATION_PRESET.revealEndMs &&
+        showcaseAnnotationFits(x, y, activeShowcaseAnnotation.side);
+      showcaseAnnotation.classList.toggle("is-visible", revealed);
+      document.documentElement.dataset.showcaseAnnotation = revealed
+        ? activeShowcaseAnnotation.annotation.name
+        : "hidden";
+    }
+
     function renderShowcase(timestamp) {
       showcaseStartedAt ??= timestamp;
       const frameCount = SHOWCASE_PRESET.targetFps * SHOWCASE_PRESET.durationMs / 1000;
@@ -1466,6 +1591,7 @@
       const progress = Math.floor(rawProgress * frameCount) / frameCount;
       applyShowcaseCamera(progress);
       render(timestamp);
+      if (showcaseDetails) updateShowcaseAnnotation(timestamp);
       document.documentElement.dataset.showcaseReady = "true";
       if (!reducedMotionQuery.matches) animationFrame = requestAnimationFrame(renderShowcase);
     }
@@ -1474,18 +1600,24 @@
       if (animationFrame) cancelAnimationFrame(animationFrame);
       animationFrame = 0;
       showcaseStartedAt = null;
+      showcaseAnnotationSlot = -1;
+      activeShowcaseAnnotation = null;
       if (reducedMotionQuery.matches) {
+        if (showcaseAnnotation) showcaseAnnotation.hidden = true;
+        hideShowcaseAnnotation();
         applyShowcaseCamera(0);
         render(performance.now());
         document.documentElement.dataset.showcaseReady = "true";
         document.documentElement.dataset.showcaseMotion = "reduced";
       } else {
+        if (showcaseAnnotation) showcaseAnnotation.hidden = !showcaseDetails || !renderedShowcaseAnnotations.length;
         document.documentElement.dataset.showcaseMotion = "active";
         animationFrame = requestAnimationFrame(renderShowcase);
       }
     }
 
     function populateShowcaseStats() {
+      if (!showcaseDetails) return;
       const core = model.categoryStats?.core || [0, 0, 0, 0];
       const tests = model.categoryStats?.tests || [0, 0, 0, 0];
       const format = value => Number(value || 0).toLocaleString("en-US");
@@ -1493,7 +1625,11 @@
       ["classes", "modules", "methods", "constants"].forEach((metric, index) => {
         document.getElementById(`cinema-${metric}`).textContent = format(core[index]);
       });
-      document.getElementById("cinema-secondary").textContent = `Tests · ${counted(tests[0], "class", "classes")} · ${counted(tests[2], "method", "methods")}   ·   ${counted(totals.packages, "dependency gem", "dependency gems")} in orbit`;
+      const stats = document.querySelector(".cinema-stats");
+      const secondary = document.getElementById("cinema-secondary");
+      secondary.textContent = `Tests · ${counted(tests[0], "class", "classes")} · ${counted(tests[2], "method", "methods")}   ·   ${counted(totals.packages, "dependency gem", "dependency gems")} in orbit`;
+      stats.hidden = false;
+      secondary.hidden = false;
     }
 
     function setDrifting(next) {

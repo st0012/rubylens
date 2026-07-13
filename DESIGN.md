@@ -18,4 +18,4 @@ Controls use standard inputs, buttons, disclosures, keyboard activation, visible
 
 ## Showcase
 
-Showcase is autonomous and noninteractive. It preserves the approved fixed presentation contract and contains no Explorer panel, toolbar, tooltip, warning disclosure, search, hover, selection, or navigation behavior.
+Showcase is autonomous and noninteractive. It preserves the approved fixed presentation contract and contains no Explorer panel, toolbar, tooltip, warning disclosure, search, hover, selection, or navigation behavior. Annotated output may show one moving ring-and-leader label at a time in the matching Core, Test, or Gem color; Minimal output has no statistics or labels.

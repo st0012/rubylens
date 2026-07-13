@@ -21,7 +21,7 @@ module RubyLens
       @showcase_writer = showcase_writer
     end
 
-    def call(path: Dir.pwd, output: nil, lockfile: nil)
+    def call(path: Dir.pwd, output: nil, lockfile: nil, details: false)
       root = File.realpath(path)
       if output.nil?
         output = File.join(root, DEFAULT_SHOWCASE_NAME)
@@ -31,7 +31,7 @@ module RubyLens
         GitRepository.new(root).exclude_local(output, description: "showcase")
       end
       model, warnings = @pipeline.call(root:, lockfile:)
-      output_path = @showcase_writer.write(@showcase_model.call(model), output: output)
+      output_path = @showcase_writer.write(@showcase_model.call(model, details: details), output: output)
 
       Result.new(output_path:, counts: model.fetch("totals").freeze, warnings:)
     rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP => error

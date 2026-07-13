@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "base64"
 require_relative "test_helper"
 
 class ShowcaseGeneratorTest < Minitest::Test
@@ -44,6 +45,18 @@ class ShowcaseGeneratorTest < Minitest::Test
     end
   end
 
+  def test_details_opt_in_reaches_the_serialized_showcase_model
+    with_repository do |directory|
+      result = generator.call(path: directory, details: true)
+      encoded = File.read(result.output_path).match(/JSON\.parse\(atob\("([^"]+)"\)\)/)[1]
+      model = JSON.parse(Base64.strict_decode64(encoded))
+
+      assert_equal(true, model.fetch("details"))
+      assert(model.key?("totals"))
+      assert(model.key?("annotations"))
+    end
+  end
+
   def test_refuses_a_tracked_default_showcase_before_indexing
     with_repository do |directory|
       output = File.join(directory, "rubylens-showcase.html")
@@ -84,7 +97,9 @@ class ShowcaseGeneratorTest < Minitest::Test
         "totals" => { "namespaces" => 0, "packages" => 0, "dependencyStars" => 0, "renderedDependencyStars" => 0 },
         "domains" => RubyLens::ArtModelBuilder::SIGNAL_FIELDS.to_h { |field| [field, 0] },
         "categoryStats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
+        "namespaceNames" => [],
         "namespaces" => [], "packages" => [], "dependencyStars" => [],
+        "packageNames" => [],
       }
     end
     RubyLens::ShowcaseGenerator.new(manifest_builder:, adapter:, model_builder:)

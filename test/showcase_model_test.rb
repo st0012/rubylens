@@ -3,7 +3,7 @@
 require_relative "test_helper"
 
 class ShowcaseModelTest < Minitest::Test
-  def test_projects_only_numeric_visual_structure_and_aggregate_statistics
+  def test_minimal_projection_omits_statistics_and_private_names
     private_value = "/private/path/Secret::Namespace hidden-gem source comment"
     model = {
       "schema" => "rubylens.art.v7",
@@ -25,9 +25,10 @@ class ShowcaseModelTest < Minitest::Test
     encoded = JSON.generate(showcase)
 
     assert_equal(
-      %w[categoryStats dependencyStars domains namespaces packages projectName schema totals],
+      %w[dependencyStars details domains namespaces packages projectName schema],
       showcase.keys.sort,
     )
+    assert_equal(false, showcase.fetch("details"))
     assert_equal("rubylens.showcase.v1", showcase.fetch("schema"))
     assert_equal(15, showcase.fetch("namespaces").first.length)
     assert_equal(8, showcase.fetch("packages").first.length)
@@ -38,6 +39,41 @@ class ShowcaseModelTest < Minitest::Test
     refute_includes(encoded, "warningCounts")
     refute_includes(encoded, "dependencyWarnings")
     refute_includes(encoded, "secret-git-gem")
+    refute_includes(encoded, "totals")
+    refute_includes(encoded, "categoryStats")
+    refute_includes(encoded, "annotations")
+  end
+
+  def test_annotated_projection_is_safe_balanced_deterministic_and_capped
+    model = annotated_model(90)
+    first = RubyLens::ShowcaseModel.new.call(model, details: true)
+    second = RubyLens::ShowcaseModel.new.call(model, details: true)
+    annotations = first.fetch("annotations")
+
+    assert_equal(first, second)
+    assert_equal(true, first.fetch("details"))
+    assert_equal(model.fetch("totals"), first.fetch("totals"))
+    assert_equal(model.fetch("categoryStats"), first.fetch("categoryStats"))
+    assert_equal(RubyLens::ShowcaseModel::ANNOTATION_LIMIT, annotations.length)
+    assert_equal(%w[core dependencies tests core dependencies tests], annotations.first(6).map { |annotation| annotation.fetch("category") })
+    assert_equal(%w[anchor category kind name], annotations.first.keys.sort)
+    annotations.each do |annotation|
+      assert_kind_of(Integer, annotation.fetch("anchor"))
+      assert_operator(annotation.fetch("name").length, :<=, RubyLens::ShowcaseModel::MAX_ANNOTATION_NAME_LENGTH)
+    end
+    encoded = JSON.generate(first)
+    refute_includes(encoded, "/private/")
+    refute_includes(encoded, "https://")
+    refute_includes(encoded, "RSpec example group #")
+    refute_includes(encoded, "unsafe package")
+  end
+
+  def test_only_literal_true_enables_details
+    showcase = RubyLens::ShowcaseModel.new.call(minimal_model, details: "true")
+
+    assert_equal(false, showcase.fetch("details"))
+    refute(showcase.key?("totals"))
+    refute(showcase.key?("annotations"))
   end
 
   def test_rejects_private_values_inside_the_numeric_contract
@@ -57,8 +93,34 @@ class ShowcaseModelTest < Minitest::Test
       "totals" => { "namespaces" => 1, "packages" => 0, "dependencyStars" => 0, "renderedDependencyStars" => 0 },
       "domains" => RubyLens::ArtModelBuilder::SIGNAL_FIELDS.to_h { |field| [field, 0] },
       "categoryStats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
+      "namespaceNames" => ["Synthetic::Node"],
       "namespaces" => [[0] * 15],
+      "packageNames" => [],
       "packages" => [],
+      "dependencyStars" => [],
+    }
+  end
+
+  def annotated_model(count)
+    core_names = Array.new(count) { |index| format("Synthetic::Core%03d", index) }
+    test_names = Array.new(count) { |index| format("Synthetic::Test%03d", index) }
+    package_names = Array.new(count) { |index| format("synthetic-gem-%03d", index) }
+    namespace_names = core_names + test_names + ["/private/Secret", "https://example.test/Name", "RSpec example group #000001"]
+    namespaces = Array.new(count) { |index| [index, 0, index.even? ? 0 : 1, 0, index + 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 0] }
+    namespaces.concat(Array.new(count) { |index| [10_000 + index, 0, index.even? ? 0 : 1, 1, index + 1, 2, 3, 4, 5, 6, 1, 0, 2, 0, 0] })
+    namespaces.concat(Array.new(3) { |index| [20_000 + index, 0, 0, 0, 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 0] })
+    packages = Array.new(count) { |index| [30_000 + index, 0, 1, index + 1, 1, 2, 3, 4] }
+    package_names.concat(["unsafe package", "https://example.test/gem", "../secret"])
+    packages.concat(Array.new(3) { |index| [40_000 + index, 0, 1, 1, 1, 2, 3, 4] })
+    {
+      "projectName" => "Synthetic App",
+      "totals" => { "namespaces" => namespaces.length, "packages" => packages.length, "dependencyStars" => 0, "renderedDependencyStars" => 0 },
+      "domains" => RubyLens::ArtModelBuilder::SIGNAL_FIELDS.to_h { |field| [field, 10] },
+      "categoryStats" => { "core" => [count, count / 2, count * 2, count / 3], "tests" => [count, 0, count * 3, 0] },
+      "namespaceNames" => namespace_names,
+      "namespaces" => namespaces,
+      "packageNames" => package_names,
+      "packages" => packages,
       "dependencyStars" => [],
     }
   end
