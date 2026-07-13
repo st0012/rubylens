@@ -57,8 +57,7 @@ class IndexManifestTest < Minitest::Test
   end
 
   def test_indexes_an_already_materialized_git_checkout_without_git_processes_or_mutation
-    Dir.mktmpdir("rubylens-git-checkout-") do |directory|
-      checkout = Pathname(directory).join("checkout")
+    with_git_bundle([["git-widget", "1.2.3"]]) do |target, lockfile, checkout, parser, source|
       write_git_gem(
         checkout,
         name: "git-widget",
@@ -69,16 +68,22 @@ class IndexManifestTest < Minitest::Test
           "private/not_loaded.rb" => "PrivateGitValue = 1\n",
         },
       )
-      parser, source = git_parser([["git-widget", "1.2.3"]], checkout: checkout)
       locked = parser.specs.first
       before = checkout_snapshot(checkout)
-      manifest = RubyLens::Index::Manifest.new(root: FIXTURE)
+      manifest = RubyLens::Index::Manifest.new(root: target, lockfile: lockfile)
+      caller_bundle_root = Bundler.root
+      caller_bundle_path = Bundler.bundle_path
+      caller_checkout = without_git_subprocesses { source.path }
 
       package = without_git_subprocesses do
         manifest.send(:package_for, locked, Set["git-widget"])
       end
 
+      refute_equal(checkout.realpath, caller_checkout)
       refute(source.allow_git_ops?)
+      assert_equal(checkout.realpath, source.path)
+      assert_equal(caller_bundle_root, Bundler.root)
+      assert_equal(caller_bundle_path, Bundler.bundle_path)
       assert_equal(before, checkout_snapshot(checkout))
       assert_equal("git-widget", package.name)
       assert_equal("direct", package.role)
@@ -90,14 +95,13 @@ class IndexManifestTest < Minitest::Test
   end
 
   def test_unavailable_git_checkout_uses_a_canned_path_free_reason_without_git_processes
-    Dir.mktmpdir("rubylens-missing-git-checkout-") do |directory|
-      missing = Pathname(directory).join("not-materialized")
-      parser, source = git_parser(
-        [["private-git-gem", "4.5.6"]],
-        checkout: missing,
-        remote: "https://secret-user@example.invalid/private/repository.git",
-      )
-      manifest = RubyLens::Index::Manifest.new(root: FIXTURE)
+    with_git_bundle(
+      [["private-git-gem", "4.5.6"]],
+      remote: "https://secret-user@example.invalid/private/repository.git",
+    ) do |target, lockfile, missing, parser, source|
+      source.define_singleton_method(:path) { raise "Git source path must not be used" }
+      source.define_singleton_method(:specs) { raise "Git source specs must not be used" }
+      manifest = RubyLens::Index::Manifest.new(root: target, lockfile: lockfile)
 
       package = without_git_subprocesses do
         manifest.send(:package_for, parser.specs.first, Set["private-git-gem"])
@@ -112,7 +116,7 @@ class IndexManifestTest < Minitest::Test
       )
       exposed = JSON.generate([manifest.warnings, manifest.dependency_warnings])
       assert_includes(exposed, "private-git-gem")
-      refute_includes(exposed, directory)
+      refute_includes(exposed, target.parent.to_s)
       refute_includes(exposed, "example.invalid")
       refute_includes(exposed, "0123456789abcdef")
       refute_includes(exposed, Dir.home)
@@ -120,18 +124,12 @@ class IndexManifestTest < Minitest::Test
   end
 
   def test_git_source_with_remote_operations_enabled_is_rejected_before_any_git_process
-    Dir.mktmpdir("rubylens-remote-enabled-git-") do |directory|
-      checkout = Pathname(directory).join("checkout")
-      write_git_gem(
-        checkout,
-        name: "remote-enabled-gem",
-        version: "1.0.0",
-        require_paths: ["lib"],
-        files: { "lib/remote_enabled_gem.rb" => "RemoteEnabledGem = 1\n" },
-      )
-      parser, source = git_parser([["remote-enabled-gem", "1.0.0"]], checkout: checkout)
+    with_git_bundle(
+      [["remote-enabled-gem", "1.0.0"]],
+    ) do |target, lockfile, _checkout, parser, source|
       source.remote!
-      manifest = RubyLens::Index::Manifest.new(root: FIXTURE)
+      source.define_singleton_method(:extension_dir_name) { raise "Git checkout must not be resolved" }
+      manifest = RubyLens::Index::Manifest.new(root: target, lockfile: lockfile)
 
       package = without_git_subprocesses do
         manifest.send(:package_for, parser.specs.first, Set["remote-enabled-gem"])
@@ -147,8 +145,8 @@ class IndexManifestTest < Minitest::Test
   end
 
   def test_multi_gemspec_git_checkout_assigns_overlapping_files_to_one_deterministic_owner
-    Dir.mktmpdir("rubylens-multi-gemspec-") do |directory|
-      checkout = Pathname(directory).join("checkout")
+    lock_specs = [["outer-gem", "1.0.0"], ["inner-gem", "2.0.0"]]
+    with_git_bundle(lock_specs) do |target, lockfile, checkout, parser, source|
       write_git_gem(
         checkout,
         name: "outer-gem",
@@ -163,16 +161,14 @@ class IndexManifestTest < Minitest::Test
         require_paths: ["lib"],
         files: { "lib/inner_gem.rb" => "class InnerGem\nend\n" },
       )
-      lock_specs = [["outer-gem", "1.0.0"], ["inner-gem", "2.0.0"]]
-      parser, source = git_parser(lock_specs, checkout: checkout)
       spec_index_calls = 0
       source.define_singleton_method(:specs) do
         spec_index_calls += 1
         super()
       end
 
-      manifest = build_manifest_with_parser(parser)
-      repeated = build_manifest_with_parser(parser)
+      manifest = build_manifest_with_parser(parser, root: target, lockfile: lockfile)
+      repeated = build_manifest_with_parser(parser, root: target, lockfile: lockfile)
       outer_index = manifest.packages.index { |package| package.name == "outer-gem" }
       inner_index = manifest.packages.index { |package| package.name == "inner-gem" }
       outer_file = checkout.join("lib/outer_gem.rb").realpath.to_s
@@ -329,10 +325,10 @@ class IndexManifestTest < Minitest::Test
     File.write(root.join("#{name}.gemspec"), specification.to_ruby)
   end
 
-  def git_parser(specifications, checkout:, remote: "https://example.invalid/repository.git")
+  def git_parser(specifications, remote: "https://example.invalid/repository.git", lockfile: nil)
     specs = specifications.map { |name, version| "    #{name} (#{version})" }.join("\n")
     dependencies = specifications.map { |name, _version| "  #{name}!" }.join("\n")
-    lockfile = <<~LOCKFILE
+    contents = <<~LOCKFILE
       GIT
         remote: #{remote}
         revision: 0123456789abcdef0123456789abcdef01234567
@@ -348,18 +344,28 @@ class IndexManifestTest < Minitest::Test
       BUNDLED WITH
          4.0.10
     LOCKFILE
-    parser = Bundler::LockfileParser.new(lockfile)
-    source = parser.specs.first.source
-    source.instance_variable_set(:@install_path, Pathname(checkout))
-    [parser, source]
+    File.write(lockfile, contents) if lockfile
+    parser = Bundler::LockfileParser.new(contents)
+    [parser, parser.specs.first.source]
   end
 
-  def build_manifest_with_parser(parser)
-    Dir.mktmpdir("rubylens-git-lockfile-") do |directory|
-      lockfile = File.join(directory, "Gemfile.lock")
-      File.write(lockfile, "stubbed by parsed fixture\n")
-      return with_lockfile_parser(parser) { RubyLens::Index::Manifest.build(root: FIXTURE, lockfile: lockfile) }
+  def with_git_bundle(specifications, remote: "https://example.invalid/repository.git")
+    Dir.mktmpdir("rubylens-git-bundle-", FIXTURE.to_s) do |directory|
+      bundle_root = Pathname(directory)
+      target = bundle_root.join("app")
+      FileUtils.mkdir_p([target, bundle_root.join(".bundle")])
+      File.write(bundle_root.join(".gitignore"), "/vendor/bundle/\n")
+      File.write(bundle_root.join(".bundle/config"), "---\nBUNDLE_PATH: \"vendor/bundle\"\n")
+      lockfile = bundle_root.join("Gemfile.lock")
+      parser, source = git_parser(specifications, remote: remote, lockfile: lockfile)
+      bundle_path = Pathname(Bundler::Settings.new(bundle_root.join(".bundle")).path.path).expand_path(bundle_root)
+      checkout = bundle_path.join("bundler/gems", source.extension_dir_name)
+      yield target, lockfile, checkout, parser, source
     end
+  end
+
+  def build_manifest_with_parser(parser, root:, lockfile:)
+    with_lockfile_parser(parser) { RubyLens::Index::Manifest.build(root: root, lockfile: lockfile) }
   end
 
   def without_git_subprocesses

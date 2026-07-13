@@ -161,11 +161,11 @@ module RubyLens
         source = locked.source
         return skip_git_dependency(locked, :local_only_required) if source.allow_git_ops?
 
-        checkout = Pathname(source.path.to_s)
+        checkout = git_checkout_path(source)
         return skip_git_dependency(locked, :checkout_unavailable) unless checkout.directory?
 
         checkout = checkout.realpath
-        specification = (@git_spec_indexes[source] ||= source.specs).search(locked).first
+        specification = (@git_spec_indexes[source] ||= git_specifications(source, checkout)).search(locked).first
         return skip_git_dependency(locked, :specification_unavailable) unless specification
 
         root = Pathname(specification.full_gem_path).realpath
@@ -186,6 +186,23 @@ module RubyLens
         skip_git_dependency(locked, :specification_unreadable)
       rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP
         skip_git_dependency(locked, :checkout_unavailable)
+      end
+
+      def git_checkout_path(source)
+        bundle_root = @lockfile.dirname
+        app_config = ENV["BUNDLE_APP_CONFIG"]
+        app_config_path = if app_config
+          Pathname(app_config).expand_path(bundle_root)
+        else
+          bundle_root.join(".bundle")
+        end
+        bundle_path = Pathname(Bundler::Settings.new(app_config_path).path.path).expand_path(bundle_root)
+        bundle_path.join("bundler/gems", source.extension_dir_name)
+      end
+
+      def git_specifications(source, checkout)
+        source.__send__(:set_install_path!, checkout)
+        source.specs
       end
 
       def skip_git_dependency(locked, reason_code)
