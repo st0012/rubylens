@@ -17,6 +17,7 @@ class ShowcaseModelTest < Minitest::Test
       "packages" => [[2, 0, 1, 9, 1, 2, 3, 4, private_value]],
       "dependencyStars" => [[3, 0, 1, 2, 3, 4, 5, 6, private_value]],
       "warningCounts" => { "index" => 0 },
+      "dependencyWarnings" => [{ "name" => "secret-git-gem", "reason" => private_value }],
       "futurePrivateField" => private_value,
     }
 
@@ -35,6 +36,8 @@ class ShowcaseModelTest < Minitest::Test
     refute_includes(encoded, "namespaceNames")
     refute_includes(encoded, "packageNames")
     refute_includes(encoded, "warningCounts")
+    refute_includes(encoded, "dependencyWarnings")
+    refute_includes(encoded, "secret-git-gem")
   end
 
   def test_rejects_private_values_inside_the_numeric_contract

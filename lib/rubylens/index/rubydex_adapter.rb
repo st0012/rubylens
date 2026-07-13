@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rubydex"
+require "set"
 require "uri"
 require_relative "../model/dependency_aggregation"
 
@@ -18,6 +19,7 @@ module RubyLens
         @workspace_location_cache = {}
         graph = @graph_factory.call(manifest.root)
         index_errors = Array(graph.index_all(manifest.files))
+        @indexed_package_document_paths = indexed_package_document_paths(graph, manifest)
         graph.resolve
         integrity_failures = Array(graph.check_integrity)
         collected = collect_declarations(graph.declarations, manifest)
@@ -33,6 +35,7 @@ module RubyLens
           "category_stats" => collected.fetch(:category_stats),
           "dependency_signal_maxima" => collected.fetch(:dependency_aggregation).signal_maxima,
           "packages" => build_package_rows(collected.fetch(:dependency_aggregation), manifest),
+          "dependency_warnings" => manifest.respond_to?(:dependency_warnings) ? manifest.dependency_warnings : [],
           "warning_counts" => {
             "manifest" => manifest.warnings.length,
             "index" => index_errors.length,
@@ -42,6 +45,7 @@ module RubyLens
       ensure
         @location_path_cache = nil
         @workspace_location_cache = nil
+        @indexed_package_document_paths = nil
       end
 
       private
@@ -160,7 +164,23 @@ module RubyLens
         uri_string = location.uri
         return nil unless URI.parse(uri_string).scheme == "file"
 
-        manifest.package_index_for(location_path(location, uri_string))
+        path = location_path(location, uri_string)
+        return nil unless @indexed_package_document_paths&.include?(path)
+
+        manifest.package_index_for(path)
+      end
+
+      def indexed_package_document_paths(graph, manifest)
+        audited = manifest.packages.flat_map(&:files).to_set
+        graph.documents.each_with_object(Set.new) do |document, paths|
+          uri = document.uri
+          next unless URI.parse(uri).scheme == "file"
+
+          path = location_path(document, uri)
+          paths << path if audited.include?(path)
+        rescue URI::InvalidURIError
+          next
+        end
       end
 
       def workspace_member_count(declaration, manifest)

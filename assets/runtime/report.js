@@ -867,6 +867,36 @@
       return true;
     }
 
+    function appendDependencyWarnings(container) {
+      const warnings = Array.isArray(model.dependencyWarnings) ? model.dependencyWarnings : [];
+      if (!warnings.length) return;
+
+      const details = document.createElement("details");
+      details.className = "index-warnings";
+      const summary = document.createElement("summary");
+      const heading = document.createElement("span");
+      heading.className = "section-heading";
+      const title = document.createElement("strong");
+      title.textContent = `${warnings.length.toLocaleString()} ${warnings.length === 1 ? "dependency" : "dependencies"} not indexed`;
+      const subtitle = document.createElement("small");
+      subtitle.textContent = "Open for package-specific reasons";
+      heading.append(title, subtitle);
+      summary.append(heading);
+
+      const list = document.createElement("ul");
+      for (const warning of warnings) {
+        const item = document.createElement("li");
+        const name = document.createElement("strong");
+        name.textContent = warning.name;
+        const reason = document.createElement("span");
+        reason.textContent = warning.reason;
+        item.append(name, reason);
+        list.append(item);
+      }
+      details.append(summary, list);
+      container.append(details);
+    }
+
     function createExplorer() {
       const container = document.getElementById("controls");
       container.textContent = "";
@@ -956,6 +986,7 @@
         details.append(summary, body);
         container.append(details);
       }
+      appendDependencyWarnings(container);
     }
 
     function configureShowcaseStage() {
