@@ -1,5 +1,7 @@
 # RubyLens project brief
 
+This brief records the product's earlier research and direction-setting. [PRODUCT.md](PRODUCT.md) and [DESIGN.md](DESIGN.md) are the current contracts for shipped product and interaction decisions.
+
 ## Vision
 
 RubyLens is a CLI-first Ruby tool that turns a Ruby codebase into a beautiful, interactive semantic map and a compact set of useful project statistics. Its first output will be an offline browser report that can be explored and inspected locally. A hosted product may follow later if there is real demand and its cost and privacy model make sense.
@@ -42,7 +44,7 @@ The upstream [API reference](https://shopify.github.io/rubydex/) should remain t
 - Which totals belong in the first summary panel: likely files, classes, modules, methods, namespaces, and gems, subject to what can be defined consistently.
 - What visual properties represent size, type, ownership, and risk without turning the scene into an unreadable dashboard.
 - How dependency depth, direct versus transitive gems, and workspace packages should be grouped below the waterline.
-- The level-of-detail and search strategy needed for very large repositories.
+- How the current bounded, lazy Explorer search and renderer level-of-detail should evolve for repositories beyond their measured scale.
 - How configurable monorepo boundaries become stable, independently focusable Core systems; see [the boundary design](docs/MONOREPO_BOUNDARIES.md).
 - Which additional shareable formats should follow the autonomous Showcase without weakening local-first privacy.
 - Whether the production report remains a single HTML file or becomes a fully local report directory; either form must stay offline at runtime.

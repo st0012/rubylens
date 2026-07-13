@@ -5,19 +5,13 @@ require "bundler/lockfile_parser"
 require "find"
 require "pathname"
 require "set"
+require_relative "../dependency_warning"
 
 module RubyLens
   module Index
     class Manifest
       Package = Data.define(:name, :version, :role, :location, :root, :files)
-      GIT_SKIP_REASONS = {
-        checkout_unavailable: "Bundler checkout is unavailable",
-        local_only_required: "Bundler source is not available for local-only indexing",
-        specification_unavailable: "Locked gemspec is unavailable in the Bundler checkout",
-        specification_unreadable: "Locked gemspec could not be loaded from the Bundler checkout",
-        unsafe_specification_root: "Locked gemspec resolves outside the Bundler checkout",
-        no_indexable_files: "Locked require paths contain no indexable Ruby files",
-      }.freeze
+      GIT_SKIP_REASONS = DependencyWarning::REASONS
 
       attr_reader :root, :files, :workspace_files, :packages, :warnings, :dependency_warnings
 

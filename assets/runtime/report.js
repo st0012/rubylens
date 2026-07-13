@@ -8,6 +8,10 @@
     const panel = document.getElementById("panel");
     const panelBody = document.getElementById("panel-body");
     const panelToggle = document.getElementById("panel-toggle");
+    const searchRegion = document.getElementById("explorer-search-region");
+    const searchInput = document.getElementById("explorer-search");
+    const searchStatus = document.getElementById("search-status");
+    const searchResults = document.getElementById("search-results");
     const tooltip = document.getElementById("tooltip");
     const tooltipCategory = document.getElementById("tooltip-category");
     const tooltipName = document.getElementById("tooltip-name");
@@ -24,6 +28,18 @@
     const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35, SHOWCASE_POINT_LIMIT = 50_000;
     const CORE_SCALE_BASELINE = 3_000;
     const RSPEC_PROXY_PREFIX = "RSpec example group #";
+    const DEFAULT_CAMERA = Object.freeze({ yaw: -.36, pitch: .34, zoom: 1, panX: 0, panY: 0 });
+    const DRIFT_RADIANS_PER_SECOND = .04125;
+    const MAX_DRIFT_DELTA_MS = 50;
+    const SEARCH_DEBOUNCE_MS = 120;
+    const SEARCH_RESULT_LIMIT = 24;
+    const SEARCH_BATCH_SIZE = 8;
+    const WARNING_ROW_LIMIT = 24;
+    let lastDriftTimestamp = null;
+    let searchIndex = null;
+    let searchTimer = 0;
+    let searchMatches = [];
+    let searchVisibleCount = SEARCH_BATCH_SIZE;
     const SHOWCASE_PRESET = Object.freeze({
       "stageWidth": 1920,
       "stageHeight": 1080,
@@ -521,7 +537,7 @@
 
     function completeCameraFlight() {
       if (!cameraFlight) return false;
-      const target = cameraFlight.target;
+      const target = cameraFlight.finalTarget;
       cameraFlight = null;
       applyCameraTarget(target);
       canvas.removeAttribute("aria-busy");
@@ -536,11 +552,12 @@
     function flyCamera(target) {
       cancelCameraFlight();
       cancelPendingHover();
+      const finalTarget = { ...target };
       const yawDelta = Math.atan2(Math.sin(target.yaw - yaw), Math.cos(target.yaw - yaw));
       const resolvedTarget = { ...target, yaw: yaw + yawDelta };
       tooltip.hidden = true;
       if (reducedMotionQuery.matches) {
-        applyCameraTarget(resolvedTarget);
+        applyCameraTarget(finalTarget);
         canvas.removeAttribute("aria-busy");
         requestRender();
         return;
@@ -550,7 +567,7 @@
       const zoomStops = Math.abs(Math.log2(resolvedTarget.zoom / zoom));
       const panDistance = Math.hypot(resolvedTarget.panX - panX, resolvedTarget.panY - panY);
       if (angularDistance < .001 && zoomStops < .01 && panDistance < .5) {
-        applyCameraTarget(resolvedTarget);
+        applyCameraTarget(finalTarget);
         canvas.removeAttribute("aria-busy");
         requestRender();
         return;
@@ -560,6 +577,7 @@
       cameraFlight = {
         start: { yaw, pitch, zoom, panX, panY },
         target: resolvedTarget,
+        finalTarget,
         startTime: null,
         duration: clamp(440 + angularDistance * 60 + zoomStops * 20, 440, 540),
         pullback: angularDistance > .35 && minimumZoom > cruiseZoom
@@ -575,7 +593,7 @@
       if (cameraFlight.startTime === null) cameraFlight.startTime = timestamp;
       const progress = clamp((timestamp - cameraFlight.startTime) / cameraFlight.duration, 0, 1);
       const eased = smootherstep(progress);
-      const { start, target } = cameraFlight;
+      const { start, target, finalTarget } = cameraFlight;
       yaw = start.yaw + (target.yaw - start.yaw) * eased;
       pitch = start.pitch + (target.pitch - start.pitch) * eased;
       panX = start.panX + (target.panX - start.panX) * eased;
@@ -584,7 +602,7 @@
       zoom = Math.exp(Math.log(start.zoom) + (Math.log(target.zoom) - Math.log(start.zoom)) * eased - pullback);
       if (progress >= 1) {
         cameraFlight = null;
-        applyCameraTarget(target);
+        applyCameraTarget(finalTarget);
         canvas.removeAttribute("aria-busy");
       }
     }
@@ -828,7 +846,7 @@
     }
 
     function focusPoint(point, button) {
-      if (activeFactButton === button) {
+      if (button && activeFactButton === button) {
         clearExplorationFocus();
         return;
       }
@@ -839,8 +857,10 @@
       setCategoryVisible(point.category, true);
       clearActiveFact();
       clearExpandedPackage();
-      activeFactButton = button;
-      activeFactButton.setAttribute("aria-pressed", "true");
+      if (button) {
+        activeFactButton = button;
+        activeFactButton.setAttribute("aria-pressed", "true");
+      }
       clearCategoryFocus();
       setDrifting(false);
       selectedPoint = null;
@@ -869,34 +889,200 @@
       return true;
     }
 
-    function appendDependencyWarnings(container) {
-      const warnings = Array.isArray(model.dependencyWarnings) ? model.dependencyWarnings : [];
-      if (!warnings.length) return;
-
-      const details = document.createElement("details");
-      details.className = "index-warnings";
-      const summary = document.createElement("summary");
-      const heading = document.createElement("span");
-      heading.className = "section-heading";
-      const title = document.createElement("strong");
-      title.textContent = `${warnings.length.toLocaleString()} ${warnings.length === 1 ? "dependency" : "dependencies"} not indexed`;
-      const subtitle = document.createElement("small");
-      subtitle.textContent = "Open for package-specific reasons";
-      heading.append(title, subtitle);
-      summary.append(heading);
-
-      const list = document.createElement("ul");
-      for (const warning of warnings) {
-        const item = document.createElement("li");
-        const name = document.createElement("strong");
-        name.textContent = warning.name;
-        const reason = document.createElement("span");
-        reason.textContent = warning.reason;
-        item.append(name, reason);
-        list.append(item);
+    function appendWarningGroup(container, title, count, rows = [], note = "") {
+      if (count <= 0) return;
+      const group = document.createElement("section");
+      group.className = "warning-group";
+      const heading = document.createElement("h2");
+      heading.className = "warning-group-heading";
+      const label = document.createElement("span");
+      label.textContent = title;
+      const total = document.createElement("span");
+      total.textContent = `${count.toLocaleString()} ${count === 1 ? "warning" : "warnings"}`;
+      heading.append(label, total);
+      group.append(heading);
+      if (rows.length) {
+        const list = document.createElement("ul");
+        list.className = "warning-rows";
+        for (const warning of rows) {
+          const item = document.createElement("li");
+          item.className = "warning-row";
+          const name = document.createElement("strong");
+          name.textContent = warning.name;
+          const reason = document.createElement("span");
+          reason.textContent = warning.reason;
+          item.append(name, reason);
+          list.append(item);
+        }
+        group.append(list);
       }
-      details.append(summary, list);
-      container.append(details);
+      if (note) {
+        const summary = document.createElement("p");
+        summary.className = "warning-note";
+        summary.textContent = note;
+        group.append(summary);
+      }
+      container.append(group);
+    }
+
+    function populateWarningDisclosure() {
+      const details = document.getElementById("status");
+      const summary = document.getElementById("warning-summary");
+      const container = document.getElementById("warning-details");
+      const counts = Object.fromEntries(["manifest", "index", "integrity"].map(category => [category, Math.max(0, Number(model.warningCounts?.[category]) || 0)]));
+      const warningTotal = Object.values(counts).reduce((sum, count) => sum + count, 0);
+      if (!warningTotal) return;
+
+      details.hidden = false;
+      summary.textContent = `${warningTotal.toLocaleString()} partial-index warning${warningTotal === 1 ? "" : "s"}`;
+      container.textContent = "";
+
+      const safeWarnings = (Array.isArray(model.dependencyWarnings) ? model.dependencyWarnings : []).filter(warning =>
+        warning && typeof warning.name === "string" && warning.name.length > 0 && typeof warning.reason === "string" && warning.reason.length > 0
+      );
+      const seen = new Set();
+      const uniqueWarnings = safeWarnings.filter(warning => {
+        const key = `${warning.name}\u0000${warning.reason}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      const shownWarnings = uniqueWarnings.slice(0, WARNING_ROW_LIMIT);
+      const dependencyNotes = [];
+      const duplicateCount = safeWarnings.length - uniqueWarnings.length;
+      const omittedCount = uniqueWarnings.length - shownWarnings.length;
+      if (duplicateCount > 0) dependencyNotes.push(`${duplicateCount.toLocaleString()} duplicate ${duplicateCount === 1 ? "entry" : "entries"} summarized.`);
+      if (omittedCount > 0) dependencyNotes.push(`${omittedCount.toLocaleString()} more ${omittedCount === 1 ? "package warning" : "package warnings"} not shown.`);
+      appendWarningGroup(container, "Dependency packages", safeWarnings.length, shownWarnings, dependencyNotes.join(" "));
+
+      const undetailedManifestCount = Math.max(0, counts.manifest - safeWarnings.length);
+      appendWarningGroup(container, "Manifest", undetailedManifestCount, [], "Package-specific details are unavailable for these warnings.");
+      appendWarningGroup(container, "Ruby index", counts.index, [], "Only the aggregate count is included in this report.");
+      appendWarningGroup(container, "Integrity checks", counts.integrity, [], "Only the aggregate count is included in this report.");
+    }
+
+    function ensureSearchIndex() {
+      searchIndex ||= interactivePoints.map(point => point.name.toLowerCase());
+      return searchIndex;
+    }
+
+    function searchRenderedPoints(query) {
+      const names = ensureSearchIndex();
+      const buckets = [[], [], [], []];
+      for (let index = 0; index < names.length; index += 1) {
+        const name = names[index];
+        const position = name.indexOf(query);
+        if (position < 0) continue;
+        const rank = position === 0 ? (name.length === query.length ? 0 : 1) : /[^a-z0-9]/.test(name[position - 1]) ? 2 : 3;
+        if (buckets[rank].length < SEARCH_RESULT_LIMIT) buckets[rank].push(index);
+      }
+      return buckets.flat().slice(0, SEARCH_RESULT_LIMIT);
+    }
+
+    function searchResultContext(point, duplicateOrdinal, duplicateTotal) {
+      const category = point.category === "core" ? "Core" : point.category === "tests" ? "Tests" : "Gems";
+      const kind = point.hub ? "Dependency system" : point.kind;
+      const duplicate = duplicateTotal > 1 ? ` · Result ${duplicateOrdinal} of ${duplicateTotal}` : "";
+      return `${kind} · ${category}${duplicate}`;
+    }
+
+    function activateSearchResult(point) {
+      if (point.hub) focusDependencyPackage(point.packageIndex);
+      else focusPoint(point);
+    }
+
+    function renderSearchResults(focusIndex = null) {
+      searchResults.textContent = "";
+      const visibleMatches = searchMatches.slice(0, searchVisibleCount);
+      const duplicateTotals = new Map();
+      for (const match of searchMatches) {
+        const point = interactivePoints[match];
+        const key = `${point.category}\u0000${point.name}`;
+        duplicateTotals.set(key, (duplicateTotals.get(key) || 0) + 1);
+      }
+      const duplicateOrdinals = new Map();
+      for (const match of visibleMatches) {
+        const point = interactivePoints[match];
+        const key = `${point.category}\u0000${point.name}`;
+        const ordinal = (duplicateOrdinals.get(key) || 0) + 1;
+        duplicateOrdinals.set(key, ordinal);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "search-result";
+        const name = document.createElement("span");
+        name.className = "search-result-name";
+        name.textContent = point.name;
+        const type = document.createElement("span");
+        type.className = "search-result-type";
+        type.textContent = point.category === "core" ? "Core" : point.category === "tests" ? "Test" : "Gem";
+        const context = document.createElement("span");
+        context.className = "search-result-context";
+        context.textContent = searchResultContext(point, ordinal, duplicateTotals.get(key));
+        button.append(name, type, context);
+        button.addEventListener("click", () => activateSearchResult(point));
+        searchResults.append(button);
+      }
+      if (searchVisibleCount < searchMatches.length) {
+        const more = document.createElement("button");
+        more.type = "button";
+        more.className = "search-more";
+        const remaining = searchMatches.length - searchVisibleCount;
+        more.textContent = `Show ${Math.min(SEARCH_BATCH_SIZE, remaining)} more`;
+        more.addEventListener("click", () => {
+          const firstNewResult = searchVisibleCount;
+          searchVisibleCount = Math.min(searchMatches.length, searchVisibleCount + SEARCH_BATCH_SIZE);
+          renderSearchResults(firstNewResult);
+        });
+        searchResults.append(more);
+      }
+      searchResults.hidden = visibleMatches.length === 0;
+      if (focusIndex !== null) searchResults.querySelectorAll(".search-result")[focusIndex]?.focus();
+    }
+
+    function clearSearch({ focus = false } = {}) {
+      if (searchTimer) window.clearTimeout(searchTimer);
+      searchTimer = 0;
+      searchMatches = [];
+      searchVisibleCount = SEARCH_BATCH_SIZE;
+      searchInput.value = "";
+      searchResults.textContent = "";
+      searchResults.hidden = true;
+      searchStatus.textContent = "Search Core, Tests, and Gems.";
+      if (focus) searchInput.focus();
+    }
+
+    function runSearch() {
+      searchTimer = 0;
+      const query = searchInput.value.trim().toLowerCase();
+      if (!query) {
+        clearSearch();
+        return;
+      }
+      searchMatches = searchRenderedPoints(query);
+      searchVisibleCount = SEARCH_BATCH_SIZE;
+      searchStatus.textContent = searchMatches.length
+        ? `${searchMatches.length.toLocaleString()} ${searchMatches.length === 1 ? "result" : "results"} shown`
+        : `No results for “${searchInput.value.trim()}”`;
+      renderSearchResults();
+    }
+
+    function initializeSearch() {
+      searchInput.addEventListener("input", () => {
+        if (searchTimer) window.clearTimeout(searchTimer);
+        const query = searchInput.value.trim();
+        if (!query) {
+          clearSearch();
+          return;
+        }
+        searchStatus.textContent = "Searching…";
+        searchTimer = window.setTimeout(runSearch, SEARCH_DEBOUNCE_MS);
+      });
+      searchRegion.addEventListener("keydown", event => {
+        if (event.key !== "Escape" || (!searchInput.value && searchResults.hidden)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        clearSearch({ focus: true });
+      });
     }
 
     function createExplorer() {
@@ -988,7 +1174,6 @@
         details.append(summary, body);
         container.append(details);
       }
-      appendDependencyWarnings(container);
     }
 
     function configureShowcaseStage() {
@@ -1091,12 +1276,15 @@
       return true;
     }
 
-    function resetCamera() {
-      yaw = -.36;
-      pitch = .34;
-      zoom = 1;
-      panX = 0;
-      panY = 0;
+    function goHome() {
+      cancelCameraFlight();
+      clearActiveFact();
+      clearCategoryFocus();
+      clearExpandedPackage();
+      selectPoint(null);
+      setNavigationMode("orbit");
+      for (const category of Object.keys(visibleCategories)) setCategoryVisible(category, true);
+      flyCamera(DEFAULT_CAMERA);
     }
 
     function setNavigationMode(mode) {
@@ -1211,7 +1399,7 @@
           const expansion = expandedPackageIndex === point.packageIndex ? DEPENDENCY_EXPANSION : 1;
           point.cloudScreenRadius = Math.max(12, packageAnchors[point.packageIndex][3] * perspective * expansion * 1.2);
         }
-        const detailedPoint = expandedPackageIndex !== null ? focusedPackagePoint : emphasis >= .1;
+        const detailedPoint = emphasis >= .1;
         if (size > 1.35 && detailedPoint) {
           const glowScale = focusedPackagePoint ? 2.2 - deepDetail * .8 : 3.4 - deepDetail * 1.3;
           context.beginPath(); context.arc(x, y, size * glowScale, 0, Math.PI * 2);
@@ -1236,8 +1424,17 @@
         if (cameraFlight) tooltip.hidden = true;
         else positionTooltip(selectedPoint);
       }
-      if (cameraFlight) requestRender();
-      else if (interactiveMode && drifting && !dragging && !selectedPoint) { yaw += .00055; requestRender(); }
+      if (cameraFlight) {
+        lastDriftTimestamp = null;
+        requestRender();
+      } else if (interactiveMode && drifting && !dragging && !selectedPoint) {
+        const elapsed = lastDriftTimestamp === null ? 1000 / 60 : clamp(timestamp - lastDriftTimestamp, 0, MAX_DRIFT_DELTA_MS);
+        lastDriftTimestamp = timestamp;
+        yaw += DRIFT_RADIANS_PER_SECOND * elapsed / 1000;
+        requestRender();
+      } else {
+        lastDriftTimestamp = null;
+      }
     }
 
     function requestRender() {
@@ -1296,6 +1493,7 @@
     function setDrifting(next) {
       if (next) cancelCameraFlight();
       drifting = next;
+      lastDriftTimestamp = null;
       const motion = document.getElementById("motion");
       motion.textContent = drifting ? "Pause drift" : "Resume drift";
       motion.setAttribute("aria-pressed", String(!drifting));
@@ -1414,7 +1612,7 @@
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.key === "+" || event.key === "=") { cancelCameraFlight(); zoomBetween(zoom * ZOOM_STEP, sceneCenterX, sceneCenterY); }
       else if (event.key === "-") { cancelCameraFlight(); zoomBetween(zoom / ZOOM_STEP, sceneCenterX, sceneCenterY); }
-      else if (event.key === "0") { cancelCameraFlight(); resetCamera(); }
+      else if (event.key === "0") goHome();
       else if (event.key.toLowerCase() === "p") { cancelCameraFlight(); setNavigationMode(navigationMode === "pan" ? "orbit" : "pan"); }
       else if ((event.key === "Enter" || event.key.toLowerCase() === "f") && selectedPoint?.category === "dependencies") focusDependencyPackage(selectedPoint.packageIndex);
       else return;
@@ -1429,14 +1627,7 @@
     document.getElementById("pan-mode").addEventListener("click", () => { cancelCameraFlight(); setNavigationMode(navigationMode === "pan" ? "orbit" : "pan"); });
     document.getElementById("zoom-in").addEventListener("click", () => { if (pointers.size === 0) { cancelCameraFlight(); zoomBetween(zoom * ZOOM_STEP, sceneCenterX, sceneCenterY); } requestRender(); });
     document.getElementById("zoom-out").addEventListener("click", () => { if (pointers.size === 0) { cancelCameraFlight(); zoomBetween(zoom / ZOOM_STEP, sceneCenterX, sceneCenterY); } requestRender(); });
-    document.getElementById("view").addEventListener("click", () => {
-      cancelCameraFlight();
-      resetCamera();
-      setNavigationMode("orbit");
-      for (const category of Object.keys(visibleCategories)) setCategoryVisible(category, true);
-      clearExplorationFocus();
-      requestRender();
-    });
+    document.getElementById("view").addEventListener("click", goHome);
     panelToggle.addEventListener("click", () => setPanelCollapsed(panelToggle.getAttribute("aria-expanded") === "true"));
     panel.addEventListener("transitionend", event => { if (event.propertyName === "width") { updateSceneViewport(); requestRender(); } });
     reducedMotionQuery.addEventListener("change", event => {
@@ -1462,11 +1653,11 @@
       document.title = `RubyLens · ${model.projectName}`;
       canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class and module stars for Ruby code details or gem clouds for package summaries. Sidebar highlights open a top-down view. Double-click a gem cloud, press Enter or F on a selected gem marker, or tap that marker again to expand its stars. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, and use arrow keys to move the view. Escape exits a focused gem system.`);
       document.getElementById("coverage").textContent = `${renderedDependencyStars.toLocaleString()} dependency stars shown`;
-      const warningTotal = Object.values(model.warningCounts).reduce((sum, count) => sum + count, 0);
-      if (warningTotal > 0) { const status = document.getElementById("status"); status.hidden = false; status.textContent = `${warningTotal.toLocaleString()} partial-index warning${warningTotal === 1 ? "" : "s"}`; }
+      populateWarningDisclosure();
       setDrifting(drifting);
       setNavigationMode(navigationMode);
       createExplorer();
+      initializeSearch();
       setPanelCollapsed(window.matchMedia("(max-width: 760px)").matches);
       resize();
     }

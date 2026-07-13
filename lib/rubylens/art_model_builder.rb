@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "dependency_warning"
+
 module RubyLens
   class ArtModelBuilder
     SIGNAL_FIELDS = %w[ancestorDepth definitionSites reopenings descendants references members].freeze
@@ -70,8 +72,13 @@ module RubyLens
         "packageNames" => package_names,
         "packages" => packages,
         "dependencyStars" => dependencies,
-        "dependencyWarnings" => snapshot.fetch("dependency_warnings", []).map do |warning|
-          { "name" => warning.fetch("name"), "reason" => warning.fetch("reason") }
+        "dependencyWarnings" => snapshot.fetch("dependency_warnings", []).filter_map do |warning|
+          name = warning.fetch("name")
+          reason = warning.fetch("reason")
+          next unless name.is_a?(String) && DependencyWarning::NAME_PATTERN.match?(name)
+          next unless reason.is_a?(String) && DependencyWarning::ALLOWED_REASONS.include?(reason)
+
+          { "name" => name, "reason" => reason }
         end,
         "warningCounts" => snapshot.fetch("warning_counts"),
       }
