@@ -233,8 +233,6 @@
       for (let index = 0; index < limit; index += 1) sampled[index] = candidates[first + Math.floor(offset + index * step)];
       return sampled;
     }
-    const overviewPickPoints = boundedRangeSample(namespacePoints, 0, namespacePoints.length, OVERVIEW_PICK_LIMIT)
-      .concat(dependencyHubs, systemHubs);
     function showcasePointSample() {
       if (!showcaseMode || points.length <= SHOWCASE_POINT_LIMIT) return points;
       const hubs = points.filter(point => point.hub);
@@ -258,6 +256,13 @@
     const midPointCount = firstNearPoint < 0 ? renderPoints.length : firstNearPoint;
     const firstFaintDependency = renderPoints.findIndex(point => point.lod === 1 && point.category === "dependencies" && !point.hub);
     const essentialMidPointCount = firstFaintDependency < 0 ? midPointCount : Math.min(midPointCount, firstFaintDependency);
+    const overviewNamespacePoints = renderPoints.slice(0, midPointCount).filter(point => Number.isInteger(point.sourceIndex));
+    const mobileOverviewNamespacePoints = renderPoints.slice(0, essentialMidPointCount).filter(point => Number.isInteger(point.sourceIndex));
+    const overviewPickPoints = boundedRangeSample(overviewNamespacePoints, 0, overviewNamespacePoints.length, OVERVIEW_PICK_LIMIT)
+      .concat(dependencyHubs, systemHubs);
+    const mobileOverviewPickPoints = boundedRangeSample(mobileOverviewNamespacePoints, 0, mobileOverviewNamespacePoints.length, OVERVIEW_PICK_LIMIT)
+      .concat(dependencyHubs, systemHubs);
+    const activeOverviewPickPoints = () => configuredMobile() ? mobileOverviewPickPoints : overviewPickPoints;
     const groupNearDrawRanges = groups.map(() => [0, 0]);
     const groupMidDrawRanges = groups.map(() => [0, 0]);
     const packageMidDrawRanges = model.packages.map(() => []);
@@ -285,6 +290,8 @@
     }
 
     function visibleDrawRanges() {
+      if (showcaseMode) return [[0, renderPoints.length]];
+
       const basePointCount = configuredMobile() ? essentialMidPointCount : midPointCount;
       if (focusedGroupIndex !== null) {
         const mid = groupMidDrawRanges[focusedGroupIndex] || [0, 0];
@@ -948,8 +955,8 @@
     }
 
     function hitTest(x, y) {
-      if (!configuredRegions) return nearestScreenPoint(overviewPickPoints, x, y);
-      if (focusedGroupIndex === null) return systemHubAt(x, y) || nearestScreenPoint(overviewPickPoints, x, y);
+      if (!configuredRegions) return nearestScreenPoint(activeOverviewPickPoints(), x, y);
+      if (focusedGroupIndex === null) return systemHubAt(x, y) || nearestScreenPoint(activeOverviewPickPoints(), x, y);
 
       const [first, length] = groupRanges[focusedGroupIndex];
       return nearestNamespaceInRange(first, length, x, y);
@@ -1657,7 +1664,7 @@
     }
 
     function activePickingPoints() {
-      if (focusedGroupIndex === null) return overviewPickPoints;
+      if (focusedGroupIndex === null) return activeOverviewPickPoints();
       const [first, length] = groupRanges[focusedGroupIndex];
       return boundedRangeSample(namespacePoints, first, length, FOCUSED_PICK_LIMIT).concat(dependencyHubs, systemHubs);
     }

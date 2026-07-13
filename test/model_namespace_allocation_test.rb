@@ -50,6 +50,49 @@ class ModelNamespaceAllocationTest < Minitest::Test
     assert_equal(keys.zip(quotas).to_h, reordered_keys.zip(reordered).to_h)
   end
 
+  def test_preserves_fractional_shares_before_deterministic_remainder_ties
+    keys = %w[a b]
+    quotas = RubyLens::Model::NamespaceAllocation.new(
+      sizes: [5, 6], keys:, budget: 5,
+    ).quotas
+    reordered_keys = keys.reverse
+    reordered = RubyLens::Model::NamespaceAllocation.new(
+      sizes: [6, 5], keys: reordered_keys, budget: 5,
+    ).quotas
+
+    assert_equal([2, 3], quotas)
+    assert_equal(keys.zip(quotas).to_h, reordered_keys.zip(reordered).to_h)
+  end
+
+  def test_enforces_skewed_minimums_without_overallocating_the_budget
+    quotas = RubyLens::Model::NamespaceAllocation.new(
+      sizes: [2, 8, 90], keys: %w[tiny small large], minimums: [2, 2, 1], budget: 10,
+    ).quotas
+
+    assert_equal([2, 2, 6], quotas)
+    assert_equal(10, quotas.sum)
+  end
+
+  def test_lower_bound_reclamation_uses_the_reverse_lexical_tie_break
+    quotas = RubyLens::Model::NamespaceAllocation.new(
+      sizes: [20, 30, 50], keys: %w[fixed zeta alpha], minimums: [5, 1, 1], budget: 20,
+    ).quotas
+
+    assert_equal([5, 5, 10], quotas)
+  end
+
+  def test_bounds_lower_bound_reclamation_for_many_skewed_regions
+    region_count = 5_000
+    sizes = Array.new(region_count, 1)
+    sizes[-1] = 1_000_000
+    quotas = RubyLens::Model::NamespaceAllocation.new(
+      sizes:, keys: region_count.times.map { |index| index.to_s },
+      minimums: Array.new(region_count, 1), budget: region_count,
+    ).quotas
+
+    assert_equal(Array.new(region_count, 1), quotas)
+  end
+
   def test_preserves_group_and_category_minimums_before_weighted_detail
     quotas = RubyLens::Model::NamespaceAllocation.new(
       sizes: [10, 10], keys: %w[beta alpha], minimums: [2, 2], budget: 4,

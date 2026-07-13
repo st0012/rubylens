@@ -21,37 +21,53 @@ module RubyLens
       def quotas
         quotas = Array.new(@sizes.length, 0)
         nonempty = @sizes.each_index.select { |index| @sizes[index].positive? }
-        remaining = @budget
-        1.upto(@minimums.max || 0) do |level|
-          eligible = nonempty.select { |index| @minimums[index] >= level }
-            .sort_by { |index| [@keys[index], index] }
-          eligible.first(remaining).each { |index| quotas[index] += 1 }
-          remaining -= [remaining, eligible.length].min
-          return quotas.freeze if remaining.zero?
+        return quotas.freeze if @budget.zero?
+
+        if @budget < @minimums.sum
+          remaining = @budget
+          1.upto(@minimums.max || 0) do |level|
+            eligible = nonempty.select { |index| @minimums[index] >= level }
+              .sort_by { |index| [@keys[index], index] }
+            eligible.first(remaining).each { |index| quotas[index] += 1 }
+            remaining -= [remaining, eligible.length].min
+            return quotas.freeze if remaining.zero?
+          end
         end
 
-        while remaining.positive?
-          eligible = nonempty.select { |index| quotas[index] < @sizes[index] }
-          break if eligible.empty?
+        total_weight = nonempty.sum { |index| @sizes[index] }
+        shares = nonempty.to_h do |index|
+          [index, Rational(@budget * @sizes[index], total_weight)]
+        end
+        nonempty.each { |index| quotas[index] = shares.fetch(index).floor }
+        remaining = @budget - quotas.sum
+        ranked = nonempty.select { |index| quotas[index] < @sizes[index] }
+          .sort_by { |index| [-(shares.fetch(index) % 1), @keys[index], index] }
+        ranked.first(remaining).each { |index| quotas[index] += 1 }
 
-          weights = eligible.to_h { |index| [index, @sizes[index]] }
-          total_weight = weights.values.sum
-          shares = eligible.to_h { |index| [index, remaining * weights.fetch(index) / total_weight] }
-          allocated = 0
-          eligible.each do |index|
-            addition = [shares.fetch(index).floor, @sizes[index] - quotas[index]].min
-            quotas[index] += addition
-            allocated += addition
+        # Preserve full-population Hamilton shares, then pay for lower bounds
+        # from the most overrepresented quotas.
+        excess = 0
+        nonempty.each do |index|
+          next unless quotas[index] < @minimums[index]
+
+          excess += @minimums[index] - quotas[index]
+          quotas[index] = @minimums[index]
+        end
+        if excess.positive?
+          # Removable seats cannot exceed the bounded namespace budget.
+          removals = []
+          nonempty.each do |index|
+            (quotas[index] - @minimums[index]).times do |offset|
+              removals << [quotas[index] - offset - shares.fetch(index), index]
+            end
           end
-          remaining -= allocated
-          break if remaining.zero?
-
-          ranked = eligible.select { |index| quotas[index] < @sizes[index] }
-            .sort_by { |index| [-(shares.fetch(index) % 1), @keys[index], index] }
-          break if ranked.empty?
-
-          ranked.first(remaining).each { |index| quotas[index] += 1 }
-          remaining -= [remaining, ranked.length].min
+          removals.sort! do |left, right|
+            comparison = right[0] <=> left[0]
+            comparison = @keys[right[1]] <=> @keys[left[1]] if comparison.zero?
+            comparison = right[1] <=> left[1] if comparison.zero?
+            comparison
+          end
+          removals.first(excess).each { |_deviation, index| quotas[index] -= 1 }
         end
         quotas.freeze
       end
