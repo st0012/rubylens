@@ -3,7 +3,7 @@
 require_relative "test_helper"
 
 class CLITest < Minitest::Test
-  def test_report_prints_machine_readable_result_and_privacy_warning
+  def test_report_defaults_to_current_directory_and_prints_machine_readable_result
     output = StringIO.new
     errors = StringIO.new
     result = RubyLens::Result.new(
@@ -15,10 +15,10 @@ class CLITest < Minitest::Test
     report_generator = ->(**arguments) { received = arguments; result }
 
     status = RubyLens::CLI.new(stdout: output, stderr: errors, report_generator: report_generator)
-      .run(["report", ".", "--output", "/tmp/report.html", "--lockfile", "/tmp/Gemfile.lock"])
+      .run(["report"])
 
     assert_equal(0, status)
-    assert_equal({ path: ".", output: "/tmp/report.html", lockfile: "/tmp/Gemfile.lock" }, received)
+    assert_equal({ path: Dir.pwd, output: nil, lockfile: nil }, received)
     assert_equal("/tmp/report.html", JSON.parse(output.string).fetch("output"))
     assert_includes(errors.string, "private codebase structure")
   end
@@ -32,7 +32,7 @@ class CLITest < Minitest::Test
     assert_equal("#{RubyLens::VERSION}\n", output.string)
   end
 
-  def test_showcase_prints_machine_readable_result_and_privacy_warning
+  def test_showcase_defaults_to_current_directory_and_prints_machine_readable_result
     output = StringIO.new
     errors = StringIO.new
     received = nil
@@ -46,12 +46,113 @@ class CLITest < Minitest::Test
     end
 
     status = RubyLens::CLI.new(stdout: output, stderr: errors, showcase_generator: showcase_generator)
-      .run(["showcase", ".", "--output", "/tmp/showcase.html", "--lockfile", "/tmp/Gemfile.lock"])
+      .run(["showcase"])
 
     assert_equal(0, status)
-    assert_equal({ path: ".", output: "/tmp/showcase.html", lockfile: "/tmp/Gemfile.lock" }, received)
+    assert_equal({ path: Dir.pwd, output: nil, lockfile: nil }, received)
     assert_equal("/tmp/showcase.html", JSON.parse(output.string).fetch("output"))
     assert_includes(errors.string, "Share them intentionally")
+  end
+
+  def test_options_work_without_a_target
+    cases = {
+      "report" => ["--output", "/tmp/report.html", "--lockfile", "/tmp/report.lock"],
+      "showcase" => ["--lockfile", "/tmp/showcase.lock", "--output", "/tmp/showcase.html"],
+    }
+
+    cases.each do |command, arguments|
+      received = nil
+      generator = lambda do |**options|
+        received = options
+        RubyLens::Result.new(output_path: options[:output], counts: {}, warnings: [])
+      end
+      cli = RubyLens::CLI.new(
+        stdout: StringIO.new,
+        stderr: StringIO.new,
+        report_generator: generator,
+        showcase_generator: generator,
+      )
+
+      status = cli.run([command, *arguments])
+
+      assert_equal(0, status, command)
+      assert_equal(Dir.pwd, received[:path], command)
+      assert_equal("/tmp/#{command}.html", received[:output], command)
+      assert_equal("/tmp/#{command}.lock", received[:lockfile], command)
+    end
+  end
+
+  def test_explicit_target_works_with_options_in_either_order
+    cases = {
+      "report" => ["--output", "/tmp/report.html", "project", "--lockfile", "/tmp/report.lock"],
+      "showcase" => ["project", "--lockfile", "/tmp/showcase.lock", "--output", "/tmp/showcase.html"],
+    }
+
+    cases.each do |command, arguments|
+      received = nil
+      generator = lambda do |**options|
+        received = options
+        RubyLens::Result.new(output_path: options[:output], counts: {}, warnings: [])
+      end
+      cli = RubyLens::CLI.new(
+        stdout: StringIO.new,
+        stderr: StringIO.new,
+        report_generator: generator,
+        showcase_generator: generator,
+      )
+
+      status = cli.run([command, *arguments])
+
+      assert_equal(0, status, command)
+      assert_equal(
+        { path: "project", output: "/tmp/#{command}.html", lockfile: "/tmp/#{command}.lock" },
+        received,
+        command,
+      )
+    end
+  end
+
+  def test_extra_target_is_rejected_before_generation
+    generator = ->(**) { flunk("generator should not be called") }
+
+    %w[report showcase].each do |command|
+      errors = StringIO.new
+      cli = RubyLens::CLI.new(
+        stdout: StringIO.new,
+        stderr: errors,
+        report_generator: generator,
+        showcase_generator: generator,
+      )
+
+      status = cli.run([command, "first", "second"])
+
+      assert_equal(2, status, command)
+      assert_includes(errors.string, "unexpected argument: second", command)
+    end
+  end
+
+  def test_subcommand_help_uses_cli_output_without_generating
+    generator = ->(**) { flunk("generator should not be called") }
+
+    [["report", "--help"], ["showcase", "-h"]].each do |command, help_flag|
+      output = StringIO.new
+      errors = StringIO.new
+      cli = RubyLens::CLI.new(
+        stdout: output,
+        stderr: errors,
+        report_generator: generator,
+        showcase_generator: generator,
+      )
+
+      status = cli.run([command, help_flag])
+
+      assert_equal(0, status, command)
+      assert_includes(output.string, "Usage: rubylens #{command} [OPTIONS] [TARGET]", command)
+      assert_includes(output.string, "TARGET defaults to the current working directory", command)
+      assert_includes(output.string, "--output FILE", command)
+      assert_includes(output.string, "--lockfile FILE", command)
+      assert_empty(errors.string, command)
+    end
   end
 
   def test_help_lists_only_the_supported_product_commands
@@ -60,8 +161,11 @@ class CLITest < Minitest::Test
     status = RubyLens::CLI.new(stdout: output, stderr: StringIO.new).run(["help"])
 
     assert_equal(0, status)
-    assert_includes(output.string, "report [TARGET]")
-    assert_includes(output.string, "showcase [TARGET]")
+    assert_includes(output.string, "TARGET defaults to the current working directory")
+    assert_includes(output.string, "rubylens report --help")
+    assert_includes(output.string, "rubylens showcase --help")
+    assert_includes(output.string, "report [OPTIONS] [TARGET]")
+    assert_includes(output.string, "showcase [OPTIONS] [TARGET]")
     refute_includes(output.string, "build [TARGET]")
     refute_includes(output.string, "gif [TARGET]")
   end

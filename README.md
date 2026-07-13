@@ -9,10 +9,10 @@ This is an early local prototype. RubyLens 0.1 supports Ruby 3.2 through 4.0 and
 Add RubyLens to the bundle of the project you want to visualize, then run:
 
 ```sh
-bundle exec rubylens report .
+bundle exec rubylens report
 ```
 
-The default report is `rubylens-report.html` in the project root. It contains fully qualified class, module, and gem names for local hover details, but no source text, comments, or paths. Dependency stars remain anonymous and are summarized at the gem level. RubyLens adds that exact default path to Git's local exclude file and writes the report with owner-only permissions, so it stays out of commits without changing the project's `.gitignore`. The model reveals private codebase structure, so keep it local unless you intend to share it.
+When `TARGET` is omitted, RubyLens uses the current working directory. Pass a path after the command to visualize a different project. The default report is `rubylens-report.html` in the project root. It contains fully qualified class, module, and gem names for local hover details, but no source text, comments, or paths. Dependency stars remain anonymous and are summarized at the gem level. RubyLens adds that exact default path to Git's local exclude file and writes the report with owner-only permissions, so it stays out of commits without changing the project's `.gitignore`. The model reveals private codebase structure, so keep it local unless you intend to share it.
 
 Ruby API:
 
@@ -36,7 +36,7 @@ RubyDex-indexed Ruby documents under `spec/` or `specs/` contribute non-interact
 Showcase is a standalone artistic presentation: it opens directly, rotates once per minute, and contains no Explorer controls or interactions.
 
 ```sh
-bundle exec rubylens showcase .
+bundle exec rubylens showcase
 ```
 
 The default output is `rubylens-showcase.html` in the project root. It is self-contained, offline, atomically written with mode `0600`, and locally excludes only that exact default path and its atomic temporary-file pattern. Explicit custom outputs remain unmanaged. RubyLens refuses to replace a tracked default or an unrelated existing file.
