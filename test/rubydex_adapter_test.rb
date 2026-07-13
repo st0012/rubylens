@@ -249,6 +249,62 @@ class RubydexAdapterTest < Minitest::Test
     end
   end
 
+  def test_model_eligibility_filter_uses_real_rubydex_shapes
+    with_declaration_shapes do |_directory, _source_path, _graph, declarations|
+      adapter = RubyLens::Index::RubydexAdapter.new
+      named = declarations.find { |declaration| declaration.name == "Named" }
+      assigned = declarations.find { |declaration| declaration.name == "Assigned" }
+      todo_owned = declarations.find { |declaration| declaration.name == "Missing::Nested" }
+      todo = declarations.find { |declaration| declaration.is_a?(Rubydex::Todo) && declaration.name == "Missing" }
+      anonymous = declarations.select { |declaration| declaration.name.include?("<anonymous>") }
+      first_level = declarations.find { |declaration| declaration.name == "Named::<Named>" }
+      nested = declarations.find { |declaration| declaration.name == "Named::<Named>::<<Named>>" }
+      nested_method = declarations.find { |declaration| declaration.name.end_with?("#nested_meta_method()") }
+
+      [named, assigned, todo_owned, first_level, nested_method].each do |declaration|
+        assert(adapter.send(:model_eligible_declaration?, declaration), "expected #{declaration&.name} to remain eligible")
+      end
+      [todo, nested, *anonymous].each do |declaration|
+        refute(adapter.send(:model_eligible_declaration?, declaration), "expected #{declaration&.name} to be filtered")
+      end
+      refute(adapter.send(:model_eligible_declaration?, Struct.new(:name).new(nil)))
+      refute(adapter.send(:model_eligible_declaration?, Struct.new(:name).new("")))
+    end
+  end
+
+  def test_filters_declarations_before_workspace_category_dependency_and_rails_aggregation
+    with_declaration_shapes do |directory, source_path, graph, _declarations|
+      manifest = RubyLens::Index::Manifest.build(root: directory)
+      snapshot = RubyLens::Index::RubydexAdapter.new.index(manifest)
+
+      assert_equal(%w[Assigned Missing::Nested Named], snapshot.fetch("namespace_names").sort)
+      assert_equal({ "core" => [3, 0, 2, 1], "tests" => [0, 0, 0, 0] }, snapshot.fetch("category_stats"))
+      refute_includes(JSON.generate(snapshot), "<anonymous>")
+
+      package_manifest = Object.new
+      package_manifest.define_singleton_method(:packages) { [Object.new] }
+      package_manifest.define_singleton_method(:workspace_path?) { |_path| false }
+      package_manifest.define_singleton_method(:package_index_for) { |path| File.expand_path(path) == source_path ? 0 : nil }
+      adapter = RubyLens::Index::RubydexAdapter.new
+      rails_seen = []
+      adapter.define_singleton_method(:collect_rails_namespace) do |_reference, declaration, _manifest|
+        rails_seen << declaration.name
+      end
+      collected = adapter.send(:collect_declarations, graph.declarations, package_manifest)
+      package = collected.fetch(:dependency_aggregation).packages.fetch(0)
+
+      assert_equal(7, package.fetch(:declaration_count))
+      assert_equal([3, 0, 2, 1], package.fetch(:ruby_counts))
+      assert_equal(7, package.fetch(:declarations).length)
+      assert_includes(package.fetch(:declarations).map(&:first), 2, "first-level singleton class remains eligible")
+      retained_maxima = (1..6).map { |column| package.fetch(:declarations).map { |row| row.fetch(column) }.max }
+      assert_equal(retained_maxima, collected.fetch(:dependency_aggregation).signal_maxima)
+      assert(rails_seen.none? { |name| name.nil? || name.empty? || name.include?("<anonymous>") })
+      refute_includes(rails_seen, "Missing")
+      refute_includes(rails_seen, "Named::<Named>::<<Named>>")
+    end
+  end
+
   def test_compacts_dependency_declarations_without_embedding_their_names
     Dir.mktmpdir("rubylens-package-declarations-") do |directory|
       lib = File.join(directory, "lib")
@@ -289,6 +345,35 @@ class RubydexAdapterTest < Minitest::Test
 
 
   private
+
+  def with_declaration_shapes
+    Dir.mktmpdir("rubylens-declaration-shapes-") do |directory|
+      directory = File.realpath(directory)
+      source_path = File.join(directory, "shapes.rb")
+      File.write(source_path, <<~RUBY)
+        class Named
+          class << self
+            def class_method; end
+            class << self
+              def nested_meta_method; end
+            end
+          end
+        end
+
+        Assigned = Class.new
+        Class.new
+        Module.new
+        Missing::VALUE = 1
+        class Missing::Nested; end
+      RUBY
+      system("git", "-C", directory, "init", "--quiet", exception: true)
+      system("git", "-C", directory, "add", "shapes.rb", exception: true)
+      graph = Rubydex::Graph.new(workspace_path: directory)
+      assert_empty(graph.index_all([source_path]))
+      graph.resolve
+      yield directory, source_path, graph, graph.declarations.to_a
+    end
+  end
 
   def with_synthetic_monorepo
     Dir.mktmpdir("rubylens-synthetic-monorepo-") do |directory|
