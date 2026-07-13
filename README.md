@@ -39,7 +39,7 @@ bundle exec rubylens showcase .
 
 The default output is `rubylens-showcase.html` in the project root. It is self-contained, offline, atomically written with mode `0600`, and locally excludes only that exact default path and its atomic temporary-file pattern. Explicit custom outputs remain unmanaged. RubyLens refuses to replace a tracked default or an unrelated existing file.
 
-The Showcase payload intentionally includes the project name, aggregate Ruby statistics, and numeric visual structure. It does not serialize declaration names, gem names, source text, comments, or paths. Configured multi-system scenes serialize at most 50,000 namespace rows, plus bounded dependency detail, and retain an anonymous hub and deterministic representatives from every nonempty system before allocating detail. Unconfigured scenes preserve the existing 50,000-point gem-hub sampler. `prefers-reduced-motion` produces one stable frame instead of a continuous orbit.
+The Showcase payload intentionally includes the project name, aggregate Ruby statistics, and numeric visual structure. It does not serialize declaration names, gem names, source text, comments, or paths. Configured scenes serialize at most 50,000 namespace rows, plus bounded dependency detail, and retain deterministic representatives from every nonempty region before allocating detail. Unconfigured scenes preserve the existing 50,000-point namespace sampler. `prefers-reduced-motion` produces one stable frame instead of a continuous orbit.
 
 Ruby API:
 
