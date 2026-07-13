@@ -22,6 +22,7 @@
     };
     let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, showcaseRenderer = null;
     const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35, SHOWCASE_POINT_LIMIT = 50_000;
+    const CORE_SCALE_BASELINE = 3_000;
     const SHOWCASE_PRESET = Object.freeze({
       "stageWidth": 1920,
       "stageHeight": 1080,
@@ -75,12 +76,35 @@
       return fields.reduce((total, field, index) => total + signalWeights[category][field] * normalized[index], .12);
     }
 
+    function layoutMetricsForCoreCount(coreCount) {
+      const coreRatio = Math.max(1, coreCount / CORE_SCALE_BASELINE);
+      const disk = Math.pow(coreRatio, .45);
+      const tests = disk;
+      const cameraScale = Math.pow(tests, .8);
+      return Object.freeze({
+        disk,
+        bulge: Math.pow(coreRatio, .35),
+        tests,
+        cameraScale,
+        cameraDistance: 270 * cameraScale,
+        cameraFocalLength: 440,
+        testOuterRadius: 62 * tests,
+        dependencyInnerRadius: 62 * tests + 8,
+      });
+    }
+
+    const coreCount = model.namespaces.reduce((count, row) => count + (row[3] === 1 ? 0 : 1), 0);
+    const layoutScale = layoutMetricsForCoreCount(coreCount);
+    const cameraDistance = layoutScale.cameraDistance;
+    const cameraFocalLength = layoutScale.cameraFocalLength;
+
     function corePosition(seed) {
       const bulge = unit(seed, 2) < .24;
       const radial = bulge ? 17 * Math.pow(unit(seed, 3), 1.75) : Math.min(42, -10 * Math.log(Math.max(1e-5, 1 - unit(seed, 3))));
       const theta = unit(seed, 4) * Math.PI * 2 + radial * .04;
       const vertical = normal(seed, 5) * (bulge ? 5.8 : 1.4 + radial * .025);
-      return [Math.cos(theta) * radial, vertical, Math.sin(theta) * radial];
+      const scale = bulge ? layoutScale.bulge : layoutScale.disk;
+      return [Math.cos(theta) * radial * scale, vertical * scale, Math.sin(theta) * radial * scale];
     }
 
     function testPosition(seed) {
@@ -91,13 +115,13 @@
         ? arm * (Math.PI * 2 / 3) + radial * .105 + normal(seed, 10) * .22
         : unit(seed, 10) * Math.PI * 2;
       const vertical = normal(seed, 11) * (1.4 + radial * .035);
-      return [Math.cos(theta) * radial, vertical, Math.sin(theta) * radial];
+      return [Math.cos(theta) * radial * layoutScale.tests, vertical * layoutScale.tests, Math.sin(theta) * radial * layoutScale.tests];
     }
 
     const packageAnchors = model.packages.map((row, index) => {
-      const seed = row[0], radius = 70 + 72 * Math.pow(unit(seed, 14), .72);
+      const seed = row[0], radius = layoutScale.dependencyInnerRadius + 72 * Math.sqrt(layoutScale.tests) * Math.pow(unit(seed, 14), .72);
       const theta = unit(seed, 15) * Math.PI * 2;
-      const vertical = normal(seed, 16) * 24;
+      const vertical = normal(seed, 16) * 24 * Math.sqrt(layoutScale.tests);
       return [Math.cos(theta) * radius, vertical, Math.sin(theta) * radius, 1.6 + Math.min(9, Math.sqrt(row[3]) * .055), index];
     });
 
@@ -245,6 +269,8 @@
         uniform float u_yaw;
         uniform float u_pitch;
         uniform float u_zoom;
+        uniform float u_cameraDistance;
+        uniform float u_cameraFocalLength;
         uniform float u_brightness;
         uniform float u_glow;
         uniform float u_deepDetail;
@@ -270,10 +296,10 @@
           float z1 = a_position.x * sy + a_position.z * cy;
           float y2 = a_position.y * cp - z1 * sp;
           float z2 = a_position.y * sp + z1 * cp;
-          float depth = 270.0 - z2;
+          float depth = u_cameraDistance - z2;
           if (depth <= 35.0) { hidePoint(); return; }
 
-          float perspective = 440.0 / depth * u_zoom;
+          float perspective = u_cameraFocalLength / depth * u_zoom;
           vec2 screen = u_center + vec2(x1, y2) * perspective;
           if (screen.x < -20.0 || screen.x > u_resolution.x + 20.0 || screen.y < -20.0 || screen.y > u_resolution.y + 20.0) {
             hidePoint();
@@ -361,6 +387,8 @@
         yaw: gl.getUniformLocation(pointProgram, "u_yaw"),
         pitch: gl.getUniformLocation(pointProgram, "u_pitch"),
         zoom: gl.getUniformLocation(pointProgram, "u_zoom"),
+        cameraDistance: gl.getUniformLocation(pointProgram, "u_cameraDistance"),
+        cameraFocalLength: gl.getUniformLocation(pointProgram, "u_cameraFocalLength"),
         brightness: gl.getUniformLocation(pointProgram, "u_brightness"),
         glow: gl.getUniformLocation(pointProgram, "u_glow"),
         deepDetail: gl.getUniformLocation(pointProgram, "u_deepDetail"),
@@ -397,6 +425,8 @@
           gl.uniform1f(pointUniforms.yaw, yaw);
           gl.uniform1f(pointUniforms.pitch, pitch);
           gl.uniform1f(pointUniforms.zoom, zoom);
+          gl.uniform1f(pointUniforms.cameraDistance, cameraDistance);
+          gl.uniform1f(pointUniforms.cameraFocalLength, cameraFocalLength);
           gl.uniform1f(pointUniforms.brightness, SHOWCASE_PRESET.starBrightnessPercent);
           gl.uniform1f(pointUniforms.glow, SHOWCASE_PRESET.pointGlowPercent);
           gl.uniform1f(pointUniforms.deepDetail, deepDetail);
@@ -469,7 +499,7 @@
       const z1 = x * sy + z * cy;
       const y2 = y * cp - z1 * sp;
       const z2 = y * sp + z1 * cp;
-      const perspective = 440 / (270 - z2) * targetZoom;
+      const perspective = cameraFocalLength / (cameraDistance - z2) * targetZoom;
       return {
         yaw: targetYaw,
         pitch: TOP_DOWN_PITCH,
@@ -1057,9 +1087,9 @@
       const z1 = positionX * sy + positionZ * cy;
       const y2 = positionY * cp - z1 * sp;
       const z2 = positionY * sp + z1 * cp;
-      const depth = 270 - z2;
+      const depth = cameraDistance - z2;
       if (depth <= 35) return null;
-      const perspective = 440 / depth * zoom;
+      const perspective = cameraFocalLength / depth * zoom;
       return [sceneCenterX + panX + x1 * perspective, sceneCenterY + panY + y2 * perspective, perspective];
     }
 
