@@ -56,16 +56,28 @@ module RubyLens
 
     def generate_html(arguments, command:, default_name:, generator:, warning:)
       options = {}
+      help = false
       parser = OptionParser.new do |option|
-        option.banner = "Usage: rubylens #{command} [TARGET] [--output FILE] [--lockfile FILE]"
+        option.banner = "Usage: rubylens #{command} [OPTIONS] [TARGET]"
+        option.separator ""
+        option.separator "TARGET defaults to the current working directory."
+        option.separator ""
         option.on("-o", "--output FILE", "Output HTML (default: TARGET/#{default_name})") do |value|
           options[:output] = value
         end
         option.on("--lockfile FILE", "Gemfile.lock used to select exact dependency versions") do |value|
           options[:lockfile] = value
         end
+        option.on_tail("-h", "--help", "Show this help") do
+          help = true
+        end
       end
       parser.parse!(arguments)
+      if help
+        @stdout.puts parser
+        return 0
+      end
+
       target = arguments.shift || Dir.pwd
       raise OptionParser::InvalidArgument, "unexpected argument: #{arguments.first}" unless arguments.empty?
 
@@ -93,10 +105,14 @@ module RubyLens
       stream.puts <<~HELP
         Usage: rubylens COMMAND
 
+        TARGET defaults to the current working directory.
+
         Commands:
-          report [TARGET]     Generate a private, interactive stellar report
-          showcase [TARGET]   Generate an autonomous, shareable stellar showcase
-          version             Print the RubyLens version
+          report [OPTIONS] [TARGET]     Generate a private, interactive stellar report
+          showcase [OPTIONS] [TARGET]   Generate an autonomous, shareable stellar showcase
+          version                       Print the RubyLens version
+
+        Run `rubylens report --help` or `rubylens showcase --help` for options.
       HELP
       status
     end
