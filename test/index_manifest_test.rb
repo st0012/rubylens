@@ -20,8 +20,19 @@ class IndexManifestTest < Minitest::Test
       Thread.current[:rubylens_lockfile_parser] || super
     end
   end
+  GIT_REPOSITORY_OVERRIDE = Module.new do
+    def new(...)
+      if Thread.current.key?(:rubylens_workspace_files)
+        files = Thread.current[:rubylens_workspace_files]
+        Object.new.tap { |repository| repository.define_singleton_method(:selected_files) { files } }
+      else
+        super
+      end
+    end
+  end
   Open3.singleton_class.prepend(OPEN3_CAPTURE_GUARD)
   Bundler::LockfileParser.singleton_class.prepend(LOCKFILE_PARSER_OVERRIDE)
+  RubyLens::GitRepository.singleton_class.prepend(GIT_REPOSITORY_OVERRIDE)
 
   def test_builds_an_explicit_git_selected_workspace_manifest
     manifest = RubyLens::Index::Manifest.build(root: FIXTURE)
@@ -91,6 +102,297 @@ class IndexManifestTest < Minitest::Test
       assert_equal([checkout.join("lib/git_widget.rb").realpath.to_s], package.files)
       refute_includes(package.files, checkout.join("private/not_loaded.rb").realpath.to_s)
       assert_empty(manifest.dependency_warnings)
+    end
+  end
+
+  def test_indexes_an_immutable_symlink_farm_through_logical_require_paths
+    with_git_bundle([["git-widget", "1.2.3"]]) do |target, lockfile, checkout, parser, _source|
+      store_root = target.parent.join("immutable-store")
+      package_root = store_root.join("00000000000000000000000000000000-git-widget")
+      write_git_gem(
+        package_root,
+        name: "git-widget",
+        version: "1.2.3",
+        require_paths: ["lib", "src"],
+        files: {
+          "lib/git_widget.rb" => "class GitWidget\nend\n",
+          "src/git_widget/source.rb" => "class GitWidget::Source\nend\n",
+        },
+      )
+      FileUtils.mkdir_p(checkout.join("lib"))
+      File.symlink(package_root.join("git-widget.gemspec"), checkout.join("git-widget.gemspec"))
+      File.symlink(package_root.join("lib/git_widget.rb"), checkout.join("lib/git_widget.rb"))
+      File.symlink(package_root.join("lib/git_widget.rb"), checkout.join("lib/git_widget_alias.rb"))
+      File.symlink(package_root.join("src"), checkout.join("src"))
+
+      manifest = build_manifest_with_parser(
+        parser,
+        root: target,
+        lockfile: lockfile,
+        immutable_store_root: store_root,
+      )
+      package = manifest.packages.fetch(0)
+
+      assert_equal(package_root.realpath, package.root)
+      assert_equal(
+        [package_root.join("lib/git_widget.rb").realpath.to_s,
+         package_root.join("src/git_widget/source.rb").realpath.to_s],
+        package.files,
+      )
+      assert_equal(package.files, manifest.files)
+      assert_equal(package.files.uniq, package.files)
+      assert_empty(manifest.dependency_warnings)
+    end
+  end
+
+  def test_immutable_symlink_farm_preserves_nested_multi_gemspec_ownership
+    lock_specs = [["outer-gem", "1.0.0"], ["inner-gem", "2.0.0"]]
+    with_git_bundle(lock_specs) do |target, lockfile, checkout, parser, _source|
+      store_root = target.parent.join("immutable-store")
+      repository_root = store_root.join("11111111111111111111111111111111-multi-gem")
+      write_git_gem(
+        repository_root,
+        name: "outer-gem",
+        version: "1.0.0",
+        require_paths: ["lib", "inner/lib"],
+        files: { "lib/outer_gem.rb" => "class OuterGem\nend\n" },
+      )
+      write_git_gem(
+        repository_root.join("inner"),
+        name: "inner-gem",
+        version: "2.0.0",
+        require_paths: ["lib"],
+        files: { "lib/inner_gem.rb" => "class InnerGem\nend\n" },
+      )
+      FileUtils.mkdir_p([checkout.join("lib"), checkout.join("inner/lib")])
+      File.symlink(repository_root.join("outer-gem.gemspec"), checkout.join("outer-gem.gemspec"))
+      File.symlink(repository_root.join("lib/outer_gem.rb"), checkout.join("lib/outer_gem.rb"))
+      File.symlink(repository_root.join("inner/inner-gem.gemspec"), checkout.join("inner/inner-gem.gemspec"))
+      File.symlink(repository_root.join("inner/lib/inner_gem.rb"), checkout.join("inner/lib/inner_gem.rb"))
+
+      manifest = build_manifest_with_parser(
+        parser,
+        root: target,
+        lockfile: lockfile,
+        immutable_store_root: store_root,
+      )
+      outer_index = manifest.packages.index { |package| package.name == "outer-gem" }
+      inner_index = manifest.packages.index { |package| package.name == "inner-gem" }
+      inner_file = repository_root.join("inner/lib/inner_gem.rb").realpath.to_s
+
+      assert_includes(manifest.packages.fetch(outer_index).files, inner_file)
+      assert_includes(manifest.packages.fetch(inner_index).files, inner_file)
+      assert_equal(inner_index, manifest.package_index_for(inner_file))
+      assert_equal(1, manifest.files.count(inner_file))
+    end
+  end
+
+  def test_zero_file_git_meta_package_remains_in_the_manifest
+    with_git_bundle([["meta-gem", "1.0.0"]]) do |target, lockfile, checkout, parser, _source|
+      store_root = target.parent.join("immutable-store")
+      package_root = store_root.join("22222222222222222222222222222222-meta-gem")
+      write_git_gem(
+        package_root,
+        name: "meta-gem",
+        version: "1.0.0",
+        require_paths: ["lib"],
+        files: {},
+      )
+      FileUtils.mkdir_p(checkout)
+      File.symlink(package_root.join("meta-gem.gemspec"), checkout.join("meta-gem.gemspec"))
+
+      manifest = build_manifest_with_parser(
+        parser,
+        root: target,
+        lockfile: lockfile,
+        immutable_store_root: store_root,
+      )
+
+      assert_equal(["meta-gem"], manifest.packages.map(&:name))
+      assert_empty(manifest.packages.fetch(0).files)
+      assert_empty(manifest.files)
+      assert_empty(manifest.dependency_warnings)
+    end
+  end
+
+  def test_rejects_traversing_and_absolute_git_require_paths
+    ["../private", File.join(File::SEPARATOR, "private")].each do |unsafe_path|
+      with_git_bundle([["unsafe-gem", "1.0.0"]]) do |target, lockfile, checkout, parser, _source|
+        write_git_gem(
+          checkout,
+          name: "unsafe-gem",
+          version: "1.0.0",
+          require_paths: [unsafe_path],
+          files: {},
+        )
+
+        manifest = build_manifest_with_parser(parser, root: target, lockfile: lockfile)
+
+        assert_empty(manifest.packages)
+        assert_equal(
+          [{ "name" => "unsafe-gem", "reason" => "Locked require paths failed containment checks" }],
+          manifest.dependency_warnings,
+        )
+      end
+    end
+  end
+
+  def test_rejects_a_malformed_git_require_path_with_a_canned_reason
+    with_git_bundle([["unsafe-gem", "1.0.0"]]) do |target, lockfile, checkout, parser, source|
+      write_git_gem(
+        checkout,
+        name: "unsafe-gem",
+        version: "1.0.0",
+        require_paths: ["lib"],
+        files: {},
+      )
+      spec_index = without_git_subprocesses do
+        source.__send__(:set_install_path!, checkout)
+        source.specs
+      end
+      specification = spec_index.search(parser.specs.first).first
+      specification.define_singleton_method(:require_paths) { ["lib\0private"] }
+      source.define_singleton_method(:specs) { spec_index }
+
+      manifest = build_manifest_with_parser(parser, root: target, lockfile: lockfile)
+
+      assert_empty(manifest.packages)
+      assert_equal(
+        [{ "name" => "unsafe-gem", "reason" => "Locked require paths failed containment checks" }],
+        manifest.dependency_warnings,
+      )
+    end
+  end
+
+  def test_rejects_dangling_and_looping_git_package_links
+    ["dangling", "file-loop", "directory-loop"].each do |failure|
+      with_git_bundle([["unsafe-gem", "1.0.0"]]) do |target, lockfile, checkout, parser, _source|
+        write_git_gem(
+          checkout,
+          name: "unsafe-gem",
+          version: "1.0.0",
+          require_paths: ["lib"],
+          files: {},
+        )
+        FileUtils.mkdir_p(checkout.join("lib"))
+        link = checkout.join(failure == "directory-loop" ? "lib/loop" : "lib/unsafe.rb")
+        target_path = case failure
+                      when "dangling" then checkout.join("missing.rb")
+                      when "file-loop" then link
+                      when "directory-loop" then checkout.join("lib")
+                      end
+        File.symlink(target_path, link)
+
+        manifest = build_manifest_with_parser(parser, root: target, lockfile: lockfile)
+
+        assert_empty(manifest.packages)
+        assert_equal(
+          [{ "name" => "unsafe-gem", "reason" => "Locked package files failed containment checks" }],
+          manifest.dependency_warnings,
+        )
+      end
+    end
+  end
+
+  def test_rejects_cross_package_targets_in_a_recognized_store
+    with_git_bundle([["git-widget", "1.2.3"]]) do |target, lockfile, checkout, parser, _source|
+      store_root = target.parent.join("immutable-store")
+      package_root = store_root.join("33333333333333333333333333333333-git-widget")
+      other_root = store_root.join("44444444444444444444444444444444-other")
+      write_git_gem(
+        package_root,
+        name: "git-widget",
+        version: "1.2.3",
+        require_paths: ["lib"],
+        files: {},
+      )
+      FileUtils.mkdir_p([checkout.join("lib"), other_root.join("lib")])
+      File.write(other_root.join("lib/other.rb"), "Other = 1\n")
+      File.symlink(package_root.join("git-widget.gemspec"), checkout.join("git-widget.gemspec"))
+      File.symlink(other_root.join("lib/other.rb"), checkout.join("lib/git_widget.rb"))
+
+      manifest = build_manifest_with_parser(
+        parser,
+        root: target,
+        lockfile: lockfile,
+        immutable_store_root: store_root,
+      )
+
+      assert_empty(manifest.packages)
+      assert_equal(
+        [{ "name" => "git-widget", "reason" => "Locked package files failed containment checks" }],
+        manifest.dependency_warnings,
+      )
+    end
+  end
+
+  def test_default_store_policy_rejects_arbitrary_external_roots_without_leaking_details
+    provider = RubyLens::Index::Manifest::NixStoreProvider.new
+    refute(provider.trusted?(Pathname(File::SEPARATOR)))
+    refute(provider.trusted?(Pathname("/tmp/nix/store/00000000000000000000000000000000-example")))
+    assert(provider.trusted?(Pathname("/nix/store/00000000000000000000000000000000-example/lib")))
+
+    with_git_bundle(
+      [["private-git-gem", "4.5.6"]],
+      remote: "https://secret-user@example.invalid/private/repository.git",
+    ) do |target, lockfile, checkout, parser, _source|
+      arbitrary_root = target.parent.join("arbitrary-provider-root")
+      write_git_gem(
+        arbitrary_root,
+        name: "private-git-gem",
+        version: "4.5.6",
+        require_paths: ["lib"],
+        files: { "lib/private_git_gem.rb" => "PrivateGitGem = 1\n" },
+      )
+      FileUtils.mkdir_p(checkout)
+      File.symlink(arbitrary_root.join("private-git-gem.gemspec"), checkout.join("private-git-gem.gemspec"))
+      File.symlink(arbitrary_root.join("lib"), checkout.join("lib"))
+
+      manifest = build_manifest_with_parser(parser, root: target, lockfile: lockfile)
+
+      assert_empty(manifest.packages)
+      exposed = JSON.generate([manifest.warnings, manifest.dependency_warnings])
+      assert_includes(exposed, "private-git-gem")
+      refute_includes(exposed, target.parent.to_s)
+      refute_includes(exposed, arbitrary_root.to_s)
+      refute_includes(exposed, "example.invalid")
+      refute_includes(exposed, "0123456789abcdef")
+      refute_includes(exposed, Dir.home)
+    end
+  end
+
+  def test_symlinked_checkout_requires_immutable_store_attestation
+    with_git_bundle([["linked-checkout-gem", "1.0.0"]]) do |target, lockfile, checkout, parser, _source|
+      arbitrary_root = target.parent.join("arbitrary-checkout-root")
+      write_git_gem(
+        arbitrary_root,
+        name: "linked-checkout-gem",
+        version: "1.0.0",
+        require_paths: ["lib"],
+        files: { "lib/linked_checkout_gem.rb" => "LinkedCheckoutGem = 1\n" },
+      )
+      FileUtils.mkdir_p(checkout.parent)
+      File.symlink(arbitrary_root, checkout)
+
+      rejected = build_manifest_with_parser(parser, root: target, lockfile: lockfile)
+      accepted = build_manifest_with_parser(
+        parser,
+        root: target,
+        lockfile: lockfile,
+        immutable_store_root: arbitrary_root,
+      )
+
+      assert_empty(rejected.packages)
+      assert_equal(
+        [{ "name" => "linked-checkout-gem", "reason" =>
+          "Locked gemspec or package root failed containment checks" }],
+        rejected.dependency_warnings,
+      )
+      assert_equal(["linked-checkout-gem"], accepted.packages.map(&:name))
+      assert_equal(
+        [arbitrary_root.join("lib/linked_checkout_gem.rb").realpath.to_s],
+        accepted.packages.fetch(0).files,
+      )
     end
   end
 
@@ -364,8 +666,21 @@ class IndexManifestTest < Minitest::Test
     end
   end
 
-  def build_manifest_with_parser(parser, root:, lockfile:)
-    with_lockfile_parser(parser) { RubyLens::Index::Manifest.build(root: root, lockfile: lockfile) }
+  def build_manifest_with_parser(parser, root:, lockfile:, immutable_store_root: nil)
+    manifest = RubyLens::Index::Manifest.new(root: root, lockfile: lockfile)
+    if immutable_store_root
+      provider = Object.new
+      provider.define_singleton_method(:trusted?) do |path|
+        RubyLens::Paths.inside?(path, immutable_store_root)
+      end
+      manifest.define_singleton_method(:immutable_git_store_provider) { provider }
+    end
+
+    with_lockfile_parser(parser) do
+      with_workspace_files([]) do
+        without_git_subprocesses { manifest.build }
+      end
+    end
   end
 
   def without_git_subprocesses
@@ -380,6 +695,13 @@ class IndexManifestTest < Minitest::Test
     yield
   ensure
     Thread.current[:rubylens_lockfile_parser] = nil
+  end
+
+  def with_workspace_files(files)
+    Thread.current[:rubylens_workspace_files] = files
+    yield
+  ensure
+    Thread.current[:rubylens_workspace_files] = nil
   end
 
   def checkout_snapshot(root)
