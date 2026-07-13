@@ -23,11 +23,20 @@ class ArtModelBuilderTest < Minitest::Test
           "declarations" => [[0, 2, 1, 0, 1, 3, 4]],
         },
       ],
-      "dependency_warnings" => [{
-        "name" => "git-widget",
-        "reason" => "Bundler checkout is unavailable",
-        "source" => private_git_source,
-      }],
+      "dependency_warnings" => [
+        {
+          "name" => "git-widget",
+          "reason" => "Bundler checkout is unavailable",
+          "source" => private_git_source,
+          "path" => "/private/dependency/path",
+          "uri" => "https://credentials@example.invalid/private.git",
+          "revision" => "private-revision",
+          "exception" => "raw dependency exception",
+          "comment" => "private source comment",
+        },
+        { "name" => "unsafe-component", "reason" => "Raw exception: /private/source/path" },
+        { "name" => "/private/dependency/name", "reason" => "Bundler checkout is unavailable" },
+      ],
       "warning_counts" => { "manifest" => 0, "index" => 0, "integrity" => 0 },
     }
     builder = RubyLens::ArtModelBuilder.new(seed: 12)
@@ -53,6 +62,9 @@ class ArtModelBuilderTest < Minitest::Test
     refute(first.key?("dependencyDeclarations"))
     refute_includes(JSON.generate(first), "Example::Client")
     refute_includes(JSON.generate(first), private_git_source)
+    %w[private/dependency credentials@example.invalid private-revision raw\ dependency private\ source].each do |private_value|
+      refute_includes(JSON.generate(first), private_value.tr("\\", ""))
+    end
     assert(first.fetch("namespaces").all? { |row| row.length == 15 && row.all?(Integer) })
     assert_equal(4, first.fetch("namespaces").find { |row| row[2].zero? }.last)
     assert(first.fetch("dependencyStars").all? { |row| row.length == 8 && row.all?(Integer) })

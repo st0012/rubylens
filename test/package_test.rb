@@ -13,6 +13,7 @@ class PackageTest < Minitest::Test
     assert_includes(specification.files, "assets/styles/report.css")
     assert_includes(specification.files, "assets/styles/showcase.css")
     assert_includes(specification.files, "LICENSE.txt")
+    assert_includes(specification.files, "lib/rubylens/dependency_warning.rb")
     assert_includes(specification.files, "lib/rubylens/report_asset_assembler.rb")
     assert_includes(specification.files, "lib/rubylens/showcase_generator.rb")
     assert_includes(specification.files, "lib/rubylens/showcase_model.rb")

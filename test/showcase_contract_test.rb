@@ -76,6 +76,18 @@ class ShowcaseContractTest < Minitest::Test
     refute_includes(runtime, "showcaseSceneRadius")
   end
 
+  def test_reduced_motion_renders_one_stable_start_frame_without_scheduling_motion
+    runtime = File.read(RUNTIME_PATH)
+    reduced_branch = runtime.match(/function startShowcase\(\) \{.*?if \(reducedMotionQuery\.matches\) \{(?<body>.*?)\} else \{/m)
+
+    refute_nil(reduced_branch)
+    assert_includes(reduced_branch[:body], "applyShowcaseCamera(0)")
+    assert_includes(reduced_branch[:body], "render(performance.now())")
+    assert_includes(reduced_branch[:body], 'dataset.showcaseMotion = "reduced"')
+    refute_includes(reduced_branch[:body], "requestAnimationFrame")
+    assert_includes(runtime, 'reducedMotionQuery.addEventListener("change", startShowcase)')
+  end
+
   private
 
   def showcase_preset
