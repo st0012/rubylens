@@ -5,6 +5,8 @@ require_relative "test_helper"
 class RubydexAdapterTest < Minitest::Test
   include SnapshotHelpers
 
+  RSPEC_FIXTURE = ROOT.join("test/fixtures/rspec_repo")
+
   def test_real_adapter_returns_hover_identity_without_paths_or_source
     manifest = RubyLens::Index::Manifest.build(root: FIXTURE)
     adapter = RubyLens::Index::RubydexAdapter.new
@@ -29,6 +31,33 @@ class RubydexAdapterTest < Minitest::Test
     refute_includes(serialized, "PRIVATE_VALUE")
     assert_nil(adapter.instance_variable_get(:@location_path_cache))
     assert_nil(adapter.instance_variable_get(:@workspace_location_cache))
+  end
+
+  def test_models_raw_rspec_references_as_statless_nonidentifying_proxies
+    manifest = RubyLens::Index::Manifest.build(root: RSPEC_FIXTURE)
+    snapshot = RubyLens::Index::RubydexAdapter.new.index(manifest)
+    names = snapshot.fetch("namespace_names")
+    rows = names.zip(snapshot.fetch("namespaces")).select do |name, _row|
+      name.start_with?("RSpec example group #")
+    end
+    serialized = JSON.generate(snapshot)
+
+    assert_equal(9, rows.length)
+    assert_equal([9, 0, 14, 0], snapshot.fetch("category_stats").fetch("tests"))
+    assert(rows.all? { |_name, row| row.length == 14 && row.all?(Integer) })
+    assert(rows.all? { |_name, row| row[1] == 0 && row[2] == 1 })
+    assert(rows.all? { |_name, row| row.drop(3).all?(&:zero?) })
+    assert_equal(rows.length, rows.map(&:first).uniq.length)
+    assert_equal(
+      (1..9).map { |index| format("RSpec example group #%06d", index) },
+      rows.map(&:first),
+    )
+    refute_includes(serialized, RSPEC_FIXTURE.to_s)
+    refute_includes(serialized, "service_spec.rb")
+    refute_includes(serialized, "space café")
+    refute_includes(serialized, "private shared behavior")
+    refute_includes(serialized, "crème brûlée")
+    refute_includes(serialized, "not an RSpec group")
   end
 
   def test_preserves_known_project_acronyms
@@ -133,6 +162,50 @@ class RubydexAdapterTest < Minitest::Test
 
     assert_equal(manifest.files, captured)
     assert_equal(captured.uniq, captured)
+  end
+
+  def test_reuses_indexed_documents_for_package_audit_and_workspace_rspec_projection
+    Dir.mktmpdir("rubylens-rspec-package-documents-") do |directory|
+      root = Pathname(directory).join("workspace")
+      workspace_spec = root.join("spec/workspace_spec.rb")
+      dependency_root = root.join("vendor/bundle/ruby/4.0.0/bundler/gems/dependency-abc123")
+      dependency_spec = dependency_root.join("spec/dependency_spec.rb")
+      FileUtils.mkdir_p(workspace_spec.dirname)
+      FileUtils.mkdir_p(dependency_spec.dirname)
+      workspace_spec.write("describe(\"workspace\") { it(\"kept\") {} }\n")
+      dependency_spec.write("DEPENDENCY_CONST = 1; describe(\"dependency\") { specify(\"hidden\") {} }\n")
+
+      package = RubyLens::Index::Manifest::Package.new(
+        "dependency", "1.0.0", "direct", "external", dependency_root.realpath,
+        [dependency_spec.realpath.to_s].freeze,
+      )
+      manifest = Struct.new(:root, :files, :packages, :warnings, :dependency_warnings).new(
+        root.realpath,
+        [workspace_spec.realpath.to_s, dependency_spec.realpath.to_s].freeze,
+        [package].freeze,
+        [],
+        [],
+      )
+      manifest.define_singleton_method(:workspace_path?) do |path|
+        RubyLens::Paths.inside?(path, root.realpath)
+      end
+      manifest.define_singleton_method(:relative_workspace_path) do |path|
+        Pathname(path).realpath.relative_path_from(root.realpath).to_s
+      rescue ArgumentError, Errno::ENOENT
+        nil
+      end
+      manifest.define_singleton_method(:package_index_for) do |path|
+        Pathname(path).realpath == dependency_spec.realpath ? 0 : nil
+      end
+
+      snapshot = RubyLens::Index::RubydexAdapter.new.index(manifest)
+      package_row = snapshot.fetch("packages").fetch(0)
+
+      assert_equal(["RSpec example group #000001"], snapshot.fetch("namespace_names"))
+      assert_equal(1, snapshot.fetch("category_stats").fetch("tests").fetch(2))
+      assert_equal(1, package_row.fetch("declaration_count"))
+      refute_empty(package_row.fetch("declarations"))
+    end
   end
 
   def test_compacts_dependency_declarations_without_embedding_their_names

@@ -4,6 +4,7 @@ require "rubydex"
 require "set"
 require "uri"
 require_relative "../model/dependency_aggregation"
+require_relative "rspec_extractor"
 
 module RubyLens
   module Index
@@ -23,16 +24,24 @@ module RubyLens
         graph.resolve
         integrity_failures = Array(graph.check_integrity)
         collected = collect_declarations(graph.declarations, manifest)
-        workspace = workspace_namespaces(collected.fetch(:workspace_records), manifest)
+        rspec = RSpecExtractor.new.call(
+          graph: graph,
+          manifest: manifest,
+          package_document_paths: @indexed_package_document_paths,
+        )
+        workspace = workspace_namespaces(collected.fetch(:workspace_records), rspec.groups, manifest)
         inbound_references = inbound_workspace_references(graph, manifest, workspace.fetch(:ordinal_by_name))
+        category_stats = collected.fetch(:category_stats)
+        category_stats.fetch("tests")[0] += rspec.groups.length
+        category_stats.fetch("tests")[2] += rspec.method_count
 
         {
           "schema" => "rubylens.snapshot.v5",
           "project_name" => project_name(manifest),
           "components" => workspace.fetch(:component_counts),
-          "namespace_names" => workspace.fetch(:records).map { |declaration, _definitions| declaration.name },
+          "namespace_names" => workspace.fetch(:namespace_names),
           "namespaces" => build_workspace_rows(workspace, inbound_references, manifest),
-          "category_stats" => collected.fetch(:category_stats),
+          "category_stats" => category_stats,
           "dependency_signal_maxima" => collected.fetch(:dependency_aggregation).signal_maxima,
           "packages" => build_package_rows(collected.fetch(:dependency_aggregation), manifest),
           "dependency_warnings" => manifest.respond_to?(:dependency_warnings) ? manifest.dependency_warnings : [],
@@ -69,22 +78,25 @@ module RubyLens
         { workspace_records: records, category_stats:, dependency_aggregation: aggregation }
       end
 
-      def workspace_namespaces(records, manifest)
+      def workspace_namespaces(records, rspec_groups, manifest)
         ordinal_by_name = records.each_with_index.to_h { |(declaration, _definitions), index| [declaration.name, index] }
         components = records.map { |_declaration, definitions| component_for(definitions, manifest) }
-        component_ids = components.uniq.sort.each_with_index.to_h
+        all_components = components + rspec_groups.map(&:component)
+        component_ids = all_components.uniq.sort.each_with_index.to_h
 
         {
           records: records,
+          rspec_groups: rspec_groups,
+          namespace_names: records.map { |declaration, _definitions| declaration.name } + rspec_groups.map(&:name),
           ordinal_by_name: ordinal_by_name,
           component_ids: component_ids,
           components: components,
-          component_counts: components.tally.sort_by { |name, _count| component_ids.fetch(name) }.map(&:last),
+          component_counts: all_components.tally.sort_by { |name, _count| component_ids.fetch(name) }.map(&:last),
         }
       end
 
       def build_workspace_rows(workspace, inbound_references, manifest)
-        workspace.fetch(:records).each_with_index.map do |(declaration, definitions), index|
+        rows = workspace.fetch(:records).each_with_index.map do |(declaration, definitions), index|
           sites = definitions.map { |definition| site_key(definition.location) }.uniq.length
           scope = scope_for(definitions, manifest)
           descendants = declaration.descendants.count do |descendant|
@@ -104,6 +116,16 @@ module RubyLens
             namespace_instance_variable_count(declaration, manifest, scope),
           ]
         end
+        rows.concat(workspace.fetch(:rspec_groups).map { |group| build_rspec_row(group, workspace) })
+      end
+
+      def build_rspec_row(group, workspace)
+        [
+          workspace.fetch(:component_ids).fetch(group.component),
+          0,
+          1,
+          *Array.new(11, 0),
+        ]
       end
 
       def build_package_rows(aggregation, manifest)
