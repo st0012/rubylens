@@ -6,13 +6,14 @@ require "find"
 require "pathname"
 require "set"
 require_relative "../configuration"
+require_relative "../rails_framework"
 require_relative "boundaries"
 
 module RubyLens
   module Index
     class Manifest
       Package = Data.define(:name, :version, :role, :location, :root, :files)
-      RailsReference = Data.define(:version, :direct_dependencies)
+      RailsReference = Data.define(:version, :members, :scope)
 
       attr_reader :root, :files, :workspace_files, :tracked_workspace_files, :packages, :rails_reference, :warnings, :boundaries
 
@@ -117,12 +118,28 @@ module RubyLens
 
       def build_rails_reference(parser)
         locked = parser.specs.find { |specification| specification.name == "rails" }
-        return unless locked
+        if locked
+          @rails_reference = RailsReference.new(
+            version: locked.version.to_s,
+            members: locked.dependencies.map(&:name).uniq.sort.freeze,
+            scope: "full_family",
+          )
+          return
+        end
 
-        @rails_reference = RailsReference.new(
-          version: locked.version.to_s,
-          direct_dependencies: locked.dependencies.map(&:name).uniq.sort.freeze,
-        )
+        framework_specs = parser.specs.select { |specification| RailsFramework::GEMS.include?(specification.name) }
+        railties = framework_specs.find { |specification| specification.name == "railties" }
+        return unless railties
+
+        version = railties.version.to_s
+        return if framework_specs.any? { |specification| specification.version.to_s != version }
+
+        members = RailsFramework::GEMS.select do |name|
+          framework_specs.any? { |specification| specification.name == name }
+        end
+        return unless RailsFramework::FOOTPRINT_ANCHORS.all? { |name| members.include?(name) }
+
+        @rails_reference = RailsReference.new(version:, members: members.freeze, scope: "installed_footprint")
       end
 
       def package_for(locked, direct_names)

@@ -181,6 +181,7 @@ class ArtModelBuilderTest < Minitest::Test
 
     assert_equal("rubylens.art.v9", model.fetch("schema"))
     assert_equal("rails", reference.fetch("kind"))
+    assert_equal("full_family", reference.fetch("scope"))
     assert_equal([20, 10], reference.fetch("rubyCounts"))
     assert_equal((RubyLens::Model::WorkspaceLayout.radius(30) * 1_000).round, reference.fetch("systemRadius"))
     assert_equal(model.fetch("packageNames").index("rails"), reference.fetch("packageIndex"))
@@ -206,11 +207,31 @@ class ArtModelBuilderTest < Minitest::Test
     assert_equal((RubyLens::Model::WorkspaceLayout.radius(3) * 1_000).round, model.fetch("workspaceRadius"))
   end
 
+  def test_maps_an_installed_rails_footprint_without_fabricating_a_package_landmark
+    snapshot = unconfigured_snapshot
+    snapshot["packages"] = [
+      { "name" => "railties", "role" => 0, "location" => 1, "ruby_counts" => [1, 0, 0, 0], "declarations" => [] },
+    ]
+    snapshot["framework_reference"] = ready_rails_reference.merge(
+      "version" => "8.0.5", "scope" => "installed_footprint",
+      "members" => %w[actionpack activesupport railties],
+      "available_members" => %w[actionpack activesupport railties],
+      "coverage" => [3, 3], "status" => "ready_footprint", "package_index" => nil,
+    )
+
+    reference = RubyLens::ArtModelBuilder.new(seed: 12).build(snapshot).fetch("frameworkReference")
+
+    assert_equal("installed_footprint", reference.fetch("scope"))
+    assert_equal(%w[actionpack activesupport railties], reference.fetch("members"))
+    assert_nil(reference.fetch("packageIndex"))
+    assert_equal((RubyLens::Model::WorkspaceLayout.radius(30) * 1_000).round, reference.fetch("systemRadius"))
+  end
+
   private
 
   def ready_rails_reference
     {
-      "kind" => "rails", "version" => "8.1.1", "members" => %w[actionpack railties],
+      "kind" => "rails", "version" => "8.1.1", "scope" => "full_family", "members" => %w[actionpack railties],
       "available_members" => %w[actionpack railties], "coverage" => [2, 2], "status" => "ready",
       "comparable" => true, "ruby_counts" => [20, 10], "package_index" => 1,
     }

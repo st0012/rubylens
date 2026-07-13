@@ -16,6 +16,7 @@ class RailsFrameworkReferenceTest < Minitest::Test
 
     assert_equal("rails", result.fetch("kind"))
     assert_equal("8.1.1", result.fetch("version"))
+    assert_equal("full_family", result.fetch("scope"))
     assert_equal(RubyLens::Model::RailsFrameworkReference::FRAMEWORK_GEMS, result.fetch("members"))
     assert_equal([12, 12], result.fetch("coverage"))
     assert_equal("ready", result.fetch("status"))
@@ -53,10 +54,54 @@ class RailsFrameworkReferenceTest < Minitest::Test
     assert_empty(result.fetch("ruby_counts"))
   end
 
+  def test_builds_only_the_exact_installed_footprint_without_a_meta_gem
+    members = %w[actionmailer actionpack actionview activejob activemodel activerecord activesupport railties]
+    locked = RubyLens::Index::Manifest::RailsReference.new(
+      version: "8.0.5", members:, scope: "installed_footprint",
+    )
+    packages = members.map { |name| Package.new(name:, version: "8.0.5", files: ["lib/#{name}.rb"]) }
+    packages << Package.new(name: "rack", version: "3.2.0", files: ["lib/rack.rb"])
+    reference = RubyLens::Model::RailsFrameworkReference.new(Manifest.new(rails_reference: locked, packages:))
+    reference.add_namespace(0)
+    reference.add_namespace(1)
+
+    result = reference.build(index_complete: true, integrity_complete: true)
+
+    assert_equal("installed_footprint", result.fetch("scope"))
+    assert_equal(members, result.fetch("members"))
+    assert_equal(members, result.fetch("available_members"))
+    assert_equal([8, 8], result.fetch("coverage"))
+    assert_equal("ready_footprint", result.fetch("status"))
+    assert_equal(true, result.fetch("comparable"))
+    assert_equal([1, 1], result.fetch("ruby_counts"))
+    assert_nil(result.fetch("package_index"))
+    assert((0...8).all? { |index| reference.family_package_index?(index) })
+    refute(reference.family_package_index?(8), "unrelated dependencies must not enter the footprint")
+  end
+
+  def test_suppresses_a_footprint_when_an_expected_locked_member_was_not_indexed
+    members = %w[actionpack activesupport railties]
+    locked = RubyLens::Index::Manifest::RailsReference.new(
+      version: "8.0.5", members:, scope: "installed_footprint",
+    )
+    packages = members.map { |name| Package.new(name:, version: "8.0.5", files: ["lib/#{name}.rb"]) }
+    packages[1] = Package.new(name: "activesupport", version: "8.0.5", files: [])
+    reference = RubyLens::Model::RailsFrameworkReference.new(Manifest.new(rails_reference: locked, packages:))
+    reference.add_namespace(0)
+
+    result = reference.build(index_complete: true, integrity_complete: true)
+
+    assert_equal([2, 3], result.fetch("coverage"))
+    assert_equal("partial_footprint", result.fetch("status"))
+    assert_equal(false, result.fetch("comparable"))
+    assert_empty(result.fetch("ruby_counts"))
+  end
+
   def test_rejects_an_unrecognized_rails_family_shape
     locked = RubyLens::Index::Manifest::RailsReference.new(
       version: "8.1.1",
-      direct_dependencies: RubyLens::Model::RailsFrameworkReference::FRAMEWORK_GEMS.drop(1),
+      members: RubyLens::Model::RailsFrameworkReference::FRAMEWORK_GEMS.drop(1),
+      scope: "full_family",
     )
     reference = RubyLens::Model::RailsFrameworkReference.new(Manifest.new(rails_reference: locked, packages: complete_packages))
 
@@ -84,7 +129,8 @@ class RailsFrameworkReferenceTest < Minitest::Test
   def manifest_with(packages:)
     locked = RubyLens::Index::Manifest::RailsReference.new(
       version: "8.1.1",
-      direct_dependencies: RubyLens::Model::RailsFrameworkReference::FRAMEWORK_GEMS,
+      members: RubyLens::Model::RailsFrameworkReference::FRAMEWORK_GEMS,
+      scope: "full_family",
     )
     Manifest.new(rails_reference: locked, packages:)
   end

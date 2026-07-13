@@ -1062,12 +1062,21 @@
     function railsReferenceUnavailableReason() {
       if (!frameworkReference) return "";
       if (Number(model.workspaceDensity[1] || 0) <= 0) return "Comparison unavailable: this report has no Core class or module namespaces.";
+      if (frameworkReference.status === "partial_footprint") {
+        return `Comparison unavailable: RubyLens could read ${Number(frameworkReference.coverage?.[0] || 0)} of ${Number(frameworkReference.coverage?.[1] || 0)} Rails framework gems in this bundle.`;
+      }
       if (frameworkReference.status === "partial_family") {
         return `Comparison unavailable: ${Number(frameworkReference.coverage?.[0] || 0)} of ${Number(frameworkReference.coverage?.[1] || 0)} version-aligned framework gems are available for indexing.`;
       }
       if (frameworkReference.status === "unsupported_family_shape") return "Comparison unavailable: this Rails framework family shape is not supported.";
       if (frameworkReference.status === "rails_package_missing") return "Comparison unavailable: the locked Rails landmark was not indexed.";
       return "Comparison unavailable: indexing coverage is incomplete.";
+    }
+
+    function railsReferenceName() {
+      return frameworkReference?.scope === "installed_footprint"
+        ? `Rails ${frameworkReference.version} footprint`
+        : `Rails ${frameworkReference.version}`;
     }
 
     function createFrameworkMetric(title, rubyCounts) {
@@ -1085,14 +1094,17 @@
       if (railsReferenceToggle) {
         railsReferenceToggle.disabled = !comparable;
         railsReferenceToggle.setAttribute("aria-pressed", String(comparable && railsComparisonEnabled));
-        railsReferenceToggle.textContent = comparable && railsComparisonEnabled ? "Comparing with Rails" : "Compare with Rails";
+        const footprint = frameworkReference.scope === "installed_footprint";
+        railsReferenceToggle.textContent = comparable && railsComparisonEnabled
+          ? footprint ? "Comparing with Rails footprint" : "Comparing with Rails"
+          : footprint ? "Compare with Rails footprint" : "Compare with Rails";
       }
       if (railsReferenceMetrics) {
         railsReferenceMetrics.textContent = "";
         if (comparable) {
           railsReferenceMetrics.append(
             createFrameworkMetric("Core host", model.categoryStats.core),
-            createFrameworkMetric(`Rails ${frameworkReference.version}`, frameworkReference.rubyCounts),
+            createFrameworkMetric(railsReferenceName(), frameworkReference.rubyCounts),
           );
         }
       }
@@ -1100,8 +1112,8 @@
         ? railsComparisonEnabled
           ? railsReferenceVisible === false
             ? "Scale glyph unavailable at the current view. Zoom out or reset the view to compare."
-            : `Same-scale glyph on. Rails ${frameworkReference.version} appears beside the whole Core host.`
-          : railsComparisonNotice || `Same-scale glyph off. Rails ${frameworkReference.version} is ready to compare with the whole Core host.`
+            : `Same-scale glyph on. ${railsReferenceName()} appears beside the whole Core host.`
+          : railsComparisonNotice || `Same-scale glyph off. ${railsReferenceName()} is ready to compare with the whole Core host.`
         : railsReferenceUnavailableReason();
     }
 
@@ -1120,16 +1132,18 @@
       const header = document.createElement("div");
       header.className = "framework-reference-header";
       const heading = document.createElement("h3");
-      heading.textContent = `Rails ${frameworkReference.version}`;
+      heading.textContent = railsReferenceName();
       const coverage = document.createElement("small");
-      coverage.textContent = `${Number(frameworkReference.coverage?.[0] || 0)} / ${Number(frameworkReference.coverage?.[1] || 0)} framework gems available for indexing`;
+      coverage.textContent = frameworkReference.scope === "installed_footprint"
+        ? `${frameworkReference.members.length} Rails framework gems in this bundle`
+        : `${Number(frameworkReference.coverage?.[0] || 0)} / ${Number(frameworkReference.coverage?.[1] || 0)} framework gems available for indexing`;
       const title = document.createElement("div");
       title.append(heading, coverage);
       const toggle = document.createElement("button");
       toggle.id = "rails-reference-toggle";
       toggle.type = "button";
       toggle.setAttribute("aria-pressed", "false");
-      toggle.setAttribute("aria-label", `Compare the whole Core host with Rails ${frameworkReference.version}`);
+      toggle.setAttribute("aria-label", `Compare the whole Core host with ${railsReferenceName()}`);
       toggle.addEventListener("click", () => {
         const enabling = !railsComparisonEnabled;
         railsComparisonNotice = "";
@@ -1152,7 +1166,9 @@
       railsReferenceMetrics.className = "framework-reference-metrics";
       const scope = document.createElement("p");
       scope.className = "framework-reference-scope";
-      scope.textContent = `First-party framework family: ${frameworkReference.members.join(", ")}. The Rails meta-gem and unrelated transitive gems are excluded.`;
+      scope.textContent = frameworkReference.scope === "installed_footprint"
+        ? `Counts only the Rails framework gems in this bundle: ${frameworkReference.members.join(", ")}. Other Rails components and unrelated transitive gems are excluded.`
+        : `First-party framework family: ${frameworkReference.members.join(", ")}. The Rails meta-gem and unrelated transitive gems are excluded.`;
       railsReferenceStatus = document.createElement("p");
       railsReferenceStatus.className = "framework-reference-status";
       railsReferenceStatus.setAttribute("role", "status");
@@ -1672,7 +1688,7 @@
       const referenceRadius = Number(frameworkReference.systemRadius || 0) / 1000 * projected[2];
       if (!(referenceRadius > 0)) { setRailsReferenceVisible(false); return; }
       context.save();
-      const label = `Rails ${frameworkReference.version} · same scale`;
+      const label = `${railsReferenceName()} · same scale`;
       context.font = "600 10px ui-sans-serif, -apple-system, BlinkMacSystemFont, sans-serif";
       const labelHalfWidth = context.measureText(label).width / 2;
       const preferredOffset = hostRadius + referenceRadius + 16;

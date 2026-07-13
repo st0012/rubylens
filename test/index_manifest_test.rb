@@ -108,7 +108,43 @@ class IndexManifestTest < Minitest::Test
     manifest.send(:build_rails_reference, parser)
 
     assert_equal("8.1.1", manifest.rails_reference.version)
-    assert_equal(%w[actionpack railties], manifest.rails_reference.direct_dependencies)
+    assert_equal(%w[actionpack railties], manifest.rails_reference.members)
+    assert_equal("full_family", manifest.rails_reference.scope)
+  end
+
+  def test_detects_an_exact_installed_rails_footprint_without_the_meta_gem
+    specification = Data.define(:name, :version, :dependencies)
+    members = %w[actionmailer actionpack actionview activejob activemodel activerecord activesupport railties]
+    parser = Struct.new(:specs).new(members.map do |name|
+      specification.new(name:, version: "8.0.5", dependencies: [])
+    end)
+    manifest = RubyLens::Index::Manifest.allocate
+
+    manifest.send(:build_rails_reference, parser)
+
+    assert_equal("8.0.5", manifest.rails_reference.version)
+    assert_equal(members, manifest.rails_reference.members)
+    assert_equal("installed_footprint", manifest.rails_reference.scope)
+  end
+
+  def test_does_not_infer_a_footprint_without_the_railties_base_or_with_split_versions
+    specification = Data.define(:name, :version, :dependencies)
+    base = %w[actionpack activesupport railties].map do |name|
+      specification.new(name:, version: "8.0.5", dependencies: [])
+    end
+
+    missing_anchor = Struct.new(:specs).new(base.reject { |locked| locked.name == "actionpack" })
+    manifest = RubyLens::Index::Manifest.allocate
+    manifest.send(:build_rails_reference, missing_anchor)
+    assert_nil(manifest.rails_reference)
+
+    split_versions = Struct.new(:specs).new([
+      *base,
+      specification.new(name: "activerecord", version: "8.0.4", dependencies: []),
+    ])
+    manifest = RubyLens::Index::Manifest.allocate
+    manifest.send(:build_rails_reference, split_versions)
+    assert_nil(manifest.rails_reference)
   end
 
   def test_does_not_detect_rails_integrations_as_the_rails_meta_gem

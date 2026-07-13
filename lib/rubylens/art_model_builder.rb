@@ -242,6 +242,7 @@ module RubyLens
       {
         "kind" => reference.fetch("kind"),
         "version" => reference.fetch("version"),
+        "scope" => reference.fetch("scope"),
         "members" => reference.fetch("members"),
         "availableMembers" => reference.fetch("available_members"),
         "coverage" => reference.fetch("coverage"),

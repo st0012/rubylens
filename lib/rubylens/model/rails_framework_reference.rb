@@ -1,22 +1,13 @@
 # frozen_string_literal: true
 
+require_relative "../rails_framework"
+
 module RubyLens
   module Model
     class RailsFrameworkReference
-      FRAMEWORK_GEMS = %w[
-        actioncable
-        actionmailbox
-        actionmailer
-        actionpack
-        actiontext
-        actionview
-        activejob
-        activemodel
-        activerecord
-        activestorage
-        activesupport
-        railties
-      ].freeze
+      FRAMEWORK_GEMS = RailsFramework::GEMS
+      FULL_FAMILY = "full_family"
+      INSTALLED_FOOTPRINT = "installed_footprint"
 
       attr_reader :family_package_indexes
 
@@ -49,13 +40,14 @@ module RubyLens
 
         available_members = FRAMEWORK_GEMS.select { |name| @family_package_indexes.key?(name) }
         status = comparison_status(available_members, index_complete, integrity_complete)
-        comparable = status == "ready"
+        comparable = %w[ready ready_footprint].include?(status)
         {
           "kind" => "rails",
           "version" => @locked.version,
-          "members" => FRAMEWORK_GEMS,
+          "scope" => @locked.scope,
+          "members" => expected_members,
           "available_members" => available_members,
-          "coverage" => [available_members.length, FRAMEWORK_GEMS.length],
+          "coverage" => [available_members.length, expected_members.length],
           "status" => status,
           "comparable" => comparable,
           "ruby_counts" => comparable ? [@classes, @modules] : [],
@@ -69,7 +61,7 @@ module RubyLens
         return {} unless detected?
 
         @manifest.packages.each_with_index.each_with_object({}) do |(package, index), indexes|
-          next unless FRAMEWORK_GEMS.include?(package.name)
+          next unless expected_members.include?(package.name)
           next unless package.version == @locked.version
           next if package.files.empty?
 
@@ -78,15 +70,28 @@ module RubyLens
       end
 
       def comparison_status(available_members, index_complete, integrity_complete)
-        return "unsupported_family_shape" unless FRAMEWORK_GEMS.all? { |name| @locked.direct_dependencies.include?(name) }
-        return "rails_package_missing" unless rails_package_index
-        return "partial_family" unless available_members == FRAMEWORK_GEMS
+        return "unsupported_family_shape" unless [FULL_FAMILY, INSTALLED_FOOTPRINT].include?(@locked.scope)
+        if @locked.scope == FULL_FAMILY
+          return "unsupported_family_shape" unless FRAMEWORK_GEMS.all? { |name| @locked.members.include?(name) }
+          return "rails_package_missing" unless rails_package_index
+        end
+        return @locked.scope == INSTALLED_FOOTPRINT ? "partial_footprint" : "partial_family" unless available_members == expected_members
         return "coverage_incomplete" unless index_complete && integrity_complete
 
-        "ready"
+        @locked.scope == INSTALLED_FOOTPRINT ? "ready_footprint" : "ready"
+      end
+
+      def expected_members
+        @expected_members ||= if @locked.scope == FULL_FAMILY
+          FRAMEWORK_GEMS
+        else
+          FRAMEWORK_GEMS.select { |name| @locked.members.include?(name) }.freeze
+        end
       end
 
       def rails_package_index
+        return unless @locked.scope == FULL_FAMILY
+
         @manifest.packages.index { |package| package.name == "rails" && package.version == @locked.version }
       end
     end

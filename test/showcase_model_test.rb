@@ -11,7 +11,7 @@ class ShowcaseModelTest < Minitest::Test
       "packageNames" => [private_value],
       "warningCounts" => { "index" => 0 },
       "frameworkReference" => {
-        "kind" => "rails", "version" => "8.1.1", "members" => ["actionpack"],
+        "kind" => "rails", "version" => "8.1.1", "scope" => "installed_footprint", "members" => ["actionpack"],
         "availableMembers" => ["actionpack"], "coverage" => [1, 1], "status" => "ready",
         "comparable" => true, "rubyCounts" => [20, 10], "systemRadius" => 25_000, "packageIndex" => 0,
       },
@@ -32,7 +32,7 @@ class ShowcaseModelTest < Minitest::Test
     assert_equal(8, showcase.fetch("dependencyStars").first.length)
     refute_includes(encoded, private_value)
     %w[namespaceNames packageNames regionNames warningCounts].each { |field| refute_includes(encoded, field) }
-    %w[frameworkReference rails actionpack 8.1.1].each { |value| refute_includes(encoded, value) }
+    %w[frameworkReference rails installed_footprint actionpack 8.1.1].each { |value| refute_includes(encoded, value) }
   end
 
   def test_rejects_private_values_inside_the_numeric_contract

@@ -27,7 +27,7 @@ class RailsFrameworkReferenceContractTest < Minitest::Test
     assert_includes(runtime, "Math.hypot(x - projected[0], y - projected[1]) >= minimumOffset")
     assert_includes(runtime, "context.arc(x, y, referenceRadius, 0, Math.PI * 2)")
     assert_includes(runtime, "context.moveTo(x - referenceRadius, y)")
-    assert_includes(runtime, "Rails ${frameworkReference.version} · same scale")
+    assert_includes(runtime, "`${railsReferenceName()} · same scale`")
     assert_includes(runtime, "renderRailsReference(matrix)")
     refute_match(/addPoint\([^\n]*frameworkReference/, runtime)
     refute_match(/renderPoints[^\n]*frameworkReference/, runtime)
@@ -50,11 +50,14 @@ class RailsFrameworkReferenceContractTest < Minitest::Test
 
     assert_includes(runtime, 'toggle.type = "button"')
     assert_includes(runtime, 'toggle.setAttribute("aria-pressed", "false")')
-    assert_includes(runtime, 'toggle.setAttribute("aria-label", `Compare the whole Core host with Rails ${frameworkReference.version}`)')
+    assert_includes(runtime, 'toggle.setAttribute("aria-label", `Compare the whole Core host with ${railsReferenceName()}`)')
     assert_includes(runtime, 'railsReferenceStatus.setAttribute("aria-live", "polite")')
     assert_includes(runtime, 'frameworkReference.members.join(", ")')
     assert_includes(runtime, "Comparison unavailable:")
     assert_includes(runtime, "framework gems available for indexing")
+    assert_includes(runtime, "Rails framework gems in this bundle")
+    assert_includes(runtime, "Counts only the Rails framework gems in this bundle:")
+    assert_includes(runtime, 'frameworkReference?.scope === "installed_footprint"')
     assert_includes(runtime, "whole Core host")
     refute_includes(runtime, "Select a Core system")
     refute_includes(runtime, "Select a Core region")
@@ -73,6 +76,16 @@ class RailsFrameworkReferenceContractTest < Minitest::Test
     refute_includes(control, "createElement(\"canvas\")")
     refute_includes(control, "getContext")
     refute_includes(renderer, "requestAnimationFrame")
+  end
+
+  def test_footprint_copy_never_labels_a_partial_install_as_full_rails
+    runtime = File.read(RUNTIME_PATH)
+
+    assert_includes(runtime, "Rails ${frameworkReference.version} footprint")
+    assert_includes(runtime, "Compare with Rails footprint")
+    assert_includes(runtime, "Other Rails components and unrelated transitive gems are excluded.")
+    assert_includes(runtime, "partial_footprint")
+    refute_includes(runtime, "full Rails size")
   end
 
   def test_comparison_is_an_overview_only_state_with_truthful_transitions
