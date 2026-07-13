@@ -28,7 +28,7 @@
       tests: { ancestorDepth: .18, definitionSites: .25, reopenings: .18, descendants: .42, references: .85, members: .55 },
       dependencies: { ancestorDepth: .12, definitionSites: .35, reopenings: .2, descendants: .32, references: .48, members: .4 },
     };
-    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, showcaseRenderer = null, showcaseAnnotationSlot = -1, activeShowcaseAnnotation = null;
+    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedSystemIndex = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, showcaseRenderer = null, showcaseAnnotationSlot = -1, activeShowcaseAnnotation = null;
     const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35, SHOWCASE_POINT_LIMIT = 50_000;
     const CORE_SCALE_BASELINE = 3_000;
     const RSPEC_PROXY_PREFIX = "RSpec example group #";
@@ -162,11 +162,59 @@
       return [Math.cos(theta) * radial * layoutScale.tests, vertical * layoutScale.tests, Math.sin(theta) * radial * layoutScale.tests];
     }
 
-    const packageAnchors = model.packages.map((row, index) => {
-      const seed = row[0], radius = layoutScale.dependencyInnerRadius + 72 * Math.sqrt(layoutScale.tests) * Math.pow(unit(seed, 14), .72);
+    const dependencySystems = Array.isArray(model.dependencySystems) ? model.dependencySystems : [];
+    const systemMembers = Array.from({ length: dependencySystems.length }, () => []);
+    const packageMemberOrdinals = new Array(model.packages.length).fill(-1);
+    model.packages.forEach((row, packageIndex) => {
+      const systemIndex = Number(row[8]);
+      if (!Number.isInteger(systemIndex) || systemIndex < 0 || systemIndex >= systemMembers.length) return;
+      packageMemberOrdinals[packageIndex] = systemMembers[systemIndex].length;
+      systemMembers[systemIndex].push(packageIndex);
+    });
+    const systemAggregates = systemMembers.map(packageIndexes => {
+      const aggregate = { declarationCount: 0, directCount: 0, rubyCounts: [0, 0, 0, 0] };
+      for (const packageIndex of packageIndexes) {
+        const row = model.packages[packageIndex];
+        aggregate.declarationCount += Number(row[3]) || 0;
+        aggregate.directCount += row[1] === 0 ? 1 : 0;
+        for (let index = 0; index < aggregate.rubyCounts.length; index += 1) aggregate.rubyCounts[index] += Number(row[index + 4]) || 0;
+      }
+      return aggregate;
+    });
+    const dependencyAnchor = (seed, declarationCount) => {
+      const radius = layoutScale.dependencyInnerRadius + 72 * Math.sqrt(layoutScale.tests) * Math.pow(unit(seed, 14), .72);
       const theta = unit(seed, 15) * Math.PI * 2;
       const vertical = normal(seed, 16) * 24 * Math.sqrt(layoutScale.tests);
-      return [Math.cos(theta) * radius, vertical, Math.sin(theta) * radius, 1.6 + Math.min(9, Math.sqrt(row[3]) * .055), index];
+      return [Math.cos(theta) * radius, vertical, Math.sin(theta) * radius, 1.6 + Math.min(9, Math.sqrt(declarationCount) * .055)];
+    };
+    const systemAnchors = dependencySystems.map((row, index) => {
+      const anchor = dependencyAnchor(row[0], systemAggregates[index]?.declarationCount || 0);
+      anchor[3] += Math.min(5, systemMembers[index].length * .65);
+      anchor.push(index);
+      return anchor;
+    });
+    const packageAnchors = model.packages.map((row, index) => {
+      const systemIndex = Number(row[8]);
+      const cloudRadius = 1.6 + Math.min(9, Math.sqrt(row[3]) * .055);
+      if (!Number.isInteger(systemIndex) || systemIndex < 0 || !systemAnchors[systemIndex]) {
+        return [...dependencyAnchor(row[0], row[3]), index, -1];
+      }
+
+      const parent = systemAnchors[systemIndex];
+      const memberCount = systemMembers[systemIndex].length;
+      const ordinal = packageMemberOrdinals[index];
+      const phase = unit(dependencySystems[systemIndex][0], 22) * Math.PI * 2;
+      const theta = phase + ordinal * Math.PI * 2 / memberCount;
+      const spread = Math.max(3.4, parent[3] * .58) * (.72 + unit(row[0], 23) * .18);
+      const vertical = normal(row[0], 24) * Math.max(1, spread * .16);
+      return [
+        parent[0] + Math.cos(theta) * spread,
+        parent[1] + vertical,
+        parent[2] + Math.sin(theta) * spread,
+        cloudRadius,
+        index,
+        systemIndex,
+      ];
     });
 
     function dependencyPosition(seed, packageIndex) {
@@ -186,10 +234,14 @@
       const points = [];
       const interactivePoints = [];
       const dependencyHubs = [];
+      const packageHubs = [];
+      const systemHubs = [];
       const addPoint = (point, interactive = true) => {
         points.push(point);
         if (interactive && interactiveMode) interactivePoints.push(point);
         if (point.hub) dependencyHubs.push(point);
+        if (point.packageHub) packageHubs.push(point);
+        if (point.systemHub) systemHubs.push(point);
       };
       model.namespaces.forEach((row, index) => {
         const name = interactiveMode ? model.namespaceNames[index] : "";
@@ -206,23 +258,33 @@
       });
       model.dependencyStars.forEach(row => {
         const values = row.slice(2, 8);
-        addPoint({ category: "dependencies", packageIndex: row[1], seed: row[0], position: dependencyPosition(row[0], row[1]), signal: weightedSignal(normalizedSignals(values), "dependencies"), base: .45 }, false);
+        const packageIndex = row[1];
+        addPoint({ category: "dependencies", packageIndex, systemIndex: Number(model.packages[packageIndex]?.[8] ?? -1), seed: row[0], position: dependencyPosition(row[0], packageIndex), signal: weightedSignal(normalizedSignals(values), "dependencies"), base: .45 }, false);
+      });
+      systemAnchors.forEach((anchor, index) => {
+        const systemRow = dependencySystems[index];
+        const aggregate = systemAggregates[index];
+        const visualValues = [0, aggregate.declarationCount, 0, 0, 0, 0];
+        const point = { category: "dependencies", systemIndex: index, seed: systemRow[0], position: anchor.slice(0, 3), signal: weightedSignal(normalizedSignals(visualValues), "dependencies"), base: 2.15, hub: true, systemHub: true };
+        if (interactiveMode) Object.assign(point, { name: model.packageNames[systemRow[1]], memberCount: systemMembers[index].length, directMemberCount: aggregate.directCount, rubyCounts: aggregate.rubyCounts });
+        addPoint(point);
       });
       packageAnchors.forEach((anchor, index) => {
         const packageRow = model.packages[index];
+        const systemIndex = Number(packageRow[8]);
         const rubyCounts = packageRow.slice(4, 8);
         const visualValues = [0, packageRow[3], 0, 0, 0, 0];
-        const point = { category: "dependencies", packageIndex: index, seed: packageRow[0], position: anchor.slice(0, 3), signal: weightedSignal(normalizedSignals(visualValues), "dependencies"), base: 1.8, hub: true };
-        if (interactiveMode) Object.assign(point, { name: model.packageNames[index], packageRole: packageRow[1] === 0 ? "Direct dependency" : "Transitive dependency", packageLocation: packageRow[2] === 0 ? "Workspace package" : "External gem", rubyCounts });
+        const point = { category: "dependencies", packageIndex: index, systemIndex, seed: packageRow[0], position: anchor.slice(0, 3), signal: weightedSignal(normalizedSignals(visualValues), "dependencies"), base: systemIndex >= 0 ? 1.55 : 1.8, hub: true, packageHub: true };
+        if (interactiveMode) Object.assign(point, { name: model.packageNames[index], packageRole: packageRow[1] === 0 ? "Direct dependency" : "Transitive dependency", packageLocation: packageRow[2] === 0 ? "Workspace package" : "External gem", rubyCounts, groupedMemberCount: systemIndex >= 0 ? systemMembers[systemIndex].length : 0 });
         if (showcaseDetails) {
           const annotationKey = showcaseAnnotationKey("dependencies", index);
           if (showcaseAnnotationAnchors.has(annotationKey)) showcasePointsByAnchor.set(annotationKey, point);
         }
         addPoint(point);
       });
-      return { points, interactivePoints, dependencyHubs };
+      return { points, interactivePoints, dependencyHubs, packageHubs, systemHubs };
     }
-    const { points, interactivePoints, dependencyHubs } = buildPoints();
+    const { points, interactivePoints, dependencyHubs, packageHubs, systemHubs } = buildPoints();
     function showcasePointSample() {
       if (!showcaseMode || points.length <= SHOWCASE_POINT_LIMIT) return points;
       const rank = point => [hash(point.seed, 73), point.seed, point];
@@ -677,11 +739,20 @@
 
     function updateTooltipContent(point) {
       tooltipMetrics.textContent = "";
-      tooltipCategory.textContent = point.hub ? "Gem" : point.category === "tests" ? "Tests" : "Core code";
+      const parentSystem = point.systemHub && !point.packageHub;
+      tooltipCategory.textContent = parentSystem ? "Dependency system" : point.hub ? "Gem" : point.category === "tests" ? "Tests" : "Core code";
       tooltipName.textContent = point.name || "Unnamed Ruby item";
-      if (point.hub) {
+      if (parentSystem) {
+        const expanded = expandedSystemIndex === point.systemIndex && expandedPackageIndex === null ? " · Expanded system · Escape to exit" : "";
+        const direct = point.directMemberCount === 1 ? "1 direct package" : `${point.directMemberCount.toLocaleString()} direct packages`;
+        tooltipContext.textContent = `${point.memberCount.toLocaleString()} package subclouds · ${direct}${expanded}`;
+        addRubyMetrics(point.rubyCounts, allRubyMetricIndexes);
+        return;
+      }
+      if (point.packageHub) {
         const expanded = expandedPackageIndex === point.packageIndex ? " · Expanded gem cloud · Escape to exit" : "";
-        tooltipContext.textContent = `${point.packageRole} · ${point.packageLocation}${expanded}`;
+        const membership = point.groupedMemberCount > 1 ? ` · Member of ${point.groupedMemberCount.toLocaleString()}-package system` : "";
+        tooltipContext.textContent = `${point.packageRole} · ${point.packageLocation}${membership}${expanded}`;
         addRubyMetrics(point.rubyCounts, allRubyMetricIndexes);
         return;
       }
@@ -728,6 +799,7 @@
         if (!point.screen) continue;
         if (focusedCategory && point.category !== focusedCategory) continue;
         if (expandedPackageIndex !== null && (point.category !== "dependencies" || point.packageIndex !== expandedPackageIndex)) continue;
+        if (expandedPackageIndex === null && expandedSystemIndex !== null && (point.category !== "dependencies" || point.systemIndex !== expandedSystemIndex)) continue;
         const dx = point.screen[0] - x;
         const dy = point.screen[1] - y;
         const distance = Math.hypot(dx, dy);
@@ -748,6 +820,7 @@
       for (const point of dependencyHubs) {
         if (!point.screen || !point.cloudScreenRadius) continue;
         if (expandedPackageIndex !== null && point.packageIndex !== expandedPackageIndex) continue;
+        if (expandedPackageIndex === null && expandedSystemIndex !== null && point.systemIndex !== expandedSystemIndex) continue;
         const distance = Math.hypot(point.screen[0] - x, point.screen[1] - y);
         const ratio = distance / point.cloudScreenRadius;
         if (ratio <= 1 && ratio < nearestRatio) {
@@ -808,7 +881,7 @@
     function factsFor(category) {
       if (category === "dependencies") {
         const gemMetricFact = (title, index) => {
-          const result = maxPoint(dependencyHubs, point => point.rubyCounts[index]);
+          const result = maxPoint(packageHubs, point => point.rubyCounts[index]);
           return result && result.value > 0 && { title, ...result };
         };
         return [
@@ -858,6 +931,7 @@
     }
 
     function clearExpandedPackage() {
+      expandedSystemIndex = null;
       expandedPackageIndex = null;
     }
 
@@ -899,7 +973,8 @@
         return;
       }
       if (point.hub) {
-        focusDependencyPackage(point.packageIndex, button);
+        if (point.systemHub && !point.packageHub) focusDependencySystem(point.systemIndex, button);
+        else focusDependencyPackage(point.packageIndex, button);
         return;
       }
       setCategoryVisible(point.category, true);
@@ -918,7 +993,7 @@
     }
 
     function focusDependencyPackage(packageIndex, button = null) {
-      const hub = dependencyHubs.find(point => point.packageIndex === packageIndex);
+      const hub = packageHubs.find(point => point.packageIndex === packageIndex);
       if (!hub) return false;
 
       setCategoryVisible("dependencies", true);
@@ -928,7 +1003,29 @@
         activeFactButton.setAttribute("aria-pressed", "true");
       }
       clearCategoryFocus();
+      expandedSystemIndex = hub.systemIndex >= 0 ? hub.systemIndex : null;
       expandedPackageIndex = packageIndex;
+      setDrifting(false);
+      selectedPoint = null;
+      selectionLocked = false;
+      selectPoint(hub, true);
+      flyCamera(button ? topDownCameraTargetForPoint(hub, 4) : cameraTargetForPoint(hub, 4));
+      return true;
+    }
+
+    function focusDependencySystem(systemIndex, button = null) {
+      const hub = systemHubs.find(point => point.systemIndex === systemIndex);
+      if (!hub) return false;
+
+      setCategoryVisible("dependencies", true);
+      clearActiveFact();
+      if (button) {
+        activeFactButton = button;
+        activeFactButton.setAttribute("aria-pressed", "true");
+      }
+      clearCategoryFocus();
+      expandedSystemIndex = systemIndex;
+      expandedPackageIndex = null;
       setDrifting(false);
       selectedPoint = null;
       selectionLocked = false;
@@ -1029,13 +1126,14 @@
 
     function searchResultContext(point, duplicateOrdinal, duplicateTotal) {
       const category = point.category === "core" ? "Core" : point.category === "tests" ? "Tests" : "Gems";
-      const kind = point.hub ? "Dependency system" : point.kind;
+      const kind = point.systemHub && !point.packageHub ? "Dependency system" : point.packageHub ? "Gem package" : point.kind;
       const duplicate = duplicateTotal > 1 ? ` · Result ${duplicateOrdinal} of ${duplicateTotal}` : "";
       return `${kind} · ${category}${duplicate}`;
     }
 
     function activateSearchResult(point) {
-      if (point.hub) focusDependencyPackage(point.packageIndex);
+      if (point.systemHub && !point.packageHub) focusDependencySystem(point.systemIndex);
+      else if (point.packageHub) focusDependencyPackage(point.packageIndex);
       else focusPoint(point);
     }
 
@@ -1349,9 +1447,9 @@
 
     function project(point, matrix) {
       const position = point.position;
-      const anchor = expandedPackageIndex !== null && point.packageIndex === expandedPackageIndex
-        ? packageAnchors[expandedPackageIndex]
-        : null;
+      let anchor = null;
+      if (expandedPackageIndex !== null && point.packageIndex === expandedPackageIndex) anchor = packageAnchors[expandedPackageIndex];
+      else if (expandedPackageIndex === null && expandedSystemIndex !== null && point.systemIndex === expandedSystemIndex) anchor = systemAnchors[expandedSystemIndex];
       const positionX = anchor ? anchor[0] + (position[0] - anchor[0]) * DEPENDENCY_EXPANSION : position[0];
       const positionY = anchor ? anchor[1] + (position[1] - anchor[1]) * DEPENDENCY_EXPANSION : position[1];
       const positionZ = anchor ? anchor[2] + (position[2] - anchor[2]) * DEPENDENCY_EXPANSION : position[2];
@@ -1441,22 +1539,31 @@
         const signal = point.signal;
         const size = clamp(point.base * (.62 + signal * .46) * perspective, .35, point.hub ? 5.2 : 3.2);
         const alpha = clamp(.14 + signal * .105, .12, point.hub ? .86 : .7);
-        const focusedPackagePoint = expandedPackageIndex !== null && point.category === "dependencies" && point.packageIndex === expandedPackageIndex;
-        const emphasis = expandedPackageIndex !== null
-          ? (focusedPackagePoint ? 1 : contextVisibility.package)
+        const focusedDependencyPoint = point.category === "dependencies" && (
+          expandedPackageIndex !== null
+            ? point.packageIndex === expandedPackageIndex
+            : expandedSystemIndex !== null && point.systemIndex === expandedSystemIndex
+        );
+        const dependencyExpanded = expandedPackageIndex !== null || expandedSystemIndex !== null;
+        const emphasis = dependencyExpanded
+          ? (focusedDependencyPoint ? 1 : contextVisibility.package)
           : selectionLocked && selectedPoint ? (point === selectedPoint ? 1 : contextVisibility.selection) : focusedCategory && point.category !== focusedCategory ? contextVisibility.category : 1;
-        const visibleAlpha = (focusedPackagePoint ? Math.max(.34, alpha) : alpha * emphasis) * exposure;
+        const visibleAlpha = (focusedDependencyPoint ? Math.max(.34, alpha) : alpha * emphasis) * exposure;
         const colour = colours[point.category];
         point.screen = [x, y, size];
         if (point.hub) {
-          const expansion = expandedPackageIndex === point.packageIndex ? DEPENDENCY_EXPANSION : 1;
-          point.cloudScreenRadius = Math.max(12, packageAnchors[point.packageIndex][3] * perspective * expansion * 1.2);
+          const parentSystem = point.systemHub && !point.packageHub;
+          const anchor = parentSystem ? systemAnchors[point.systemIndex] : packageAnchors[point.packageIndex];
+          const expanded = parentSystem
+            ? expandedPackageIndex === null && expandedSystemIndex === point.systemIndex
+            : expandedPackageIndex === point.packageIndex;
+          point.cloudScreenRadius = Math.max(12, anchor[3] * perspective * (expanded ? DEPENDENCY_EXPANSION : 1) * 1.2);
         }
         const detailedPoint = emphasis >= .1;
         if (size > 1.35 && detailedPoint) {
-          const glowScale = focusedPackagePoint ? 2.2 - deepDetail * .8 : 3.4 - deepDetail * 1.3;
+          const glowScale = focusedDependencyPoint ? 2.2 - deepDetail * .8 : 3.4 - deepDetail * 1.3;
           context.beginPath(); context.arc(x, y, size * glowScale, 0, Math.PI * 2);
-          context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${visibleAlpha * (focusedPackagePoint ? .045 : .055)})`; context.fill();
+          context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${visibleAlpha * (focusedDependencyPoint ? .045 : .055)})`; context.fill();
         }
         context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${visibleAlpha})`;
         if (!detailedPoint || size < .85) context.fillRect(x, y, 1, 1);
@@ -1718,7 +1825,10 @@
         const point = hoverTargetAt(event.clientX, event.clientY);
         clearActiveFact();
         clearCategoryFocus();
-        if (point?.category === "dependencies" && selectionLocked && selectedPoint === point) focusDependencyPackage(point.packageIndex);
+        if (point?.category === "dependencies" && selectionLocked && selectedPoint === point) {
+          if (point.systemHub && !point.packageHub) focusDependencySystem(point.systemIndex);
+          else focusDependencyPackage(point.packageIndex);
+        }
         else if (point) selectPoint(point, true);
         else clearExplorationFocus();
       }
@@ -1742,7 +1852,8 @@
       if (pointers.size > 0) return;
       const dependency = dependencyPackageAt(event.clientX, event.clientY);
       if (dependency) {
-        focusDependencyPackage(dependency.packageIndex);
+        if (dependency.systemHub && !dependency.packageHub) focusDependencySystem(dependency.systemIndex);
+        else focusDependencyPackage(dependency.packageIndex);
         return;
       }
       cancelCameraFlight();
@@ -1756,7 +1867,10 @@
       else if (event.key === "-") { cancelCameraFlight(); zoomBetween(zoom / ZOOM_STEP, sceneCenterX, sceneCenterY); }
       else if (event.key === "0") goHome();
       else if (event.key.toLowerCase() === "p") { cancelCameraFlight(); setNavigationMode(navigationMode === "pan" ? "orbit" : "pan"); }
-      else if ((event.key === "Enter" || event.key.toLowerCase() === "f") && selectedPoint?.category === "dependencies") focusDependencyPackage(selectedPoint.packageIndex);
+      else if ((event.key === "Enter" || event.key.toLowerCase() === "f") && selectedPoint?.category === "dependencies") {
+        if (selectedPoint.systemHub && !selectedPoint.packageHub) focusDependencySystem(selectedPoint.systemIndex);
+        else focusDependencyPackage(selectedPoint.packageIndex);
+      }
       else return;
       event.preventDefault();
       requestRender();
@@ -1793,7 +1907,7 @@
       startShowcase();
     } else {
       document.title = `RubyLens · ${model.projectName}`;
-      canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class and module stars for Ruby code details or gem clouds for package summaries. Sidebar highlights open a top-down view. Double-click a gem cloud, press Enter or F on a selected gem marker, or tap that marker again to expand its stars. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, and use arrow keys to move the view. Escape exits a focused gem system.`);
+      canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class and module stars for Ruby code details, dependency systems, or gem package subclouds. Sidebar highlights open a top-down view. Double-click a dependency system or gem subcloud, press Enter or F on its selected marker, or tap that marker again to expand its stars. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, and use arrow keys to move the view. Escape exits a focused dependency system.`);
       document.getElementById("coverage").textContent = `${renderedDependencyStars.toLocaleString()} dependency stars shown`;
       populateWarningDisclosure();
       setDrifting(drifting);

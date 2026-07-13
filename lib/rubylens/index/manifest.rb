@@ -11,6 +11,7 @@ module RubyLens
   module Index
     class Manifest
       Package = Data.define(:name, :version, :role, :location, :root, :files)
+      DependencySystem = Data.define(:id, :package_indexes, :label_package_index)
       GitPackagePaths = Data.define(:logical_root, :canonical_root, :logical_canonical_root)
 
       class NixStoreProvider
@@ -30,7 +31,7 @@ module RubyLens
       UnsafeGitPackageFile = Class.new(StandardError)
       GIT_SKIP_REASONS = DependencyWarning::REASONS
 
-      attr_reader :root, :files, :workspace_files, :packages, :warnings, :dependency_warnings
+      attr_reader :root, :files, :workspace_files, :packages, :dependency_systems, :warnings, :dependency_warnings
 
       def self.build(root:, lockfile: nil)
         new(root: root, lockfile: lockfile).tap(&:build)
@@ -42,6 +43,7 @@ module RubyLens
         @warnings = []
         @dependency_warnings = []
         @packages = []
+        @dependency_systems = []
         @package_roots = []
         @package_index_by_file = {}
         @package_index_cache = {}
@@ -123,18 +125,21 @@ module RubyLens
         parser = Bundler::LockfileParser.new(@lockfile.read)
         direct_names = parser.dependencies.keys.to_set
         excluded_names = tool_only_dependency_names(parser, direct_names)
-        parser.specs.uniq { |specification| [specification.name, specification.version.to_s] }.each do |locked|
-          next if excluded_names.include?(locked.name)
-
+        locked_specs = parser.specs.uniq { |specification| [specification.name, specification.version.to_s] }
+          .reject { |locked| excluded_names.include?(locked.name) }
+        built = locked_specs.filter_map do |locked|
+          source = locked.source
           package = package_for(locked, direct_names)
-          @packages << package if package
+          [package, source] if package
         end
+        @packages = built.map(&:first)
+        build_dependency_systems(built)
       rescue Bundler::LockfileError, Errno::EACCES => error
         @warnings << "Gemfile.lock could not be read: #{error.class}."
       end
 
       def package_for(locked, direct_names)
-        source = locked.source.class.name.split("::").last.downcase
+        source = source_type(locked)
         role = direct_names.include?(locked.name) ? "direct" : "transitive"
         if source == "path"
           return local_package(locked)
@@ -308,6 +313,43 @@ module RubyLens
         @warnings << "Skipped #{locked.name} #{locked.version}: #{reason}."
         @dependency_warnings << { "name" => locked.name, "reason" => reason }.freeze
         nil
+      end
+
+      def build_dependency_systems(built)
+        packages_by_source = identity_hash
+        built.each_with_index do |(_package, source), index|
+          packages_by_source[source] << index if source_type_for(source) == "git"
+        end
+        groups = packages_by_source.values.select { |indexes| indexes.length > 1 }
+          .sort_by { |indexes| dependency_system_signature(indexes) }
+        @dependency_systems = groups.each_with_index.map do |indexes, id|
+          package_indexes = indexes.sort_by { |index| package_sort_key(index) }.freeze
+          direct_indexes = package_indexes.select { |index| @packages.fetch(index).role == "direct" }
+          label_candidates = direct_indexes.empty? ? package_indexes : direct_indexes
+          label_index = direct_indexes.one? ? direct_indexes.first : label_candidates.min_by { |index| package_sort_key(index) }
+          DependencySystem.new(id:, package_indexes:, label_package_index: label_index)
+        end.freeze
+      end
+
+      def dependency_system_signature(indexes)
+        indexes.map { |index| package_sort_key(index).first(2) }.sort
+      end
+
+      def package_sort_key(index)
+        package = @packages.fetch(index)
+        [package.name, package.version, index]
+      end
+
+      def source_type(locked)
+        source_type_for(locked.source)
+      end
+
+      def source_type_for(source)
+        source.class.name.split("::").last.downcase
+      end
+
+      def identity_hash
+        {}.compare_by_identity.tap { |hash| hash.default_proc = ->(records, source) { records[source] = [] } }
       end
 
       def local_package(locked)

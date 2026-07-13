@@ -7,12 +7,13 @@ class ShowcaseWriterTest < Minitest::Test
     Dir.mktmpdir("rubylens-showcase-") do |directory|
       output = File.join(directory, "showcase.html")
       model = {
-        "schema" => "rubylens.showcase.v1",
+        "schema" => "rubylens.showcase.v2",
         "projectName" => "Synthetic App",
         "details" => false,
         "domains" => RubyLens::ArtModelBuilder::SIGNAL_FIELDS.to_h { |field| [field, 0] },
         "namespaces" => [],
         "packages" => [],
+        "dependencySystems" => [],
         "dependencyStars" => [],
       }
 

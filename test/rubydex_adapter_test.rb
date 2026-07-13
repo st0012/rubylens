@@ -13,7 +13,7 @@ class RubydexAdapterTest < Minitest::Test
     snapshot = adapter.index(manifest)
     serialized = JSON.generate(snapshot)
 
-    assert_equal("rubylens.snapshot.v5", snapshot.fetch("schema"))
+    assert_equal("rubylens.snapshot.v6", snapshot.fetch("schema"))
     assert_equal("Tiny Repo", snapshot.fetch("project_name"))
     assert_equal(9, snapshot.fetch("namespaces").length)
     assert_equal(9, snapshot.fetch("namespace_names").length)
@@ -21,6 +21,7 @@ class RubydexAdapterTest < Minitest::Test
     assert(snapshot.fetch("namespaces").all? { |row| row.length == 14 && row.all?(Integer) })
     assert_equal({ "core" => [4, 4, 3, 1], "tests" => [1, 0, 0, 0] }, snapshot.fetch("category_stats"))
     assert_equal(6, snapshot.fetch("dependency_signal_maxima").length)
+    assert_empty(snapshot.fetch("dependency_systems"))
     assert_includes(snapshot.fetch("namespace_names"), "Demo::Order")
     order_index = snapshot.fetch("namespace_names").index("Demo::Order")
     assert_equal([1, 0, 2, 1, 1], snapshot.fetch("namespaces").fetch(order_index).last(5))

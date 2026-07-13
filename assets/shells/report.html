@@ -10,7 +10,7 @@
 {{REPORT_STYLES}}  </style>
 </head>
 <body>
-  <canvas id="cosmos" tabindex="0" aria-label="Interactive three-dimensional stellar artwork. Hover class and module stars for Ruby code details or gem clouds for package summaries."></canvas>
+  <canvas id="cosmos" tabindex="0" aria-label="Interactive three-dimensional stellar artwork. Hover class and module stars for Ruby code details, dependency systems, or gem package subclouds."></canvas>
   <header class="masthead">
     <p class="eyebrow">RubyLens · local report</p>
     <h1>Ruby project</h1>
@@ -33,10 +33,10 @@
         <div class="search-results" id="search-results" role="region" aria-label="Search results" hidden></div>
       </div>
       <div id="controls"></div>
-    <div class="foot">Double-click a gem cloud, press Enter or F on a selected gem marker, or tap that marker again to spread its cloud stars. Escape or Home exits. This owner-only report embeds class, module, and gem names for hover details; dependency stars remain anonymous. Source, comments, and paths are excluded. Do not share the HTML unless you intend to disclose codebase structure.</div></div>
+    <div class="foot">Double-click a dependency system or gem subcloud, press Enter or F on its selected marker, or tap that marker again to spread its stars. Escape or Home exits. This owner-only report embeds class, module, and gem names for hover details; dependency stars remain anonymous. Source, comments, and paths are excluded. Do not share the HTML unless you intend to disclose codebase structure.</div></div>
   </aside>
   <div class="toolbar"><button type="button" id="motion" aria-pressed="false">Pause drift</button><button type="button" id="pan-mode" aria-label="Pan mode" aria-keyshortcuts="P" aria-pressed="false">Pan</button><button type="button" id="zoom-out" aria-label="Zoom out">−</button><output class="zoom-level" id="zoom-level" aria-label="Zoom level">100%</output><button type="button" id="zoom-in" aria-label="Zoom in">+</button><button type="button" id="view" aria-label="Return to default view" aria-keyshortcuts="0">Home</button></div>
-  <div class="hint">Double-click gem clouds · drag to orbit · Shift-drag/Pan to move · arrow keys move view · scroll at cursor to zoom</div>
+  <div class="hint">Double-click dependency systems or gem subclouds · drag to orbit · Shift-drag/Pan to move · arrow keys move view · scroll at cursor to zoom</div>
   <aside class="tooltip" id="tooltip" role="status" hidden><p class="tooltip-category" id="tooltip-category"></p><p class="tooltip-name" id="tooltip-name"></p><p class="tooltip-context" id="tooltip-context"></p><dl class="tooltip-metrics" id="tooltip-metrics"></dl></aside>
   <script>
 {{REPORT_RUNTIME}}  </script>

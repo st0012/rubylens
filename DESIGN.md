@@ -4,8 +4,8 @@ RubyLens uses a dark stellar identity: magenta Core, cyan Tests, and warm gold G
 
 ## Explorer
 
-- Core and Tests are navigable Ruby namespace points. Gems are aggregate dependency systems; their stars stay anonymous and non-hoverable.
-- Search uses names already embedded for interactive Ruby points and gem systems. It is lazy, debounced, capped, progressively revealed, and reuses existing spatial focus rather than creating a parallel navigation model.
+- Core and Tests are navigable Ruby namespace points. Gems are aggregate dependency systems; multi-package Git sources use one parent system with inspectable package subclouds, while their stars stay anonymous and non-hoverable.
+- Search uses names already embedded for interactive Ruby points, parent dependency systems, and gem packages. It is lazy, debounced, capped, progressively revealed, and reuses existing spatial focus rather than creating a parallel navigation model.
 - Home returns to the exact default camera, reveals every category, clears spatial focus and selection, and restores orbit navigation. Arrow keys continue to pan the world when focus is not in an editable control.
 - Hover and selection retain surrounding context. Category focus may reduce emphasis lightly, but the scene must not collapse into heavy dimming.
 - Partial-index warnings use an accessible disclosure. Only sanitized package names with canned reasons may appear as row details; every other warning is an aggregate category count.

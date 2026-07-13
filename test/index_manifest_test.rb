@@ -71,6 +71,7 @@ class IndexManifestTest < Minitest::Test
       assert_equal("direct", package.role)
       assert_equal(checkout.realpath, package.root)
       assert_equal([checkout.join("lib/git_widget.rb").realpath.to_s], package.files)
+      assert_empty(manifest.dependency_systems)
       refute_includes(package.files, checkout.join("private/not_loaded.rb").realpath.to_s)
       assert_empty(manifest.dependency_warnings)
     end
@@ -485,6 +486,223 @@ class IndexManifestTest < Minitest::Test
     end
   end
 
+  def test_multi_gem_git_source_keeps_zero_file_anchor_and_builds_one_private_system
+    remote = "https://credential@example.invalid/private/repository.git"
+    lock_specs = [["system-meta", "1.0.0"], ["system-implementation", "2.0.0"]]
+    with_git_bundle(lock_specs, remote:, direct: ["system-meta"]) do |target, lockfile, checkout, parser, _source|
+      write_git_gem(
+        checkout,
+        name: "system-meta",
+        version: "1.0.0",
+        require_paths: ["lib"],
+        files: {},
+      )
+      write_git_gem(
+        checkout.join("implementation"),
+        name: "system-implementation",
+        version: "2.0.0",
+        require_paths: ["lib"],
+        files: { "lib/system_implementation.rb" => "class SystemImplementation\nend\n" },
+      )
+
+      first = build_manifest_with_parser(parser, root: target, lockfile: lockfile)
+      second = build_manifest_with_parser(parser, root: target, lockfile: lockfile)
+      system = first.dependency_systems.fetch(0)
+      packages = first.packages
+      meta_index = packages.index { |package| package.name == "system-meta" }
+      implementation_index = packages.index { |package| package.name == "system-implementation" }
+
+      assert_equal(2, packages.length)
+      assert_empty(packages.fetch(meta_index).files)
+      assert_equal("direct", packages.fetch(meta_index).role)
+      assert_equal("transitive", packages.fetch(implementation_index).role)
+      assert_equal([implementation_index, meta_index].sort, system.package_indexes.sort)
+      assert_equal(meta_index, system.label_package_index)
+      assert_equal(0, system.id)
+      assert_equal(first.dependency_systems, second.dependency_systems)
+      assert_equal(
+        first.packages.map { |package| [package.name, package.role, package.files] },
+        second.packages.map { |package| [package.name, package.role, package.files] },
+      )
+      serialized = JSON.generate(first.dependency_systems.map(&:to_h))
+      refute_includes(serialized, remote)
+      refute_includes(serialized, "0123456789abcdef")
+      refute_includes(serialized, checkout.to_s)
+      assert_empty(first.dependency_warnings)
+
+      snapshot = RubyLens::Index::RubydexAdapter.new.index(first)
+      snapshot_packages = snapshot.fetch("packages").to_h { |package| [package.fetch("name"), package] }
+      model = RubyLens::ArtModelBuilder.new(seed: 12).build(snapshot)
+      showcase = RubyLens::ShowcaseModel.new.call(model)
+      payloads = [snapshot, model, showcase].map { |payload| JSON.generate(payload) }
+
+      assert_equal(0, snapshot_packages.fetch("system-meta").fetch("declaration_count"))
+      assert_equal(1, snapshot_packages.fetch("system-implementation").fetch("declaration_count"))
+      assert_equal(0, snapshot_packages.fetch("system-meta").fetch("role"))
+      assert_equal(1, snapshot_packages.fetch("system-implementation").fetch("role"))
+      assert_equal(2, model.dig("totals", "packages"))
+      assert_equal(1, model.dig("totals", "dependencyStars"))
+      assert_equal(1, model.dig("totals", "renderedDependencyStars"))
+      assert_equal(1, model.fetch("dependencySystems").length)
+      assert(showcase.fetch("packages").all? { |row| row.all?(Integer) })
+      assert(showcase.fetch("dependencySystems").flatten.all?(Integer))
+      payloads.each do |payload|
+        refute_includes(payload, remote)
+        refute_includes(payload, "credential@example.invalid")
+        refute_includes(payload, "0123456789abcdef")
+        refute_includes(payload, checkout.to_s)
+      end
+    end
+  end
+
+  def test_multi_gem_git_source_uses_deterministic_safe_label_fallbacks
+    lock_specs = [["zeta-member", "1.0.0"], ["alpha-member", "1.0.0"]]
+    {
+      ["zeta-member", "alpha-member"] => "alpha-member",
+      [] => "alpha-member",
+    }.each do |direct, expected_label|
+      with_git_bundle(lock_specs, direct:) do |target, lockfile, checkout, parser, _source|
+        write_git_gem(
+          checkout,
+          name: "zeta-member",
+          version: "1.0.0",
+          require_paths: ["lib"],
+          files: { "lib/zeta_member.rb" => "ZetaMember = 1\n" },
+        )
+        write_git_gem(
+          checkout.join("alpha"),
+          name: "alpha-member",
+          version: "1.0.0",
+          require_paths: ["lib"],
+          files: { "lib/alpha_member.rb" => "AlphaMember = 1\n" },
+        )
+
+        manifest = build_manifest_with_parser(parser, root: target, lockfile: lockfile)
+        system = manifest.dependency_systems.fetch(0)
+
+        assert_equal(expected_label, manifest.packages.fetch(system.label_package_index).name)
+      end
+    end
+  end
+
+  def test_all_empty_multi_gem_git_source_keeps_package_anchors
+    lock_specs = [["anchor-meta", "1.0.0"], ["anchor-companion", "1.0.0"]]
+    with_git_bundle(lock_specs, direct: ["anchor-meta"]) do |target, lockfile, checkout, parser, _source|
+      write_git_gem(
+        checkout,
+        name: "anchor-meta",
+        version: "1.0.0",
+        require_paths: ["lib"],
+        files: {},
+      )
+      write_git_gem(
+        checkout.join("companion"),
+        name: "anchor-companion",
+        version: "1.0.0",
+        require_paths: ["lib"],
+        files: {},
+      )
+
+      manifest = build_manifest_with_parser(parser, root: target, lockfile: lockfile)
+      assert_equal(1, manifest.dependency_systems.length)
+      system = manifest.dependency_systems.fetch(0)
+
+      assert_equal(2, manifest.packages.length)
+      assert(manifest.packages.all? { |package| package.files.empty? })
+      assert_equal(%w[anchor-companion anchor-meta], system.package_indexes.map { |index| manifest.packages.fetch(index).name })
+      assert_equal("anchor-meta", manifest.packages.fetch(system.label_package_index).name)
+      assert_empty(manifest.dependency_warnings)
+    end
+  end
+
+  def test_zero_file_single_git_package_remains_ungrouped
+    with_git_bundle([["empty-git-package", "1.0.0"]]) do |target, lockfile, checkout, parser, _source|
+      write_git_gem(
+        checkout,
+        name: "empty-git-package",
+        version: "1.0.0",
+        require_paths: ["lib"],
+        files: {},
+      )
+
+      manifest = build_manifest_with_parser(parser, root: target, lockfile: lockfile)
+
+      assert_equal(["empty-git-package"], manifest.packages.map(&:name))
+      assert_empty(manifest.packages.fetch(0).files)
+      assert_empty(manifest.dependency_systems)
+      assert_empty(manifest.dependency_warnings)
+    end
+  end
+
+  def test_separate_multi_gem_git_sources_get_distinct_deterministically_ordered_systems
+    Dir.mktmpdir("rubylens-multi-git-sources-", FIXTURE.to_s) do |directory|
+      bundle_root = Pathname(directory)
+      target = bundle_root.join("app")
+      FileUtils.mkdir_p([target, bundle_root.join(".bundle")])
+      File.write(bundle_root.join(".gitignore"), "/vendor/bundle/\n")
+      File.write(bundle_root.join(".bundle/config"), "---\nBUNDLE_PATH: \"vendor/bundle\"\n")
+      lockfile = bundle_root.join("Gemfile.lock")
+      lockfile.write(<<~LOCKFILE)
+        GIT
+          remote: https://example.invalid/zeta.git
+          revision: 1111111111111111111111111111111111111111
+          specs:
+            zeta-implementation (1.0.0)
+            zeta-meta (1.0.0)
+
+        GIT
+          remote: https://example.invalid/alpha.git
+          revision: 2222222222222222222222222222222222222222
+          specs:
+            alpha-implementation (1.0.0)
+            alpha-meta (1.0.0)
+
+        PLATFORMS
+          ruby
+
+        DEPENDENCIES
+          alpha-meta!
+          zeta-meta!
+
+        BUNDLED WITH
+           4.0.10
+      LOCKFILE
+      parser = Bundler::LockfileParser.new(lockfile.read)
+      bundle_path = Pathname(Bundler::Settings.new(bundle_root.join(".bundle")).path.path).expand_path(bundle_root)
+      parser.sources.grep(Bundler::Source::Git).each do |source|
+        checkout = bundle_path.join("bundler/gems", source.extension_dir_name)
+        prefix = source.uri.include?("alpha") ? "alpha" : "zeta"
+        write_git_gem(
+          checkout,
+          name: "#{prefix}-meta",
+          version: "1.0.0",
+          require_paths: ["lib"],
+          files: { "lib/#{prefix}_meta.rb" => "#{prefix.capitalize}Meta = 1\n" },
+        )
+        write_git_gem(
+          checkout.join("implementation"),
+          name: "#{prefix}-implementation",
+          version: "1.0.0",
+          require_paths: ["lib"],
+          files: { "lib/#{prefix}_implementation.rb" => "#{prefix.capitalize}Implementation = 1\n" },
+        )
+      end
+
+      manifest = build_manifest_with_parser(parser, root: target, lockfile: lockfile)
+      systems = manifest.dependency_systems.map do |system|
+        system.package_indexes.map { |index| manifest.packages.fetch(index).name }
+      end
+
+      assert_equal(
+        [["alpha-implementation", "alpha-meta"], ["zeta-implementation", "zeta-meta"]],
+        systems,
+      )
+      assert_equal([0, 1], manifest.dependency_systems.map(&:id))
+      assert_equal(["alpha-meta", "zeta-meta"], manifest.dependency_systems.map { |system| manifest.packages.fetch(system.label_package_index).name })
+      assert_equal(4, manifest.packages.length)
+    end
+  end
+
   def test_path_dependency_behavior_remains_workspace_only
     lockfile = <<~LOCKFILE
       PATH
@@ -617,9 +835,9 @@ class IndexManifestTest < Minitest::Test
     File.write(root.join("#{name}.gemspec"), specification.to_ruby)
   end
 
-  def git_parser(specifications, remote: "https://example.invalid/repository.git", lockfile: nil)
+  def git_parser(specifications, remote: "https://example.invalid/repository.git", lockfile: nil, direct: specifications.map(&:first))
     specs = specifications.map { |name, version| "    #{name} (#{version})" }.join("\n")
-    dependencies = specifications.map { |name, _version| "  #{name}!" }.join("\n")
+    dependencies = direct.map { |name| "  #{name}!" }.join("\n")
     contents = <<~LOCKFILE
       GIT
         remote: #{remote}
@@ -641,7 +859,7 @@ class IndexManifestTest < Minitest::Test
     [parser, parser.specs.first.source]
   end
 
-  def with_git_bundle(specifications, remote: "https://example.invalid/repository.git")
+  def with_git_bundle(specifications, remote: "https://example.invalid/repository.git", direct: specifications.map(&:first))
     Dir.mktmpdir("rubylens-git-bundle-", FIXTURE.to_s) do |directory|
       bundle_root = Pathname(directory)
       target = bundle_root.join("app")
@@ -649,7 +867,7 @@ class IndexManifestTest < Minitest::Test
       File.write(bundle_root.join(".gitignore"), "/vendor/bundle/\n")
       File.write(bundle_root.join(".bundle/config"), "---\nBUNDLE_PATH: \"vendor/bundle\"\n")
       lockfile = bundle_root.join("Gemfile.lock")
-      parser, source = git_parser(specifications, remote: remote, lockfile: lockfile)
+      parser, source = git_parser(specifications, remote: remote, lockfile: lockfile, direct:)
       bundle_path = Pathname(Bundler::Settings.new(bundle_root.join(".bundle")).path.path).expand_path(bundle_root)
       checkout = bundle_path.join("bundler/gems", source.extension_dir_name)
       yield target, lockfile, checkout, parser, source

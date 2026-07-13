@@ -20,6 +20,7 @@ module RubyLens
       namespace_names = namespace_order.map { |index| snapshot.fetch("namespace_names").fetch(index) }
       package_order = (0...snapshot.fetch("packages").length).to_a.shuffle(random: random)
       package_index = package_order.each_with_index.to_h
+      dependency_systems, dependency_system_index = build_dependency_systems(snapshot, package_index)
       packages = package_order.map do |old_index|
         package = snapshot.fetch("packages").fetch(old_index)
         declaration_count = package.fetch("declaration_count") { package.fetch("declarations").length }
@@ -29,6 +30,7 @@ module RubyLens
           package.fetch("location"),
           declaration_count,
           *package.fetch("ruby_counts"),
+          dependency_system_index.fetch(old_index, -1),
         ]
       end
       package_names = package_order.map { |old_index| snapshot.fetch("packages").fetch(old_index).fetch("name") }
@@ -56,7 +58,7 @@ module RubyLens
         end
       end
       {
-        "schema" => "rubylens.art.v7",
+        "schema" => "rubylens.art.v8",
         "projectName" => snapshot.fetch("project_name"),
         "totals" => {
           "namespaces" => namespaces.length,
@@ -71,6 +73,7 @@ module RubyLens
         "namespaces" => namespaces,
         "packageNames" => package_names,
         "packages" => packages,
+        "dependencySystems" => dependency_systems,
         "dependencyStars" => dependencies,
         "dependencyWarnings" => snapshot.fetch("dependency_warnings", []).filter_map do |warning|
           name = warning.fetch("name")
@@ -85,6 +88,21 @@ module RubyLens
     end
 
     private
+
+    def build_dependency_systems(snapshot, package_index)
+      system_random = Random.new(@seed ^ 0xD3E5_157E)
+      package_system_index = {}
+      systems = snapshot.fetch("dependency_systems", []).sort_by { |system| system.fetch("id") }
+        .each_with_index.map do |system, system_index|
+          old_package_indexes = system.fetch("package_indexes")
+          old_package_indexes.each { |old_index| package_system_index[old_index] = system_index }
+          [
+            system_random.rand(0..0xffff_ffff),
+            package_index.fetch(system.fetch("label_package_index")),
+          ]
+        end
+      [systems, package_system_index]
+    end
 
     def signal_domains(namespaces, dependencies, dependency_maxima = nil)
       namespace_columns = [4, 5, 6, 7, 8, 9]
