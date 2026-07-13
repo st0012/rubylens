@@ -49,9 +49,26 @@ class CLITest < Minitest::Test
       .run(["showcase"])
 
     assert_equal(0, status)
-    assert_equal({ path: Dir.pwd, output: nil, lockfile: nil }, received)
+    assert_equal({ path: Dir.pwd, output: nil, lockfile: nil, details: false }, received)
     assert_equal("/tmp/showcase.html", JSON.parse(output.string).fetch("output"))
-    assert_includes(errors.string, "Share them intentionally")
+    assert_includes(errors.string, "--details also includes")
+  end
+
+  def test_showcase_details_is_an_explicit_single_opt_in
+    output = StringIO.new
+    errors = StringIO.new
+    received = nil
+    showcase_generator = lambda do |**options|
+      received = options
+      RubyLens::Result.new(output_path: "/tmp/showcase.html", counts: {}, warnings: [])
+    end
+
+    status = RubyLens::CLI.new(stdout: output, stderr: errors, showcase_generator: showcase_generator)
+      .run(["showcase", "--details", "project"])
+
+    assert_equal(0, status)
+    assert_equal({ path: "project", output: nil, lockfile: nil, details: true }, received)
+    assert_includes(errors.string, "selected Ruby and dependency names")
   end
 
   def test_options_work_without_a_target
@@ -104,11 +121,9 @@ class CLITest < Minitest::Test
       status = cli.run([command, *arguments])
 
       assert_equal(0, status, command)
-      assert_equal(
-        { path: "project", output: "/tmp/#{command}.html", lockfile: "/tmp/#{command}.lock" },
-        received,
-        command,
-      )
+      expected = { path: "project", output: "/tmp/#{command}.html", lockfile: "/tmp/#{command}.lock" }
+      expected[:details] = false if command == "showcase"
+      assert_equal(expected, received, command)
     end
   end
 
@@ -151,6 +166,11 @@ class CLITest < Minitest::Test
       assert_includes(output.string, "TARGET defaults to the current working directory", command)
       assert_includes(output.string, "--output FILE", command)
       assert_includes(output.string, "--lockfile FILE", command)
+      if command == "showcase"
+        assert_includes(output.string, "--details", command)
+      else
+        refute_includes(output.string, "--details", command)
+      end
       assert_empty(errors.string, command)
     end
   end

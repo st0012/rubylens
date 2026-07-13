@@ -22,8 +22,8 @@ module RubyLens
     Generator.new.call(path: path, output: output, lockfile: lockfile)
   end
 
-  def generate_showcase(path: Dir.pwd, output: nil, lockfile: nil)
-    ShowcaseGenerator.new.call(path: path, output: output, lockfile: lockfile)
+  def generate_showcase(path: Dir.pwd, output: nil, lockfile: nil, details: false)
+    ShowcaseGenerator.new.call(path: path, output: output, lockfile: lockfile, details: details)
   end
 
   def generate(path: Dir.pwd, output: nil, lockfile: nil)

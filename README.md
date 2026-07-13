@@ -41,16 +41,16 @@ bundle exec rubylens showcase
 
 The default output is `rubylens-showcase.html` in the project root. It is self-contained, offline, atomically written with mode `0600`, and locally excludes only that exact default path and its atomic temporary-file pattern. Explicit custom outputs remain unmanaged. RubyLens refuses to replace a tracked default or an unrelated existing file.
 
-The Showcase payload intentionally includes the project name, aggregate Ruby statistics, and numeric visual structure. It does not serialize declaration names, gem names, source text, comments, or paths. Its deterministic renderer prioritizes gem hubs and bounds large scenes to 50,000 plotted points, sampling hubs only if they alone exceed that budget. `prefers-reduced-motion` produces one stable frame instead of a continuous orbit.
+The default Minimal Showcase intentionally includes only the project name and numeric visual structure. It omits aggregate statistics and does not serialize declaration names, gem names, source text, comments, or paths. Pass `--details` to add the aggregate Ruby statistics and one-at-a-time cinematic labels for a deterministic, capped selection of Core/Test declarations and dependency systems. Individual dependency stars remain anonymous. Its deterministic renderer bounds large scenes to 50,000 plotted points, preserving selected annotation anchors in detailed output while prioritizing gem hubs. `prefers-reduced-motion` produces one stable frame instead of a continuous orbit and hides cinematic labels.
 
 Ruby API:
 
 ```ruby
-result = RubyLens.generate_showcase(path: ".")
+result = RubyLens.generate_showcase(path: ".", details: true)
 puts result.output_path
 ```
 
-Showcase generation and viewing need no Chrome, Chromium, Ferrum, FFmpeg, Node, or HTTP server. The HTML discloses enough aggregate structure to characterize a codebase, so review it before sharing.
+Showcase generation and viewing need no Chrome, Chromium, Ferrum, FFmpeg, Node, or HTTP server. Both disclosure levels reveal the project name and visual structure; `details: true` additionally reveals selected code/dependency names and aggregate statistics, so review it before sharing.
 
 The configurable multi-system design for repositories with many first-class applications or components is documented in [`docs/MONOREPO_BOUNDARIES.md`](docs/MONOREPO_BOUNDARIES.md). Reference-route experiments are paused and preserved in [`docs/REFERENCE_ROUTES_FUTURE.md`](docs/REFERENCE_ROUTES_FUTURE.md).
 

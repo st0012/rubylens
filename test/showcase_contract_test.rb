@@ -29,6 +29,18 @@ class ShowcaseContractTest < Minitest::Test
     "mastheadTop" => 40,
     "mastheadWidth" => 632,
   }.freeze
+  APPROVED_ANNOTATION_PRESET = {
+    "limit" => 200,
+    "slotDurationMs" => 6_000,
+    "revealStartMs" => 1_350,
+    "revealEndMs" => 4_650,
+    "fadeInMs" => 1_200,
+    "fadeOutMs" => 900,
+    "safeInsetX" => 80,
+    "safeInsetTop" => 340,
+    "safeInsetBottom" => 90,
+    "labelWidth" => 440,
+  }.freeze
 
   def test_approved_showcase_preset_is_exact
     assert_equal(APPROVED_PRESET, showcase_preset)
@@ -76,6 +88,35 @@ class ShowcaseContractTest < Minitest::Test
     refute_includes(runtime, "showcaseSceneRadius")
   end
 
+  def test_approved_annotation_timing_and_tracking_contract_is_exact
+    assert_equal(APPROVED_ANNOTATION_PRESET, showcase_preset("SHOWCASE_ANNOTATION_PRESET"))
+    assert_equal(APPROVED_ANNOTATION_PRESET.fetch("limit"), RubyLens::ShowcaseModel::ANNOTATION_LIMIT)
+    runtime = File.read(RUNTIME_PATH)
+    render_showcase = runtime.match(/function renderShowcase\(timestamp\) \{(?<body>.*?)^    \}/m)[:body]
+    update_annotation = runtime.match(/function updateShowcaseAnnotation\(timestamp\) \{(?<body>.*?)^    \}/m)[:body]
+
+    assert_operator(render_showcase.index("applyShowcaseCamera(progress)"), :<, render_showcase.index("render(timestamp)"))
+    assert_operator(render_showcase.index("render(timestamp)"), :<, render_showcase.index("updateShowcaseAnnotation(timestamp)"))
+    assert_includes(update_annotation, "project(activeShowcaseAnnotation.annotation.point, matrix)")
+    assert_includes(update_annotation, "showcaseAnnotation.style.transform")
+    assert_includes(update_annotation, "slotElapsed >= SHOWCASE_ANNOTATION_PRESET.revealStartMs")
+    assert_includes(update_annotation, "slotElapsed <= SHOWCASE_ANNOTATION_PRESET.revealEndMs")
+    assert_includes(runtime, "--annotation-fade-in")
+    assert_includes(runtime, "SHOWCASE_ANNOTATION_PRESET.fadeOutMs")
+  end
+
+  def test_annotation_work_is_opt_in_bounded_and_disabled_for_reduced_motion
+    runtime = File.read(RUNTIME_PATH)
+    reduced_branch = runtime.match(/function startShowcase\(\) \{.*?if \(reducedMotionQuery\.matches\) \{(?<body>.*?)\} else \{/m)[:body]
+
+    assert_includes(runtime, "model.details === true")
+    assert_includes(runtime, ".slice(0, SHOWCASE_ANNOTATION_PRESET.limit)")
+    assert_includes(runtime, "showcaseDetails ? Array.from(showcasePointsByAnchor.values()) : []")
+    assert_includes(reduced_branch, "showcaseAnnotation.hidden = true")
+    assert_includes(reduced_branch, "hideShowcaseAnnotation()")
+    refute_includes(reduced_branch, "updateShowcaseAnnotation")
+  end
+
   def test_reduced_motion_renders_one_stable_start_frame_without_scheduling_motion
     runtime = File.read(RUNTIME_PATH)
     reduced_branch = runtime.match(/function startShowcase\(\) \{.*?if \(reducedMotionQuery\.matches\) \{(?<body>.*?)\} else \{/m)
@@ -90,10 +131,10 @@ class ShowcaseContractTest < Minitest::Test
 
   private
 
-  def showcase_preset
+  def showcase_preset(name = "SHOWCASE_PRESET")
     runtime = File.read(RUNTIME_PATH)
-    match = runtime.match(/const SHOWCASE_PRESET = Object\.freeze\((\{.*?^\s*\})\);/m)
-    refute_nil(match, "SHOWCASE_PRESET must be a JSON object frozen in the shipped runtime")
+    match = runtime.match(/const #{Regexp.escape(name)} = Object\.freeze\((\{.*?^\s*\})\);/m)
+    refute_nil(match, "#{name} must be a JSON object frozen in the shipped runtime")
     JSON.parse(match[1])
   end
 end

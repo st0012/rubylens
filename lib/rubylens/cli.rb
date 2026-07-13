@@ -50,11 +50,12 @@ module RubyLens
         command: "showcase",
         default_name: "rubylens-showcase.html",
         generator: @showcase_generator,
-        warning: "RubyLens showcases disclose the project name, aggregate statistics, and visual codebase structure. Share them intentionally.",
+        warning: "RubyLens showcases disclose the project name and visual codebase structure; --details also includes aggregate statistics and selected Ruby and dependency names. Share them intentionally.",
+        details_option: true,
       )
     end
 
-    def generate_html(arguments, command:, default_name:, generator:, warning:)
+    def generate_html(arguments, command:, default_name:, generator:, warning:, details_option: false)
       options = {}
       help = false
       parser = OptionParser.new do |option|
@@ -67,6 +68,11 @@ module RubyLens
         end
         option.on("--lockfile FILE", "Gemfile.lock used to select exact dependency versions") do |value|
           options[:lockfile] = value
+        end
+        if details_option
+          option.on("--details", "Include aggregate statistics and cinematic code/dependency labels") do
+            options[:details] = true
+          end
         end
         option.on_tail("-h", "--help", "Show this help") do
           help = true
@@ -81,7 +87,9 @@ module RubyLens
       target = arguments.shift || Dir.pwd
       raise OptionParser::InvalidArgument, "unexpected argument: #{arguments.first}" unless arguments.empty?
 
-      result = generator.call(path: target, output: options[:output], lockfile: options[:lockfile])
+      generator_options = { path: target, output: options[:output], lockfile: options[:lockfile] }
+      generator_options[:details] = options.fetch(:details, false) if details_option
+      result = generator.call(**generator_options)
       print_result(result)
       @stderr.puts warning
       0

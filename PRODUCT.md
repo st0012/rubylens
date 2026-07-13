@@ -5,7 +5,7 @@ RubyLens turns a Ruby codebase into a private, self-contained stellar map. It is
 ## Product surfaces
 
 - **Explorer (`rubylens report`)** is the interactive artifact. It supports system visibility, spatial navigation, Ruby-node and dependency-system search, hover and selection, and aggregate Ruby metrics.
-- **Showcase (`rubylens showcase`)** is an autonomous presentation. It has no controls, hover, selection, search, warning details, or user navigation.
+- **Showcase (`rubylens showcase`)** is an autonomous presentation. Minimal output shows only the project title and galaxy; explicit `--details` output adds aggregate statistics and capped cinematic labels. It has no controls, hover, selection, search, warning details, or user navigation.
 
 Both outputs are single offline HTML files, written privately by default. Reports intentionally embed the project name plus rendered namespace and dependency-system names; source text, comments, paths, dependency-star names, and per-node dependency identities stay out of the presentation model.
 
