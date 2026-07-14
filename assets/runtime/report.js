@@ -67,6 +67,10 @@
       "mastheadTop": 40,
       "mastheadWidth": 632
     });
+    const SHOWCASE_DEPENDENCY_PRESET = Object.freeze({
+      "starSizeScale": 1.5,
+      "starAlphaScale": 1.2
+    });
     const SHOWCASE_ANNOTATION_PRESET = Object.freeze({
       "limit": 200,
       "slotDurationMs": 6000,
@@ -297,21 +301,26 @@
     function showcasePointSample() {
       if (!showcaseMode || points.length <= SHOWCASE_POINT_LIMIT) return points;
       const rank = point => [hash(point.seed, 73), point.seed, point];
+      const sample = (candidates, limit) => candidates.map(rank)
+        .sort((left, right) => left[0] - right[0] || left[1] - right[1])
+        .slice(0, limit)
+        .map(candidate => candidate[2]);
       const pinned = showcaseDetails ? Array.from(showcasePointsByAnchor.values()) : [];
       const pinnedPoints = new Set(pinned);
       const hubs = points.filter(point => point.hub && !pinnedPoints.has(point));
       const availableAfterPins = Math.max(0, SHOWCASE_POINT_LIMIT - pinned.length);
       if (hubs.length >= availableAfterPins) {
-        return hubs.map(rank)
-          .sort((left, right) => left[0] - right[0] || left[1] - right[1])
-          .slice(0, availableAfterPins)
-          .map(candidate => candidate[2])
-          .concat(pinned);
+        return sample(hubs, availableAfterPins).concat(pinned);
       }
-      const available = Math.max(0, availableAfterPins - hubs.length);
-      const candidates = points.filter(point => !point.hub && !pinnedPoints.has(point)).map(rank);
-      candidates.sort((left, right) => left[0] - right[0] || left[1] - right[1]);
-      return candidates.slice(0, available).map(candidate => candidate[2]).concat(hubs, pinned);
+      const availableAfterHubs = Math.max(0, availableAfterPins - hubs.length);
+      const unpinnedStars = points.filter(point => !point.hub && !pinnedPoints.has(point));
+      const dependencyStars = unpinnedStars.filter(point => point.category === "dependencies");
+      if (dependencyStars.length >= availableAfterHubs) {
+        return sample(dependencyStars, availableAfterHubs).concat(hubs, pinned);
+      }
+      const namespacePoints = unpinnedStars.filter(point => point.category !== "dependencies");
+      const availableAfterDependencies = Math.max(0, availableAfterHubs - dependencyStars.length);
+      return sample(namespacePoints, availableAfterDependencies).concat(dependencyStars, hubs, pinned);
     }
     const renderPoints = showcasePointSample();
     const renderedShowcaseAnnotations = showcaseAnnotationData.map(annotation => {
@@ -490,11 +499,14 @@
       const categoryIndex = { core: 0, tests: 1, dependencies: 2 };
       renderPoints.forEach((point, index) => {
         const offset = index * 7;
+        const dependencyStar = point.category === "dependencies" && !point.hub;
+        const sizeScale = dependencyStar ? SHOWCASE_DEPENDENCY_PRESET.starSizeScale : 1;
+        const alphaScale = dependencyStar ? SHOWCASE_DEPENDENCY_PRESET.starAlphaScale : 1;
         pointData[offset] = point.position[0];
         pointData[offset + 1] = point.position[1];
         pointData[offset + 2] = point.position[2];
-        pointData[offset + 3] = point.base * (.62 + point.signal * .46);
-        pointData[offset + 4] = clamp(.14 + point.signal * .105, .12, point.hub ? .86 : .7);
+        pointData[offset + 3] = point.sizeFactor * sizeScale;
+        pointData[offset + 4] = clamp(point.alphaBase * alphaScale, 0, 1);
         pointData[offset + 5] = categoryIndex[point.category];
         pointData[offset + 6] = point.hub ? 5.2 : 3.2;
       });
@@ -1930,8 +1942,11 @@
         if (!projected) continue;
         const [x, y, perspective] = projected;
         if (x < -20 || x > sceneRight + 20 || y < -20 || y > sceneBottom + 20) continue;
-        const size = clamp(point.base * (.62 + point.signal * .46) * perspective, .35, point.hub ? 5.2 : 3.2);
-        const alpha = clamp(.14 + point.signal * .105, .12, point.hub ? .86 : .7) * SHOWCASE_PRESET.starBrightnessPercent / 100;
+        const dependencyStar = point.category === "dependencies" && !point.hub;
+        const sizeScale = dependencyStar ? SHOWCASE_DEPENDENCY_PRESET.starSizeScale : 1;
+        const alphaScale = dependencyStar ? SHOWCASE_DEPENDENCY_PRESET.starAlphaScale : 1;
+        const size = clamp(point.sizeFactor * sizeScale * perspective, .35, point.maxSize);
+        const alpha = clamp(point.alphaBase * alphaScale, 0, 1) * SHOWCASE_PRESET.starBrightnessPercent / 100;
         const colour = colours[point.category];
         if (size > 1.35) {
           const glowScale = (3.4 - deepDetail * 1.3) * (.75 + .25 * SHOWCASE_PRESET.pointGlowPercent / 100);

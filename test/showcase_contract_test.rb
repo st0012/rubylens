@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "open3"
 require_relative "test_helper"
 
 class ShowcaseContractTest < Minitest::Test
@@ -40,6 +41,10 @@ class ShowcaseContractTest < Minitest::Test
     "safeInsetTop" => 340,
     "safeInsetBottom" => 90,
     "labelWidth" => 440,
+  }.freeze
+  APPROVED_DEPENDENCY_PRESET = {
+    "starSizeScale" => 1.5,
+    "starAlphaScale" => 1.2,
   }.freeze
 
   def test_approved_showcase_preset_is_exact
@@ -86,6 +91,66 @@ class ShowcaseContractTest < Minitest::Test
     assert_includes(runtime, "requestAnimationFrame(renderShowcase)")
     assert_includes(runtime, "Math.min(window.innerWidth / SHOWCASE_PRESET.stageWidth, window.innerHeight / SHOWCASE_PRESET.stageHeight)")
     refute_includes(runtime, "showcaseSceneRadius")
+  end
+
+  def test_dependency_preset_only_amplifies_ordinary_showcase_stars
+    assert_equal(APPROVED_DEPENDENCY_PRESET, showcase_preset("SHOWCASE_DEPENDENCY_PRESET"))
+
+    [runtime_function("createShowcaseRenderer"), runtime_function("renderShowcaseFallback")].each do |source|
+      assert_includes(source, 'point.category === "dependencies" && !point.hub')
+      assert_includes(source, "SHOWCASE_DEPENDENCY_PRESET.starSizeScale")
+      assert_includes(source, "SHOWCASE_DEPENDENCY_PRESET.starAlphaScale")
+    end
+  end
+
+  def test_showcase_sampling_preserves_the_bounded_dependency_budget_before_namespaces
+    runtime = File.read(RUNTIME_PATH)
+    hash_source = runtime.match(/^    const hash = .*?^    \};/m).to_s.strip
+    refute_empty(hash_source)
+
+    script = <<~JAVASCRIPT
+      const showcaseMode = true;
+      const showcaseDetails = false;
+      const showcasePointsByAnchor = new Map();
+      const SHOWCASE_POINT_LIMIT = 12;
+      #{hash_source}
+      let points = [
+        ...Array.from({ length: 20 }, (_, seed) => ({ category: "core", seed })),
+        ...Array.from({ length: 10 }, (_, offset) => ({ category: "tests", seed: 20 + offset })),
+        ...Array.from({ length: 8 }, (_, offset) => ({ category: "dependencies", seed: 30 + offset })),
+        { category: "dependencies", seed: 38, hub: true },
+      ];
+      #{runtime_function("showcasePointSample")}
+      const summarize = sampled => ({
+        total: sampled.length,
+        dependencyStars: sampled.filter(point => point.category === "dependencies" && !point.hub).length,
+        hubs: sampled.filter(point => point.hub).length,
+        namespaces: sampled.filter(point => point.category !== "dependencies").length,
+      });
+      const preserved = summarize(showcasePointSample());
+      points = [
+        ...Array.from({ length: 20 }, (_, seed) => ({ category: "core", seed })),
+        ...Array.from({ length: 20 }, (_, offset) => ({ category: "dependencies", seed: 20 + offset })),
+        { category: "dependencies", seed: 40, hub: true },
+      ];
+      const bounded = summarize(showcasePointSample());
+      process.stdout.write(JSON.stringify({
+        preserved,
+        bounded,
+      }));
+    JAVASCRIPT
+    output, error, status = Open3.capture3("node", "-e", script)
+    assert(status.success?, "Node failed: #{error}")
+
+    result = JSON.parse(output)
+    assert_equal(
+      { "total" => 12, "dependencyStars" => 8, "hubs" => 1, "namespaces" => 3 },
+      result.fetch("preserved"),
+    )
+    assert_equal(
+      { "total" => 12, "dependencyStars" => 11, "hubs" => 1, "namespaces" => 0 },
+      result.fetch("bounded"),
+    )
   end
 
   def test_approved_annotation_timing_and_tracking_contract_is_exact
@@ -136,5 +201,12 @@ class ShowcaseContractTest < Minitest::Test
     match = runtime.match(/const #{Regexp.escape(name)} = Object\.freeze\((\{.*?^\s*\})\);/m)
     refute_nil(match, "#{name} must be a JSON object frozen in the shipped runtime")
     JSON.parse(match[1])
+  end
+
+  def runtime_function(name)
+    source = File.read(RUNTIME_PATH).match(/^    function #{Regexp.escape(name)}\b.*?^    \}\n/m).to_s
+    raise "#{name} function not found" if source.empty?
+
+    source
   end
 end
