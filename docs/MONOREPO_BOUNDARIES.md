@@ -68,13 +68,13 @@ The adapter already assigns a compact component ordinal to each namespace. The i
 The first implementation should use new contracts so old reports cannot silently misread group ordinals.
 
 ```text
-rubylens.snapshot.v5
+rubylens.snapshot.v7
   groups:
     [{ id, label, source, namespace_counts, ruby_counts, mixed_count }]
   namespaces:
     [group_ordinal, kind, scope, ..., instance_variables, group_span]
 
-rubylens.art.v8
+rubylens.art.v9
   groupNames: [label, ...]
   groups:
     [seed, core_namespaces, test_namespaces, classes, modules,
@@ -126,8 +126,8 @@ The default share overlay should say `Core systems · N` alongside repository-wi
 
 ## Implementation batches
 
-1. Strict configuration loader, safe glob matcher, discovery/CLI plumbing, group ownership, and `snapshot.v5`.
-2. `art.v8` group metadata, deterministic anchors, overview level of detail, and smooth group focus.
+1. Strict configuration loader, safe glob matcher, discovery/CLI plumbing, group ownership, and `snapshot.v7`.
+2. `art.v9` group metadata, deterministic anchors, overview level of detail, and smooth group focus.
 3. Workspace-star sampling, contiguous group ranges, explorer search/virtualization, and mobile group selection.
 4. Synthetic 100k-namespace/1k-group tests plus a real Shopify-scale benchmark and visual tuning.
 

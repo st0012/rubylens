@@ -17,12 +17,13 @@ module RubyLens
     def call(model, details: false)
       details = details == true
       showcase = {
-        "schema" => "rubylens.showcase.v1",
+        "schema" => "rubylens.showcase.v2",
         "projectName" => model.fetch("projectName"),
         "details" => details,
         "domains" => project_hash(model.fetch("domains"), SIGNAL_FIELDS),
         "namespaces" => model.fetch("namespaces").map { |row| numeric_row(row, 15) },
-        "packages" => model.fetch("packages").map { |row| numeric_row(row, 8) },
+        "packages" => model.fetch("packages").map { |row| numeric_row(row, 9) },
+        "dependencySystems" => model.fetch("dependencySystems", []).map { |row| numeric_row(row, 2) },
         "dependencyStars" => model.fetch("dependencyStars").map { |row| numeric_row(row, 8) },
       }
       return showcase unless details

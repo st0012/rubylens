@@ -6,7 +6,7 @@ class ShowcaseModelTest < Minitest::Test
   def test_minimal_projection_omits_statistics_and_private_names
     private_value = "/private/path/Secret::Namespace hidden-gem source comment"
     model = {
-      "schema" => "rubylens.art.v7",
+      "schema" => "rubylens.art.v8",
       "projectName" => "Synthetic App",
       "totals" => { "namespaces" => 1, "packages" => 1, "dependencyStars" => 1, "renderedDependencyStars" => 1, "future" => private_value },
       "domains" => RubyLens::ArtModelBuilder::SIGNAL_FIELDS.to_h { |field| [field, 3] }.merge("future" => private_value),
@@ -14,7 +14,8 @@ class ShowcaseModelTest < Minitest::Test
       "namespaceNames" => [private_value],
       "namespaces" => [[1, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, private_value]],
       "packageNames" => [private_value],
-      "packages" => [[2, 0, 1, 9, 1, 2, 3, 4, private_value]],
+      "packages" => [[2, 0, 1, 9, 1, 2, 3, 4, 0, private_value]],
+      "dependencySystems" => [[4, 0, private_value]],
       "dependencyStars" => [[3, 0, 1, 2, 3, 4, 5, 6, private_value]],
       "warningCounts" => { "index" => 0 },
       "dependencyWarnings" => [{ "name" => "secret-git-gem", "reason" => private_value }],
@@ -25,13 +26,14 @@ class ShowcaseModelTest < Minitest::Test
     encoded = JSON.generate(showcase)
 
     assert_equal(
-      %w[dependencyStars details domains namespaces packages projectName schema],
+      %w[dependencyStars dependencySystems details domains namespaces packages projectName schema],
       showcase.keys.sort,
     )
     assert_equal(false, showcase.fetch("details"))
-    assert_equal("rubylens.showcase.v1", showcase.fetch("schema"))
+    assert_equal("rubylens.showcase.v2", showcase.fetch("schema"))
     assert_equal(15, showcase.fetch("namespaces").first.length)
-    assert_equal(8, showcase.fetch("packages").first.length)
+    assert_equal(9, showcase.fetch("packages").first.length)
+    assert_equal(2, showcase.fetch("dependencySystems").first.length)
     assert_equal(8, showcase.fetch("dependencyStars").first.length)
     refute_includes(encoded, private_value)
     refute_includes(encoded, "namespaceNames")
@@ -54,6 +56,7 @@ class ShowcaseModelTest < Minitest::Test
     assert_equal(true, first.fetch("details"))
     assert_equal(model.fetch("totals"), first.fetch("totals"))
     assert_equal(model.fetch("categoryStats"), first.fetch("categoryStats"))
+    assert_equal(model.fetch("dependencySystems"), first.fetch("dependencySystems"))
     assert_equal(RubyLens::ShowcaseModel::ANNOTATION_LIMIT, annotations.length)
     assert_equal(%w[core dependencies tests core dependencies tests], annotations.first(6).map { |annotation| annotation.fetch("category") })
     assert_equal(%w[anchor category kind name], annotations.first.keys.sort)
@@ -97,6 +100,7 @@ class ShowcaseModelTest < Minitest::Test
       "namespaces" => [[0] * 15],
       "packageNames" => [],
       "packages" => [],
+      "dependencySystems" => [],
       "dependencyStars" => [],
     }
   end
@@ -109,9 +113,9 @@ class ShowcaseModelTest < Minitest::Test
     namespaces = Array.new(count) { |index| [index, 0, index.even? ? 0 : 1, 0, index + 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 0] }
     namespaces.concat(Array.new(count) { |index| [10_000 + index, 0, index.even? ? 0 : 1, 1, index + 1, 2, 3, 4, 5, 6, 1, 0, 2, 0, 0] })
     namespaces.concat(Array.new(3) { |index| [20_000 + index, 0, 0, 0, 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 0] })
-    packages = Array.new(count) { |index| [30_000 + index, 0, 1, index + 1, 1, 2, 3, 4] }
+    packages = Array.new(count) { |index| [30_000 + index, 0, 1, index + 1, 1, 2, 3, 4, -1] }
     package_names.concat(["unsafe package", "https://example.test/gem", "../secret"])
-    packages.concat(Array.new(3) { |index| [40_000 + index, 0, 1, 1, 1, 2, 3, 4] })
+    packages.concat(Array.new(3) { |index| [40_000 + index, 0, 1, 1, 1, 2, 3, 4, -1] })
     {
       "projectName" => "Synthetic App",
       "totals" => { "namespaces" => namespaces.length, "packages" => packages.length, "dependencyStars" => 0, "renderedDependencyStars" => 0 },
@@ -121,6 +125,7 @@ class ShowcaseModelTest < Minitest::Test
       "namespaces" => namespaces,
       "packageNames" => package_names,
       "packages" => packages,
+      "dependencySystems" => [],
       "dependencyStars" => [],
     }
   end
