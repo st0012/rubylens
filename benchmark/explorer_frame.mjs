@@ -112,13 +112,12 @@ function buildModel() {
     dependencyStars.push([randomSeed(), packageIndex, ...signalValues()]);
   }
 
-  const domains = Object.fromEntries(SIGNAL_FIELDS.map((field, at) => [
-    field,
-    Math.max(
-      ...namespaces.map(row => row[4 + at]),
-      ...dependencyStars.map(row => row[2 + at]),
-    ),
-  ]));
+  const domains = Object.fromEntries(SIGNAL_FIELDS.map((field, at) => {
+    let maximum = 0;
+    for (const row of namespaces) maximum = Math.max(maximum, row[4 + at]);
+    for (const row of dependencyStars) maximum = Math.max(maximum, row[2 + at]);
+    return [field, maximum];
+  }));
 
   return {
     schema: "rubylens.art.v7",
@@ -225,6 +224,11 @@ function benchmarkScript() {
       };
       const measureRafCadence = onDone => {
         if (document.visibilityState !== "visible") { onDone(null); return; }
+        // The driven phase cancelled the Explorer's own rAF loop; restart it so
+        // sampled deltas reflect real drift rendering, not idle vsync ticks.
+        lastDriftTimestamp = null;
+        if (!drifting) setDrifting(true);
+        requestRender();
         const deltas = [];
         let last = null;
         let started = null;
