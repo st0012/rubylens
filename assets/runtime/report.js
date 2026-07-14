@@ -90,6 +90,12 @@
     const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     let drifting = interactiveMode && !reducedMotionQuery.matches;
     const colours = { core: [244, 82, 132], tests: [87, 204, 255], dependencies: [255, 184, 77] };
+    const colourStyles = { core: "rgb(244,82,132)", tests: "rgb(87,204,255)", dependencies: "rgb(255,184,77)" };
+    const projectionScratch = [0, 0, 0];
+    let zoomReadout = null;
+    let zoomReadoutText = "";
+    let vignetteGradient = null;
+    let vignetteKey = "";
     const showcaseAnnotationData = showcaseDetails && Array.isArray(model.annotations)
       ? model.annotations.slice(0, SHOWCASE_ANNOTATION_PRESET.limit)
       : [];
@@ -187,6 +193,10 @@
       const interactivePoints = [];
       const dependencyHubs = [];
       const addPoint = (point, interactive = true) => {
+        point.sizeFactor = point.base * (.62 + point.signal * .46);
+        point.maxSize = point.hub ? 5.2 : 3.2;
+        point.alphaBase = clamp(.14 + point.signal * .105, .12, point.hub ? .86 : .7);
+        point.screen = null;
         points.push(point);
         if (interactive && interactiveMode) interactivePoints.push(point);
         if (point.hub) dependencyHubs.push(point);
@@ -1347,7 +1357,7 @@
       canvas.classList.toggle("is-pan", panning);
     }
 
-    function project(point, matrix) {
+    function project(point, matrix, out) {
       const position = point.position;
       const anchor = expandedPackageIndex !== null && point.packageIndex === expandedPackageIndex
         ? packageAnchors[expandedPackageIndex]
@@ -1363,7 +1373,32 @@
       const depth = cameraDistance - z2;
       if (depth <= 35) return null;
       const perspective = cameraFocalLength / depth * zoom;
-      return [sceneCenterX + panX + x1 * perspective, sceneCenterY + panY + y2 * perspective, perspective];
+      const projected = out || [0, 0, 0];
+      projected[0] = sceneCenterX + panX + x1 * perspective;
+      projected[1] = sceneCenterY + panY + y2 * perspective;
+      projected[2] = perspective;
+      return projected;
+    }
+
+    function updateZoomReadout() {
+      zoomReadout ||= document.getElementById("zoom-level");
+      const text = `${Math.round(zoom * 100)}%`;
+      if (text === zoomReadoutText) return;
+      zoomReadoutText = text;
+      zoomReadout.value = text;
+    }
+
+    function explorerVignette() {
+      const centerX = sceneCenterX + panX;
+      const centerY = sceneCenterY + panY;
+      const key = `${width}|${height}|${centerX}|${centerY}`;
+      if (key !== vignetteKey) {
+        vignetteKey = key;
+        vignetteGradient = context.createRadialGradient(centerX, centerY, 0, centerX, centerY, Math.max(width, height) * .72);
+        vignetteGradient.addColorStop(0, "rgba(30,16,45,.18)");
+        vignetteGradient.addColorStop(1, "rgba(0,0,0,.6)");
+      }
+      return vignetteGradient;
     }
 
     function renderShowcaseFallback() {
@@ -1418,13 +1453,13 @@
         else renderShowcaseFallback();
         return;
       }
-      if (interactiveMode) document.getElementById("zoom-level").value = `${Math.round(zoom * 100)}%`;
+      if (interactiveMode) updateZoomReadout();
       context.globalCompositeOperation = "source-over";
+      context.globalAlpha = 1;
       context.fillStyle = "#03040a";
       context.fillRect(0, 0, width, height);
-      const vignette = context.createRadialGradient(sceneCenterX + panX, sceneCenterY + panY, 0, sceneCenterX + panX, sceneCenterY + panY, Math.max(width, height) * .72);
-      vignette.addColorStop(0, "rgba(30,16,45,.18)"); vignette.addColorStop(1, "rgba(0,0,0,.6)");
-      context.fillStyle = vignette; context.fillRect(0, 0, width, height);
+      context.fillStyle = explorerVignette();
+      context.fillRect(0, 0, width, height);
       context.globalCompositeOperation = "lighter";
       const matrix = [Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch)];
       const deepDetail = clamp(Math.log2(Math.max(1, zoom)) / 5, 0, 1);
@@ -1433,21 +1468,22 @@
         point.screen = null;
         if (point.hub) point.cloudScreenRadius = null;
         if (!visibleCategories[point.category]) continue;
-        const projected = project(point, matrix);
+        const projected = project(point, matrix, projectionScratch);
         if (!projected) continue;
         const [x, y, perspective] = projected;
         const cullMargin = point === selectedPoint ? 0 : 20;
         if (x < -cullMargin || x > sceneRight + cullMargin || y < -cullMargin || y > sceneBottom + cullMargin) continue;
-        const signal = point.signal;
-        const size = clamp(point.base * (.62 + signal * .46) * perspective, .35, point.hub ? 5.2 : 3.2);
-        const alpha = clamp(.14 + signal * .105, .12, point.hub ? .86 : .7);
+        const size = clamp(point.sizeFactor * perspective, .35, point.maxSize);
+        const alpha = point.alphaBase;
         const focusedPackagePoint = expandedPackageIndex !== null && point.category === "dependencies" && point.packageIndex === expandedPackageIndex;
         const emphasis = expandedPackageIndex !== null
           ? (focusedPackagePoint ? 1 : contextVisibility.package)
           : selectionLocked && selectedPoint ? (point === selectedPoint ? 1 : contextVisibility.selection) : focusedCategory && point.category !== focusedCategory ? contextVisibility.category : 1;
         const visibleAlpha = (focusedPackagePoint ? Math.max(.34, alpha) : alpha * emphasis) * exposure;
-        const colour = colours[point.category];
-        point.screen = [x, y, size];
+        const colour = colourStyles[point.category];
+        const screen = point.screenData || (point.screenData = [0, 0, 0]);
+        screen[0] = x; screen[1] = y; screen[2] = size;
+        point.screen = screen;
         if (point.hub) {
           const expansion = expandedPackageIndex === point.packageIndex ? DEPENDENCY_EXPANSION : 1;
           point.cloudScreenRadius = Math.max(12, packageAnchors[point.packageIndex][3] * perspective * expansion * 1.2);
@@ -1455,23 +1491,29 @@
         const detailedPoint = emphasis >= .1;
         if (size > 1.35 && detailedPoint) {
           const glowScale = focusedPackagePoint ? 2.2 - deepDetail * .8 : 3.4 - deepDetail * 1.3;
-          context.beginPath(); context.arc(x, y, size * glowScale, 0, Math.PI * 2);
-          context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${visibleAlpha * (focusedPackagePoint ? .045 : .055)})`; context.fill();
+          context.globalAlpha = visibleAlpha * (focusedPackagePoint ? .045 : .055);
+          context.fillStyle = colour;
+          context.beginPath(); context.arc(x, y, size * glowScale, 0, Math.PI * 2); context.fill();
         }
-        context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${visibleAlpha})`;
+        context.globalAlpha = visibleAlpha;
+        context.fillStyle = colour;
         if (!detailedPoint || size < .85) context.fillRect(x, y, 1, 1);
         else { context.beginPath(); context.arc(x, y, size, 0, Math.PI * 2); context.fill(); }
         if (size > 1.1 && detailedPoint) {
-          context.beginPath(); context.arc(x, y, Math.max(.45 + deepDetail * .25, size * (.24 + deepDetail * .06)), 0, Math.PI * 2);
-          context.fillStyle = `rgba(255,248,244,${Math.min(.9, visibleAlpha * 1.25)})`; context.fill();
+          context.globalAlpha = Math.min(.9, visibleAlpha * 1.25);
+          context.fillStyle = "#fff8f4";
+          context.beginPath(); context.arc(x, y, Math.max(.45 + deepDetail * .25, size * (.24 + deepDetail * .06)), 0, Math.PI * 2); context.fill();
         }
         if (point === selectedPoint) {
+          context.globalAlpha = 1;
           context.beginPath(); context.arc(x, y, Math.max(7, size * 2.5), 0, Math.PI * 2);
           context.strokeStyle = "rgba(255,255,255,.95)"; context.lineWidth = 1.2; context.stroke();
+          context.globalAlpha = .5;
           context.beginPath(); context.arc(x, y, Math.max(12, size * 4), 0, Math.PI * 2);
-          context.strokeStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},.5)`; context.lineWidth = 1; context.stroke();
+          context.strokeStyle = colour; context.lineWidth = 1; context.stroke();
         }
       }
+      context.globalAlpha = 1;
       context.globalCompositeOperation = "source-over";
       if (selectedPoint) {
         if (cameraFlight) tooltip.hidden = true;
