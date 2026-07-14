@@ -39,6 +39,7 @@
     const SEARCH_BATCH_SIZE = 8;
     const WARNING_ROW_LIMIT = 24;
     let lastDriftTimestamp = null;
+    let dependencyDoubleClickTarget = null;
     let searchIndex = null;
     let searchTimer = 0;
     let searchMatches = [];
@@ -84,6 +85,9 @@
       "labelWidth": 440
     });
     const TOP_DOWN_PITCH = Math.PI / 2;
+    const CONTEXT_TARGET_X = .32;
+    const CONTEXT_CORE_X = .68;
+    const CONTEXT_CENTER_Y = .48;
     const contextVisibility = { selection: .75, category: .16, package: .75 };
     const pointers = new Map();
     const visibleCategories = { core: true, tests: true, dependencies: true };
@@ -91,7 +95,8 @@
     const focusButtons = {};
     const excludedTriviaNames = new Set(["Object", "Kernel", "BasicObject"]);
     const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    let drifting = interactiveMode && !reducedMotionQuery.matches;
+    let driftRequested = interactiveMode;
+    let drifting = driftRequested && !reducedMotionQuery.matches;
     const colours = { core: [244, 82, 132], tests: [87, 204, 255], dependencies: [255, 184, 77] };
     const colourStyles = { core: "rgb(244,82,132)", tests: "rgb(87,204,255)", dependencies: "rgb(255,184,77)" };
     const projectionScratch = [0, 0, 0];
@@ -918,33 +923,39 @@
       panY = target.panY;
     }
 
-    function cameraTargetForPoint(point, targetZoom = point.hub ? 4 : point.category === "dependencies" ? 5 : 7) {
+    function contextualSelectionCameraTarget(point, preferredZoom = point.hub ? 4 : point.category === "dependencies" ? 5 : 7) {
       const [x, y, z] = point.position;
-      return {
-        yaw: Math.atan2(x, z),
-        pitch: clamp(Math.atan2(y, Math.hypot(x, z)), -.95, .95),
-        zoom: targetZoom,
-        panX: 0,
-        panY: 0,
-      };
-    }
-
-    function topDownCameraTargetForPoint(point, targetZoom = point.hub ? 4 : point.category === "dependencies" ? 5 : 7) {
-      const targetYaw = yaw;
-      const [x, y, z] = point.position;
+      const radialDistance = Math.hypot(x, z);
+      const targetYaw = radialDistance > 1 ? Math.PI - Math.atan2(z, x) : yaw;
       const cy = Math.cos(targetYaw), sy = Math.sin(targetYaw);
       const cp = Math.cos(TOP_DOWN_PITCH), sp = Math.sin(TOP_DOWN_PITCH);
       const x1 = x * cy - z * sy;
       const z1 = x * sy + z * cy;
       const y2 = y * cp - z1 * sp;
       const z2 = y * sp + z1 * cp;
-      const perspective = cameraFocalLength / (cameraDistance - z2) * targetZoom;
+      const desiredSeparation = sceneRight * (CONTEXT_CORE_X - CONTEXT_TARGET_X);
+      const fitZoom = radialDistance > 1
+        ? desiredSeparation * Math.max(35, cameraDistance - z2) / (radialDistance * cameraFocalLength)
+        : preferredZoom;
+      const coreFitZoom = Math.min(sceneRight, sceneBottom) * .28 * cameraDistance / (42 * layoutScale.disk * cameraFocalLength);
+      const targetZoom = clamp(fitZoom, MIN_ZOOM, Math.min(preferredZoom, coreFitZoom));
+      const actualSeparation = Math.abs(x1) * cameraFocalLength / Math.max(35, cameraDistance - z2) * targetZoom;
       return {
         yaw: targetYaw,
         pitch: TOP_DOWN_PITCH,
         zoom: targetZoom,
-        panX: -x1 * perspective,
-        panY: -y2 * perspective,
+        panX: sceneRight * .5 + actualSeparation * .5 - sceneCenterX,
+        panY: sceneBottom * CONTEXT_CENTER_Y - sceneCenterY - y2 * cameraFocalLength / Math.max(35, cameraDistance - z2) * targetZoom * .5,
+      };
+    }
+
+    function contextualCategoryCameraTarget(category) {
+      return {
+        yaw,
+        pitch: TOP_DOWN_PITCH,
+        zoom: categoryMeta[category].focusZoom,
+        panX: 0,
+        panY: sceneBottom * CONTEXT_CENTER_Y - sceneCenterY,
       };
     }
 
@@ -970,7 +981,7 @@
       return progress * progress * progress * (progress * (progress * 6 - 15) + 10);
     }
 
-    function flyCamera(target) {
+    function flyCamera(target, { followDrift = false } = {}) {
       cancelCameraFlight();
       cancelPendingHover();
       const finalTarget = { ...target };
@@ -1004,6 +1015,7 @@
         pullback: angularDistance > .35 && minimumZoom > cruiseZoom
           ? Math.log(minimumZoom / cruiseZoom) * .72
           : 0,
+        followDrift,
       };
       canvas.setAttribute("aria-busy", "true");
       requestRender();
@@ -1026,6 +1038,25 @@
         applyCameraTarget(finalTarget);
         canvas.removeAttribute("aria-busy");
       }
+    }
+
+    function advanceExplorerDrift(timestamp) {
+      if (!interactiveMode || !drifting) {
+        lastDriftTimestamp = null;
+        return false;
+      }
+      const elapsed = lastDriftTimestamp === null ? 1000 / 60 : clamp(timestamp - lastDriftTimestamp, 0, MAX_DRIFT_DELTA_MS);
+      lastDriftTimestamp = timestamp;
+      const driftDelta = DRIFT_RADIANS_PER_SECOND * elapsed / 1000;
+      if (!cameraFlight) {
+        yaw += driftDelta;
+      } else if (cameraFlight.followDrift) {
+        yaw += driftDelta;
+        cameraFlight.start.yaw += driftDelta;
+        cameraFlight.target.yaw += driftDelta;
+        cameraFlight.finalTarget.yaw += driftDelta;
+      }
+      return true;
     }
 
     function addTooltipMetric(label, value) {
@@ -1381,8 +1412,32 @@
       focusedCategory = category;
       focusButtons[category].setAttribute("aria-pressed", "true");
       focusButtons[category].textContent = "Focused";
-      setDrifting(false);
-      flyCamera({ yaw: -.36, pitch: .34, zoom: categoryMeta[category].focusZoom, panX: 0, panY: 0 });
+      flyCamera(contextualCategoryCameraTarget(category), { followDrift: true });
+    }
+
+    function navigateToSelection(point, { button = null, expandDependency = false } = {}) {
+      if (!point) return false;
+      setCategoryVisible(point.category, true);
+      clearActiveFact();
+      if (button) {
+        activeFactButton = button;
+        activeFactButton.setAttribute("aria-pressed", "true");
+      }
+      clearCategoryFocus();
+      if (expandDependency && point.systemHub && !point.packageHub) {
+        expandedSystemIndex = point.systemIndex;
+        expandedPackageIndex = null;
+      } else if (expandDependency && point.packageHub) {
+        expandedSystemIndex = point.systemIndex >= 0 ? point.systemIndex : null;
+        expandedPackageIndex = point.packageIndex;
+      } else {
+        clearExpandedPackage();
+      }
+      selectedPoint = null;
+      selectionLocked = false;
+      selectPoint(point, true);
+      flyCamera(contextualSelectionCameraTarget(point), { followDrift: true });
+      return true;
     }
 
     function focusPoint(point, button) {
@@ -1395,61 +1450,21 @@
         else focusDependencyPackage(point.packageIndex, button);
         return;
       }
-      setCategoryVisible(point.category, true);
-      clearActiveFact();
-      clearExpandedPackage();
-      if (button) {
-        activeFactButton = button;
-        activeFactButton.setAttribute("aria-pressed", "true");
-      }
-      clearCategoryFocus();
-      setDrifting(false);
-      selectedPoint = null;
-      selectionLocked = false;
-      selectPoint(point, true);
-      flyCamera(topDownCameraTargetForPoint(point));
+      navigateToSelection(point, { button });
     }
 
     function focusDependencyPackage(packageIndex, button = null) {
       const hub = packageHubs.find(point => point.packageIndex === packageIndex);
       if (!hub) return false;
 
-      setCategoryVisible("dependencies", true);
-      clearActiveFact();
-      if (button) {
-        activeFactButton = button;
-        activeFactButton.setAttribute("aria-pressed", "true");
-      }
-      clearCategoryFocus();
-      expandedSystemIndex = hub.systemIndex >= 0 ? hub.systemIndex : null;
-      expandedPackageIndex = packageIndex;
-      setDrifting(false);
-      selectedPoint = null;
-      selectionLocked = false;
-      selectPoint(hub, true);
-      flyCamera(button ? topDownCameraTargetForPoint(hub, 4) : cameraTargetForPoint(hub, 4));
-      return true;
+      return navigateToSelection(hub, { button, expandDependency: true });
     }
 
     function focusDependencySystem(systemIndex, button = null) {
       const hub = systemHubs.find(point => point.systemIndex === systemIndex);
       if (!hub) return false;
 
-      setCategoryVisible("dependencies", true);
-      clearActiveFact();
-      if (button) {
-        activeFactButton = button;
-        activeFactButton.setAttribute("aria-pressed", "true");
-      }
-      clearCategoryFocus();
-      expandedSystemIndex = systemIndex;
-      expandedPackageIndex = null;
-      setDrifting(false);
-      selectedPoint = null;
-      selectionLocked = false;
-      selectPoint(hub, true);
-      flyCamera(button ? topDownCameraTargetForPoint(hub, 4) : cameraTargetForPoint(hub, 4));
-      return true;
+      return navigateToSelection(hub, { button, expandDependency: true });
     }
 
     function appendWarningGroup(container, title, count, rows = [], note = "") {
@@ -1830,6 +1845,20 @@
       return target.matches("input") && !["checkbox", "radio", "button", "submit", "reset"].includes(target.type);
     }
 
+    function isNativeSpaceTarget(target) {
+      if (!(target instanceof Element)) return false;
+      return Boolean(target.closest("input, textarea, select, button, summary, a[href], [contenteditable], [role='button']"));
+    }
+
+    function toggleDriftWithSpace(event) {
+      if ((event.key !== " " && event.code !== "Space") || event.repeat) return false;
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return false;
+      if (reducedMotionQuery.matches || isNativeSpaceTarget(event.target)) return false;
+      event.preventDefault();
+      setDrifting(!driftRequested);
+      return true;
+    }
+
     function moveViewWithArrow(event) {
       if (!event.key.startsWith("Arrow") || pointers.size > 0) return false;
       if (event.metaKey || event.ctrlKey || event.altKey || isEditableTarget(event.target)) return false;
@@ -1845,7 +1874,7 @@
       return true;
     }
 
-    function goHome() {
+    function resetView() {
       cancelCameraFlight();
       clearActiveFact();
       clearCategoryFocus();
@@ -1974,6 +2003,7 @@
 
     function render(timestamp) {
       animationFrame = 0;
+      const driftAdvanced = advanceExplorerDrift(timestamp);
       updateCameraFlight(timestamp);
       if (showcaseMode) {
         if (showcaseRenderer) showcaseRenderer.render();
@@ -2060,17 +2090,7 @@
         if (cameraFlight) tooltip.hidden = true;
         else positionTooltip(selectedPoint);
       }
-      if (cameraFlight) {
-        lastDriftTimestamp = null;
-        requestRender();
-      } else if (interactiveMode && drifting && !dragging && !selectedPoint) {
-        const elapsed = lastDriftTimestamp === null ? 1000 / 60 : clamp(timestamp - lastDriftTimestamp, 0, MAX_DRIFT_DELTA_MS);
-        lastDriftTimestamp = timestamp;
-        yaw += DRIFT_RADIANS_PER_SECOND * elapsed / 1000;
-        requestRender();
-      } else {
-        lastDriftTimestamp = null;
-      }
+      if (cameraFlight || driftAdvanced) requestRender();
     }
 
     function requestRender() {
@@ -2215,14 +2235,27 @@
       secondary.hidden = false;
     }
 
-    function setDrifting(next) {
-      if (next) cancelCameraFlight();
-      drifting = next;
+    function syncDrifting() {
+      drifting = interactiveMode && driftRequested && !reducedMotionQuery.matches;
       lastDriftTimestamp = null;
       const motion = document.getElementById("motion");
-      motion.textContent = drifting ? "Pause drift" : "Resume drift";
-      motion.setAttribute("aria-pressed", String(!drifting));
+      motion.disabled = reducedMotionQuery.matches;
+      if (reducedMotionQuery.matches) {
+        motion.textContent = "Drift off";
+        motion.setAttribute("aria-label", "Drift disabled by reduced motion preference");
+        motion.setAttribute("aria-pressed", "true");
+      } else {
+        const label = drifting ? "Pause drift" : "Resume drift";
+        motion.textContent = label;
+        motion.setAttribute("aria-label", label);
+        motion.setAttribute("aria-pressed", String(!drifting));
+      }
       requestRender();
+    }
+
+    function setDrifting(next) {
+      driftRequested = interactiveMode && Boolean(next);
+      syncDrifting();
     }
 
     const pointerMetrics = () => {
@@ -2299,13 +2332,21 @@
       canvas.classList.remove("is-dragging-pan");
       if (wasTap) {
         const point = hoverTargetAt(event.clientX, event.clientY);
+        if (point?.category === "dependencies") {
+          dependencyDoubleClickTarget = { point, x: event.clientX, y: event.clientY, at: event.timeStamp };
+        } else if (dependencyDoubleClickTarget && (
+          event.timeStamp - dependencyDoubleClickTarget.at > 1000 ||
+          Math.hypot(event.clientX - dependencyDoubleClickTarget.x, event.clientY - dependencyDoubleClickTarget.y) > 12
+        )) {
+          dependencyDoubleClickTarget = null;
+        }
         clearActiveFact();
         clearCategoryFocus();
         if (point?.category === "dependencies" && selectionLocked && selectedPoint === point) {
           if (point.systemHub && !point.packageHub) focusDependencySystem(point.systemIndex);
           else focusDependencyPackage(point.packageIndex);
         }
-        else if (point) selectPoint(point, true);
+        else if (point) navigateToSelection(point);
         else clearExplorationFocus();
       }
       requestRender();
@@ -2326,7 +2367,14 @@
     }, { passive: false });
     canvas.addEventListener("dblclick", event => {
       if (pointers.size > 0) return;
-      const dependency = dependencyPackageAt(event.clientX, event.clientY);
+      const remembered = dependencyDoubleClickTarget;
+      dependencyDoubleClickTarget = null;
+      const rememberedDependency = remembered &&
+        event.timeStamp - remembered.at <= 1000 &&
+        Math.hypot(event.clientX - remembered.x, event.clientY - remembered.y) <= 12
+        ? remembered.point
+        : null;
+      const dependency = dependencyPackageAt(event.clientX, event.clientY) || rememberedDependency;
       if (dependency) {
         if (dependency.systemHub && !dependency.packageHub) focusDependencySystem(dependency.systemIndex);
         else focusDependencyPackage(dependency.packageIndex);
@@ -2341,7 +2389,7 @@
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.key === "+" || event.key === "=") { cancelCameraFlight(); zoomBetween(zoom * ZOOM_STEP, sceneCenterX, sceneCenterY); }
       else if (event.key === "-") { cancelCameraFlight(); zoomBetween(zoom / ZOOM_STEP, sceneCenterX, sceneCenterY); }
-      else if (event.key === "0") goHome();
+      else if (event.key === "0") resetView();
       else if (event.key.toLowerCase() === "p") { cancelCameraFlight(); setNavigationMode(navigationMode === "pan" ? "orbit" : "pan"); }
       else if ((event.key === "Enter" || event.key.toLowerCase() === "f") && selectedPoint?.category === "dependencies") {
         if (selectedPoint.systemHub && !selectedPoint.packageHub) focusDependencySystem(selectedPoint.systemIndex);
@@ -2352,20 +2400,20 @@
       requestRender();
     });
     window.addEventListener("keydown", event => {
+      if (toggleDriftWithSpace(event)) return;
       if (event.key === "Escape") clearExplorationFocus();
       else moveViewWithArrow(event);
     });
-    document.getElementById("motion").addEventListener("click", () => setDrifting(!drifting));
+    document.getElementById("motion").addEventListener("click", () => setDrifting(!driftRequested));
     document.getElementById("pan-mode").addEventListener("click", () => { cancelCameraFlight(); setNavigationMode(navigationMode === "pan" ? "orbit" : "pan"); });
     document.getElementById("zoom-in").addEventListener("click", () => { if (pointers.size === 0) { cancelCameraFlight(); zoomBetween(zoom * ZOOM_STEP, sceneCenterX, sceneCenterY); } requestRender(); });
     document.getElementById("zoom-out").addEventListener("click", () => { if (pointers.size === 0) { cancelCameraFlight(); zoomBetween(zoom / ZOOM_STEP, sceneCenterX, sceneCenterY); } requestRender(); });
-    document.getElementById("view").addEventListener("click", goHome);
+    document.getElementById("reset-view").addEventListener("click", resetView);
     panelToggle.addEventListener("click", () => setPanelCollapsed(panelToggle.getAttribute("aria-expanded") === "true"));
     panel.addEventListener("transitionend", event => { if (event.propertyName === "width") { updateSceneViewport(); requestRender(); } });
     reducedMotionQuery.addEventListener("change", event => {
-      if (!event.matches) return;
-      completeCameraFlight();
-      setDrifting(false);
+      if (event.matches) completeCameraFlight();
+      syncDrifting();
     });
     }
 
@@ -2383,10 +2431,10 @@
       startShowcase();
     } else {
       document.title = `RubyLens · ${model.projectName}`;
-      canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class and module stars for Ruby code details, dependency systems, or gem package subclouds. Sidebar highlights open a top-down view. Double-click a dependency system or gem subcloud, press Enter or F on its selected marker, or tap that marker again to expand its stars. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, and use arrow keys to move the view. Escape exits a focused dependency system.`);
+      canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class and module stars for Ruby code details, dependency systems, or gem package subclouds. Selections open a top-down view that keeps the selected target and Core visible. Double-click a dependency system or gem subcloud, press Enter or F on its selected marker, or tap that marker again to expand its stars. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, use arrow keys to move the view, Space to pause or resume drift, and 0 to reset.`);
       document.getElementById("coverage").textContent = `${renderedDependencyStars.toLocaleString()} dependency stars shown`;
       populateWarningDisclosure();
-      setDrifting(drifting);
+      setDrifting(driftRequested);
       setNavigationMode(navigationMode);
       createExplorer();
       initializeSearch();

@@ -29,26 +29,84 @@ class ExplorerRuntimeTest < Minitest::Test
     refute_includes(RUNTIME, "innerHTML")
   end
 
-  def test_home_uses_the_existing_flight_and_exact_default_camera
-    assert_includes(SHELL, 'id="view" aria-label="Return to default view" aria-keyshortcuts="0">Home</button>')
+  def test_reset_uses_the_existing_flight_and_exact_default_camera_without_changing_drift
+    assert_includes(SHELL, 'id="reset-view" aria-label="Reset to default view" aria-keyshortcuts="0">Reset</button>')
     assert_includes(RUNTIME, "const DEFAULT_CAMERA = Object.freeze({ yaw: -.36, pitch: .34, zoom: 1, panX: 0, panY: 0 })")
-    assert_includes(RUNTIME, "function goHome()")
-    assert_match(/function goHome\(\).*?clearCategoryFocus\(\).*?clearExpandedPackage\(\).*?selectPoint\(null\).*?setNavigationMode\("orbit"\).*?setCategoryVisible\(category, true\).*?flyCamera\(DEFAULT_CAMERA\)/m, RUNTIME)
+    assert_includes(RUNTIME, "function resetView()")
+    assert_match(/function resetView\(\).*?clearCategoryFocus\(\).*?clearExpandedPackage\(\).*?selectPoint\(null\).*?setNavigationMode\("orbit"\).*?setCategoryVisible\(category, true\).*?flyCamera\(DEFAULT_CAMERA\)/m, RUNTIME)
     assert_includes(RUNTIME, "finalTarget,")
     assert_includes(RUNTIME, "applyCameraTarget(finalTarget)")
-    assert_includes(RUNTIME, 'else if (event.key === "0") goHome()')
-    assert_includes(RUNTIME, 'document.getElementById("view").addEventListener("click", goHome)')
-    home_body = RUNTIME.match(/function goHome\(\) \{(?<body>.*?)^    \}/m)[:body]
-    refute_includes(home_body, "setDrifting")
+    assert_includes(RUNTIME, 'else if (event.key === "0") resetView()')
+    assert_includes(RUNTIME, 'document.getElementById("reset-view").addEventListener("click", resetView)')
+    reset_body = runtime_function("resetView")
+    refute_includes(reset_body, "setDrifting")
+    refute_includes(reset_body, "driftRequested")
+
+    toolbar = SHELL.match(/<div class="toolbar">(?<body>.*?)<\/div>/m)[:body]
+    expected_order = ['id="motion"', 'id="reset-view"', 'id="pan-mode"', 'id="zoom-out"', 'id="zoom-level"', 'id="zoom-in"']
+    assert_equal(expected_order, expected_order.sort_by { |marker| toolbar.index(marker) })
+    refute_includes(SHELL, ">Home</button>")
   end
 
-  def test_explorer_drift_is_time_based_faster_and_gap_capped
+  def test_explorer_drift_is_time_based_gap_capped_and_not_suppressed_by_interaction
     assert_includes(RUNTIME, "const DRIFT_RADIANS_PER_SECOND = .04125")
     assert_includes(RUNTIME, "const MAX_DRIFT_DELTA_MS = 50")
+    assert_includes(RUNTIME, "function advanceExplorerDrift(timestamp)")
     assert_includes(RUNTIME, "clamp(timestamp - lastDriftTimestamp, 0, MAX_DRIFT_DELTA_MS)")
-    assert_includes(RUNTIME, "yaw += DRIFT_RADIANS_PER_SECOND * elapsed / 1000")
+    assert_includes(RUNTIME, "const driftDelta = DRIFT_RADIANS_PER_SECOND * elapsed / 1000")
+    assert_includes(RUNTIME, "cameraFlight.finalTarget.yaw += driftDelta")
+    assert_includes(RUNTIME, "if (cameraFlight || driftAdvanced) requestRender()")
     assert_includes(RUNTIME, "lastDriftTimestamp = null")
     refute_includes(RUNTIME, "yaw += .00055")
+    refute_match(/drifting && !dragging/, RUNTIME)
+    refute_match(/drifting && .*selectedPoint/, RUNTIME)
+
+    %w[focusCategory focusPoint focusDependencyPackage focusDependencySystem navigateToSelection resetView].each do |name|
+      refute_includes(runtime_function(name), "setDrifting", "#{name} must preserve explicit drift state")
+    end
+    refute_includes(RUNTIME, "setDrifting(false)")
+    refute_includes(runtime_function("setDrifting"), "cancelCameraFlight")
+  end
+
+  def test_space_is_the_only_keyboard_drift_toggle_and_respects_native_controls
+    assert_includes(SHELL, 'id="motion" aria-label="Pause drift" aria-keyshortcuts="Space" aria-pressed="false"')
+    assert_includes(RUNTIME, "function toggleDriftWithSpace(event)")
+    assert_includes(RUNTIME, '(event.key !== " " && event.code !== "Space") || event.repeat')
+    assert_includes(RUNTIME, "event.metaKey || event.ctrlKey || event.altKey || event.shiftKey")
+    assert_includes(RUNTIME, 'target.closest("input, textarea, select, button, summary, a[href], [contenteditable], [role=\'button\']")')
+    assert_includes(RUNTIME, "if (reducedMotionQuery.matches || isNativeSpaceTarget(event.target)) return false")
+    assert_match(/function toggleDriftWithSpace\(event\).*?event\.preventDefault\(\).*?setDrifting\(!driftRequested\)/m, RUNTIME)
+    assert_match(/window\.addEventListener\("keydown", event => \{\s+if \(toggleDriftWithSpace\(event\)\) return;/m, RUNTIME)
+    assert_includes(RUNTIME, 'motion.setAttribute("aria-label", label)')
+    assert_includes(RUNTIME, 'motion.setAttribute("aria-pressed", String(!drifting))')
+    assert_includes(RUNTIME, 'motion.textContent = "Drift off"')
+  end
+
+  def test_every_point_selection_reuses_contextual_two_subject_navigation
+    assert_includes(RUNTIME, "function contextualSelectionCameraTarget(point")
+    assert_includes(RUNTIME, "const CONTEXT_TARGET_X = .32")
+    assert_includes(RUNTIME, "const CONTEXT_CORE_X = .68")
+    assert_includes(RUNTIME, "Math.PI - Math.atan2(z, x)")
+    assert_includes(RUNTIME, "const desiredSeparation = sceneRight * (CONTEXT_CORE_X - CONTEXT_TARGET_X)")
+    assert_includes(RUNTIME, "const coreFitZoom = Math.min(sceneRight, sceneBottom) * .28")
+    assert_includes(RUNTIME, "panX: sceneRight * .5 + actualSeparation * .5 - sceneCenterX")
+    assert_includes(RUNTIME, "pitch: TOP_DOWN_PITCH")
+    assert_includes(RUNTIME, "function navigateToSelection(point")
+    assert_includes(RUNTIME, "flyCamera(contextualSelectionCameraTarget(point), { followDrift: true })")
+    assert_includes(runtime_function("focusPoint"), "navigateToSelection(point, { button })")
+    assert_includes(runtime_function("focusDependencyPackage"), "navigateToSelection(hub, { button, expandDependency: true })")
+    assert_includes(runtime_function("focusDependencySystem"), "navigateToSelection(hub, { button, expandDependency: true })")
+    assert_includes(RUNTIME, "else if (point) navigateToSelection(point)")
+    assert_includes(runtime_function("focusCategory"), "contextualCategoryCameraTarget(category)")
+  end
+
+  def test_dependency_double_click_survives_the_first_tap_selection_flight
+    assert_includes(RUNTIME, "let dependencyDoubleClickTarget = null")
+    assert_includes(RUNTIME, 'dependencyDoubleClickTarget = { point, x: event.clientX, y: event.clientY, at: event.timeStamp }')
+    assert_includes(RUNTIME, "event.timeStamp - dependencyDoubleClickTarget.at > 1000")
+    assert_includes(RUNTIME, "const remembered = dependencyDoubleClickTarget")
+    assert_includes(RUNTIME, "Math.hypot(event.clientX - remembered.x, event.clientY - remembered.y) <= 12")
+    assert_includes(RUNTIME, "const dependency = dependencyPackageAt(event.clientX, event.clientY) || rememberedDependency")
   end
 
   def test_expanded_dependency_system_retains_detailed_galaxy_context
