@@ -5,7 +5,7 @@ require_relative "test_helper"
 
 class ReportAssetAssemblerTest < Minitest::Test
   # SHA-256 of the supported Explorer shell with the shared canonical Showcase runtime.
-  REPORT_HTML_SHA256 = "feca3dda97858c51c47a7940cddfcfca0e3bd6c2465fb3188d5ddb4a68093af1"
+  REPORT_HTML_SHA256 = "e3b1a31b59129e68c76ae3125819e037877d4f750b4287fe342a4954ff7cc2bc"
 
   def test_assembles_the_supported_explorer_assets_byte_for_byte
     assert_equal(

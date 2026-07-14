@@ -115,18 +115,25 @@ class ExplorerRuntimeTest < Minitest::Test
     refute_includes(RUNTIME, "expandedPackageIndex !== null ? focusedPackagePoint : emphasis >= .1")
   end
 
-  def test_explorer_exposure_is_identity_at_default_and_progressively_attenuates_deep_zoom
+  def test_explorer_exposure_uses_a_restrained_baseline_and_remains_legible_deep_zoom
     assert_includes(RUNTIME, "function explorerExposureForZoom(zoomLevel)")
-    assert_includes(RUNTIME, "const easedStops = zoomStops * zoomStops / (zoomStops + .5)")
-    assert_includes(RUNTIME, "return 1 / (1 + .65 * easedStops)")
+    assert_includes(RUNTIME, "const easedStops = zoomStops * zoomStops / (zoomStops + 1)")
+    assert_includes(RUNTIME, "return .76 + .06 * Math.exp(-.35 * easedStops)")
 
-    exposures = explorer_exposures(0.35, 1, 2.5, 4.65, 7, 40)
-    assert_in_delta(1, exposures[0], 0.000_001)
-    assert_in_delta(1, exposures[1], 0.000_001)
-    assert_in_delta(0.616, exposures[2], 0.001)
-    assert_in_delta(0.46, exposures[3], 0.001)
-    assert_in_delta(0.392, exposures[4], 0.001)
-    assert_in_delta(0.24, exposures[5], 0.001)
+    exposures = explorer_exposures(0.35, 1, 2.5, 2.58, 2.81, 3.08, 4.65, 7, 19.64, 40, 1e12)
+    assert_in_delta(0.82, exposures[0], 0.000_001)
+    assert_in_delta(0.82, exposures[1], 0.000_001)
+    assert_in_delta(0.806, exposures[2], 0.001)
+    assert_in_delta(0.806, exposures[3], 0.001)
+    assert_in_delta(0.804, exposures[4], 0.001)
+    assert_in_delta(0.802, exposures[5], 0.001)
+    assert_in_delta(0.795, exposures[6], 0.001)
+    assert_in_delta(0.789, exposures[7], 0.001)
+    assert_in_delta(0.778, exposures[8], 0.001)
+    assert_in_delta(0.773, exposures[9], 0.001)
+    assert_in_delta(0.76, exposures[10], 0.000_001)
+    assert_operator(exposures[3] - exposures[5], :<, 0.01)
+    assert(exposures.all? { |exposure| exposure > 0.759 })
     assert(exposures.drop(1).each_cons(2).all? { |left, right| left > right })
   end
 
@@ -138,6 +145,143 @@ class ExplorerRuntimeTest < Minitest::Test
     showcase_fallback = RUNTIME.match(/function renderShowcaseFallback\(\) \{(?<body>.*?)^    \}/m)[:body]
     refute_includes(showcase_fallback, "explorerExposureForZoom")
     refute_includes(RUNTIME.match(/function createShowcaseRenderer\(\) \{(?<body>.*?)^    \}/m)[:body], "explorerExposureForZoom")
+  end
+
+  def test_explorer_deep_zoom_lod_is_continuous_without_transition_thresholds
+    assert_includes(RUNTIME, "function explorerDeepZoomLodForZoom(zoomLevel)")
+    assert_includes(RUNTIME, "return 1 - 1 / Math.sqrt(Math.max(1, zoomLevel))")
+    refute_includes(RUNTIME, "const start = Math.log2(1.8)")
+    refute_includes(RUNTIME, "const start = Math.log2(5)")
+
+    lods = runtime_function_values("explorerDeepZoomLodForZoom", 0.35, 1, 1.5, 2.58, 2.81, 3.08, 3.41, 5, 8, 40)
+    assert_in_delta(0, lods[0], 0.000_001)
+    assert_in_delta(0, lods[1], 0.000_001)
+    assert_in_delta(0.184, lods[2], 0.001)
+    assert_in_delta(0.377, lods[3], 0.001)
+    assert_in_delta(0.403, lods[4], 0.001)
+    assert_in_delta(0.430, lods[5], 0.001)
+    assert_in_delta(0.458, lods[6], 0.001)
+    assert_in_delta(0.553, lods[7], 0.001)
+    assert_in_delta(0.646, lods[8], 0.001)
+    assert_in_delta(0.842, lods[9], 0.001)
+    assert(lods.each_cons(2).all? { |left, right| left <= right })
+    assert_operator(lods[5] - lods[3], :<, 0.06)
+
+    sampled_zooms = (0..80).map { |index| 8**(index / 80.0) }
+    sampled_lods = runtime_function_values("explorerDeepZoomLodForZoom", *sampled_zooms)
+    assert_operator(sampled_lods.each_cons(2).map { |left, right| right - left }.max, :<, 0.02)
+  end
+
+  def test_explorer_bloom_attenuation_is_a_gradual_derivative_of_zoom_lod
+    assert_includes(RUNTIME, "const bloomLod = deepZoomLod * deepZoomLod * deepZoomLod")
+    assert_includes(RUNTIME, "const bloomRecovery = bloomLod * bloomLod * deepZoomLod * deepZoomLod")
+    refute_includes(RUNTIME, "function explorerBloomLodForZoom")
+
+    lods = runtime_function_values("explorerDeepZoomLodForZoom", 1, 2.58, 3.08, 3.41, 5, 7, 8)
+    bloom_lods = lods.map { |lod| lod**3 }
+    assert_in_delta(0, bloom_lods[0], 0.000_001)
+    assert_in_delta(0.054, bloom_lods[1], 0.001)
+    assert_in_delta(0.080, bloom_lods[2], 0.001)
+    assert_in_delta(0.096, bloom_lods[3], 0.001)
+    assert_in_delta(0.169, bloom_lods[4], 0.001)
+    assert_in_delta(0.241, bloom_lods[5], 0.001)
+    assert_in_delta(0.270, bloom_lods[6], 0.001)
+    assert_operator(bloom_lods[2] - bloom_lods[1], :<, 0.03)
+
+    recovery_lods = lods.map { |lod| lod**8 }
+    assert_in_delta(0, recovery_lods[0], 0.000_001)
+    assert_in_delta(0.0004, recovery_lods[1], 0.0001)
+    assert_in_delta(0.0012, recovery_lods[2], 0.0001)
+    assert_in_delta(0.0087, recovery_lods[4], 0.0001)
+    assert_in_delta(0.0305, recovery_lods[6], 0.0001)
+
+    inspection_lods = runtime_function_values("explorerDeepZoomLodForZoom", 24, 40)
+    inspection_recoveries = inspection_lods.map { |lod| lod**8 }
+    inspection_details = [Math.log2(24) / 5, 1]
+    inspection_glow_scales = inspection_lods.each_with_index.map do |lod, index|
+      [1.4, 3.4 - inspection_details[index] * 1.3 - lod * 1.2 + inspection_recoveries[index] * 3].max
+    end
+    assert_operator(inspection_recoveries.last, :>, inspection_recoveries.first)
+    assert_operator(inspection_glow_scales.last, :>, inspection_glow_scales.first)
+
+    sampled_zooms = (0..80).map { |index| 8**(index / 80.0) }
+    sampled_lods = runtime_function_values("explorerDeepZoomLodForZoom", *sampled_zooms).map { |lod| lod**3 }
+    assert_operator(sampled_lods.each_cons(2).map { |left, right| right - left }.max, :<, 0.02)
+  end
+
+  def test_explorer_namespace_body_compensation_is_smooth_and_preserves_default
+    assert_includes(RUNTIME, "function explorerNamespaceBodyBoost(deepZoomLod)")
+    assert_includes(RUNTIME, "const lateLod = deepZoomLod * deepZoomLod")
+    assert_includes(RUNTIME, "return 1 + lateLod * lateLod * 2.4")
+
+    zoom_lods = runtime_function_values("explorerDeepZoomLodForZoom", 1, 2.58, 3.08, 19.64, 40)
+    boosts = runtime_function_values("explorerNamespaceBodyBoost", *zoom_lods)
+    assert_in_delta(1, boosts[0], 0.000_001)
+    assert_in_delta(1.049, boosts[1], 0.001)
+    assert_in_delta(1.082, boosts[2], 0.001)
+    assert_in_delta(1.863, boosts[3], 0.001)
+    assert_in_delta(2.206, boosts[4], 0.001)
+    assert(boosts.each_cons(2).all? { |left, right| left < right })
+  end
+
+  def test_explorer_deep_zoom_lod_matches_webgl_and_canvas_without_touching_showcase
+    explorer_webgl = RUNTIME.match(/function createExplorerRenderer\(\) \{(?<body>.*?)^    \}/m)[:body]
+    explorer_canvas = RUNTIME.match(/function render\(timestamp\) \{(?<body>.*?)^    \}/m)[:body]
+    [explorer_webgl, explorer_canvas].each do |renderer|
+      assert_includes(renderer, "explorerDeepZoomLodForZoom(zoom)")
+      assert_includes(renderer, "const bloomLod = deepZoomLod * deepZoomLod * deepZoomLod")
+      assert_includes(renderer, "bloomRecovery")
+      assert_includes(renderer, "namespaceSizeLimit")
+      assert_includes(renderer, "namespaceGlowSizeLimit")
+      assert_includes(renderer, "namespaceGlowScale")
+      assert_includes(renderer, "namespaceHotCoreScale")
+    end
+    assert_includes(explorer_webgl, "bool namespacePoint = category != 2")
+    assert_includes(explorer_webgl, "namespacePoint && !selected")
+    assert_includes(explorer_webgl, "float signal = (a_alpha - 0.14) / 0.105")
+    assert_includes(explorer_webgl, "float importance = clamp((signal - 0.2) / 0.8, 0.0, 1.0)")
+    assert_includes(explorer_webgl, "float namespaceSizeLimit = 3.2 - u_deepZoomLod * 1.5")
+    assert_includes(explorer_webgl, "float namespaceHotCoreScale = namespacePoint && !selected ? 1.0 - u_deepZoomLod * 0.35 : 1.0")
+    assert_includes(explorer_webgl, "float namespaceGlowScale = max(1.4, 3.4 - u_deepDetail * 1.3 - u_deepZoomLod * 1.2 + u_bloomRecovery * 3.0)")
+    assert_includes(explorer_webgl, "float lateLod = u_deepZoomLod * u_deepZoomLod")
+    assert_includes(explorer_webgl, "float namespaceBodyBoost = namespacePoint && !selected ? 1.0 + lateLod * lateLod * 2.4 : 1.0")
+    assert_includes(explorer_webgl, "u_deepZoomLod")
+    assert_includes(explorer_webgl, "u_bloomLod")
+    assert_includes(explorer_webgl, "u_bloomRecovery")
+    assert_includes(explorer_webgl, "gl.uniform1f(pointUniforms.deepZoomLod, deepZoomLod)")
+    assert_includes(explorer_webgl, "gl.uniform1f(pointUniforms.bloomLod, bloomLod)")
+    assert_includes(explorer_webgl, "gl.uniform1f(pointUniforms.bloomRecovery, bloomRecovery)")
+    assert_includes(explorer_webgl, "alpha = min(0.9, visibleAlpha * 1.25)")
+    assert_includes(explorer_canvas, 'const namespacePoint = point.category !== "dependencies"')
+    assert_includes(explorer_canvas, "const namespaceSizeLimit = 3.2 - deepZoomLod * 1.5")
+    assert_includes(explorer_canvas, "const namespaceHotCoreScale = 1 - deepZoomLod * .35")
+    assert_includes(explorer_canvas, "const namespaceGlowScale = Math.max(1.4, 3.4 - deepDetail * 1.3 - deepZoomLod * 1.2 + bloomRecovery * 3)")
+    assert_includes(explorer_canvas, "const namespaceBodyBoost = explorerNamespaceBodyBoost(deepZoomLod)")
+    assert_includes(explorer_canvas, "const bodyBoost = namespacePoint && point !== selectedPoint ? namespaceBodyBoost : 1")
+    assert_includes(explorer_canvas, "explorerNamespaceBloomRetention(signal, bloomLod, bloomRecovery, point === selectedPoint)")
+    assert_includes(explorer_canvas, "context.globalAlpha = Math.min(.9, visibleAlpha * 1.25)")
+
+    retentions = namespace_bloom_retentions(
+      [0.3, 1, 1, false],
+      [0.6, 1, 1, false],
+      [1.0, 1, 1, false],
+      [0.3, 1, 1, true],
+      [0.3, 0, 0, false],
+    )
+    assert_in_delta(0.6125, retentions[0], 0.000_001)
+    assert_in_delta(0.95, retentions[1], 0.000_001)
+    assert_in_delta(1.4, retentions[2], 0.000_001)
+    assert_in_delta(1, retentions[3], 0.000_001)
+    assert_in_delta(1, retentions[4], 0.000_001)
+
+    showcase_fallback = RUNTIME.match(/function renderShowcaseFallback\(\) \{(?<body>.*?)^    \}/m)[:body]
+    showcase_webgl = RUNTIME.match(/function createShowcaseRenderer\(\) \{(?<body>.*?)^    \}/m)[:body]
+    [showcase_fallback, showcase_webgl].each do |renderer|
+      refute_includes(renderer, "explorerDeepZoomLodForZoom")
+      refute_includes(renderer, "explorerNamespaceBloomRetention")
+      refute_includes(renderer, "u_deepZoomLod")
+      refute_includes(renderer, "u_bloomLod")
+    end
   end
 
   def test_search_is_lazy_bounded_progressive_and_reuses_navigation
@@ -193,13 +337,34 @@ class ExplorerRuntimeTest < Minitest::Test
   private
 
   def explorer_exposures(*zooms)
-    function = RUNTIME.match(/^    function explorerExposureForZoom\b.*?^    \}\n/m).to_s
-    raise "explorer exposure function not found" if function.empty?
+    runtime_function_values("explorerExposureForZoom", *zooms)
+  end
+
+  def runtime_function_values(function_name, *values)
+    function = RUNTIME.match(/^    function #{Regexp.escape(function_name)}\b.*?^    \}\n/m).to_s
+    raise "#{function_name} function not found" if function.empty?
 
     script = <<~JAVASCRIPT
+      const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
       #{function}
-      const zooms = #{JSON.generate(zooms)};
-      process.stdout.write(JSON.stringify(zooms.map(zoom => explorerExposureForZoom(zoom))));
+      const values = #{JSON.generate(values)};
+      process.stdout.write(JSON.stringify(values.map(value => #{function_name}(value))));
+    JAVASCRIPT
+    output, error, status = Open3.capture3("node", "-e", script)
+    raise "Node failed: #{error}" unless status.success?
+
+    JSON.parse(output)
+  end
+
+  def namespace_bloom_retentions(*arguments)
+    function = RUNTIME.match(/^    function explorerNamespaceBloomRetention\b.*?^    \}\n/m).to_s
+    raise "explorerNamespaceBloomRetention function not found" if function.empty?
+
+    script = <<~JAVASCRIPT
+      const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+      #{function}
+      const arguments = #{JSON.generate(arguments)};
+      process.stdout.write(JSON.stringify(arguments.map(values => explorerNamespaceBloomRetention(...values))));
     JAVASCRIPT
     output, error, status = Open3.capture3("node", "-e", script)
     raise "Node failed: #{error}" unless status.success?

@@ -122,8 +122,25 @@
     const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
     function explorerExposureForZoom(zoomLevel) {
       const zoomStops = Math.max(0, Math.log2(zoomLevel));
-      const easedStops = zoomStops * zoomStops / (zoomStops + .5);
-      return 1 / (1 + .65 * easedStops);
+      const easedStops = zoomStops * zoomStops / (zoomStops + 1);
+      return .76 + .06 * Math.exp(-.35 * easedStops);
+    }
+
+    function explorerDeepZoomLodForZoom(zoomLevel) {
+      return 1 - 1 / Math.sqrt(Math.max(1, zoomLevel));
+    }
+
+    function explorerNamespaceBloomRetention(signal, bloomLod, bloomRecovery, preserveBloom) {
+      if (preserveBloom) return 1;
+      const importance = clamp((signal - .2) / .8, 0, 1);
+      return 1
+        - bloomLod * (1 - importance) * .75
+        + bloomRecovery * (.25 + importance * .15);
+    }
+
+    function explorerNamespaceBodyBoost(deepZoomLod) {
+      const lateLod = deepZoomLod * deepZoomLod;
+      return 1 + lateLod * lateLod * 2.4;
     }
 
     function normalizedSignals(values) {
@@ -669,6 +686,9 @@
         uniform float u_cameraFocalLength;
         uniform float u_exposure;
         uniform float u_deepDetail;
+        uniform float u_deepZoomLod;
+        uniform float u_bloomLod;
+        uniform float u_bloomRecovery;
         uniform float u_dpr;
         uniform vec3 u_categoryVisible;
         uniform vec3 u_categoryEmphasis;
@@ -717,11 +737,27 @@
             return;
           }
 
-          float size = clamp(a_sizeFactor * perspective, 0.35, a_maxSize);
+          bool namespacePoint = category != 2;
+          float naturalSize = clamp(a_sizeFactor * perspective, 0.35, a_maxSize);
+          float namespaceSizeLimit = 3.2 - u_deepZoomLod * 1.5;
+          float namespaceGlowSizeLimit = 3.2 - u_deepZoomLod * 1.1;
+          float size = namespacePoint && !selected ? min(naturalSize, namespaceSizeLimit) : naturalSize;
+          float glowSize = namespacePoint && !selected ? min(naturalSize, namespaceGlowSizeLimit) : size;
           bool focusedDependencyPoint = expandedPoint && category == 2;
           float emphasis = focusedDependencyPoint || selected ? 1.0 : u_categoryEmphasis[category];
-          float visibleAlpha = (focusedDependencyPoint ? max(0.34, a_alpha) : a_alpha * emphasis) * u_exposure;
+          float lateLod = u_deepZoomLod * u_deepZoomLod;
+          float namespaceBodyBoost = namespacePoint && !selected ? 1.0 + lateLod * lateLod * 2.4 : 1.0;
+          float visibleAlpha = min(1.0, (focusedDependencyPoint ? max(0.34, a_alpha) : a_alpha * emphasis) * u_exposure * namespaceBodyBoost);
           bool detailed = emphasis >= 0.1;
+          // Namespace alpha is packed as 0.14 + signal * 0.105; recover the
+          // existing importance signal without widening the vertex buffer.
+          float signal = (a_alpha - 0.14) / 0.105;
+          float importance = clamp((signal - 0.2) / 0.8, 0.0, 1.0);
+          float bloomRetention = namespacePoint && !selected
+            ? 1.0 - u_bloomLod * (1.0 - importance) * 0.75 + u_bloomRecovery * (0.25 + importance * 0.15)
+            : 1.0;
+          float namespaceGlowScale = max(1.4, 3.4 - u_deepDetail * 1.3 - u_deepZoomLod * 1.2 + u_bloomRecovery * 3.0);
+          float namespaceHotCoreScale = namespacePoint && !selected ? 1.0 - u_deepZoomLod * 0.35 : 1.0;
           float radius = size;
           float alpha = visibleAlpha;
           vec3 colour = a_category < 0.5
@@ -729,15 +765,17 @@
             : (a_category < 1.5 ? vec3(87.0, 204.0, 255.0) / 255.0 : vec3(255.0, 184.0, 77.0) / 255.0);
 
           if (u_pass == 0) {
-            if (size <= 1.35 || !detailed) { hidePoint(); return; }
-            float glowScale = focusedDependencyPoint ? 2.2 - u_deepDetail * 0.8 : 3.4 - u_deepDetail * 1.3;
-            radius = size * glowScale;
-            alpha = visibleAlpha * (focusedDependencyPoint ? 0.045 : 0.055);
+            if (glowSize <= 1.35 || !detailed) { hidePoint(); return; }
+            float glowScale = focusedDependencyPoint
+              ? 2.2 - u_deepDetail * 0.8
+              : (namespacePoint ? namespaceGlowScale : 3.4 - u_deepDetail * 1.3);
+            radius = glowSize * glowScale;
+            alpha = visibleAlpha * (focusedDependencyPoint ? 0.045 : 0.055) * bloomRetention;
           } else if (u_pass == 1) {
             radius = (!detailed || size < 0.85) ? 0.5 : size;
           } else {
             if (size <= 1.1 || !detailed) { hidePoint(); return; }
-            radius = max(0.45 + u_deepDetail * 0.25, size * (0.24 + u_deepDetail * 0.06));
+            radius = max(0.45 + u_deepDetail * 0.25, size * (0.24 + u_deepDetail * 0.06)) * namespaceHotCoreScale;
             alpha = min(0.9, visibleAlpha * 1.25);
             colour = vec3(255.0, 248.0, 244.0) / 255.0;
           }
@@ -799,7 +837,7 @@
       };
       const pointUniforms = Object.fromEntries([
         "u_resolution", "u_center", "u_sceneBounds", "u_yaw", "u_pitch", "u_zoom",
-        "u_cameraDistance", "u_cameraFocalLength", "u_exposure", "u_deepDetail", "u_dpr",
+        "u_cameraDistance", "u_cameraFocalLength", "u_exposure", "u_deepDetail", "u_deepZoomLod", "u_bloomLod", "u_bloomRecovery", "u_dpr",
         "u_categoryVisible", "u_categoryEmphasis", "u_expandedPackage", "u_expandedSystem",
         "u_expandedAnchor", "u_expansion", "u_selectedIndex", "u_pass",
       ].map(name => [name.slice(2), gl.getUniformLocation(pointProgram, name)]));
@@ -830,6 +868,9 @@
         },
         render() {
           const deepDetail = clamp(Math.log2(Math.max(1, zoom)) / 5, 0, 1);
+          const deepZoomLod = explorerDeepZoomLodForZoom(zoom);
+          const bloomLod = deepZoomLod * deepZoomLod * deepZoomLod;
+          const bloomRecovery = bloomLod * bloomLod * deepZoomLod * deepZoomLod;
           const centerX = sceneCenterX + panX;
           const centerY = sceneCenterY + panY;
           gl.disable(gl.BLEND);
@@ -854,6 +895,9 @@
           gl.uniform1f(pointUniforms.cameraFocalLength, cameraFocalLength);
           gl.uniform1f(pointUniforms.exposure, explorerExposureForZoom(zoom));
           gl.uniform1f(pointUniforms.deepDetail, deepDetail);
+          gl.uniform1f(pointUniforms.deepZoomLod, deepZoomLod);
+          gl.uniform1f(pointUniforms.bloomLod, bloomLod);
+          gl.uniform1f(pointUniforms.bloomRecovery, bloomRecovery);
           gl.uniform1f(pointUniforms.dpr, rendererDpr);
           gl.uniform3f(pointUniforms.categoryVisible, visibleCategories.core ? 1 : 0, visibleCategories.tests ? 1 : 0, visibleCategories.dependencies ? 1 : 0);
           const emphasis = categoryEmphasisVector();
@@ -2024,6 +2068,14 @@
         context.globalCompositeOperation = "lighter";
         const matrix = viewMatrix();
         const deepDetail = clamp(Math.log2(Math.max(1, zoom)) / 5, 0, 1);
+        const deepZoomLod = explorerDeepZoomLodForZoom(zoom);
+        const bloomLod = deepZoomLod * deepZoomLod * deepZoomLod;
+        const bloomRecovery = bloomLod * bloomLod * deepZoomLod * deepZoomLod;
+        const namespaceSizeLimit = 3.2 - deepZoomLod * 1.5;
+        const namespaceGlowSizeLimit = 3.2 - deepZoomLod * 1.1;
+        const namespaceGlowScale = Math.max(1.4, 3.4 - deepDetail * 1.3 - deepZoomLod * 1.2 + bloomRecovery * 3);
+        const namespaceHotCoreScale = 1 - deepZoomLod * .35;
+        const namespaceBodyBoost = explorerNamespaceBodyBoost(deepZoomLod);
         const exposure = explorerExposureForZoom(zoom);
         for (const point of renderPoints) {
           point.screen = null;
@@ -2034,7 +2086,11 @@
           const [x, y, perspective] = projected;
           const cullMargin = point === selectedPoint ? 0 : 20;
           if (x < -cullMargin || x > sceneRight + cullMargin || y < -cullMargin || y > sceneBottom + cullMargin) continue;
-          const size = clamp(point.sizeFactor * perspective, .35, point.maxSize);
+          const signal = point.signal;
+          const namespacePoint = point.category !== "dependencies";
+          const naturalSize = clamp(point.sizeFactor * perspective, .35, point.maxSize);
+          const size = namespacePoint && point !== selectedPoint ? Math.min(naturalSize, namespaceSizeLimit) : naturalSize;
+          const glowSize = namespacePoint && point !== selectedPoint ? Math.min(naturalSize, namespaceGlowSizeLimit) : size;
           const alpha = point.alphaBase;
           const focusedDependencyPoint = point.category === "dependencies" && (
             expandedPackageIndex !== null
@@ -2045,7 +2101,8 @@
           const emphasis = dependencyExpanded
             ? (focusedDependencyPoint ? 1 : contextVisibility.package)
             : selectionLocked && selectedPoint ? (point === selectedPoint ? 1 : contextVisibility.selection) : focusedCategory && point.category !== focusedCategory ? contextVisibility.category : 1;
-          const visibleAlpha = (focusedDependencyPoint ? Math.max(.34, alpha) : alpha * emphasis) * exposure;
+          const bodyBoost = namespacePoint && point !== selectedPoint ? namespaceBodyBoost : 1;
+          const visibleAlpha = Math.min(1, (focusedDependencyPoint ? Math.max(.34, alpha) : alpha * emphasis) * exposure * bodyBoost);
           const colour = colourStyles[point.category];
           const screen = point.screenData || (point.screenData = [0, 0, 0]);
           screen[0] = x; screen[1] = y; screen[2] = size;
@@ -2059,20 +2116,26 @@
             point.cloudScreenRadius = Math.max(12, anchor[3] * perspective * (expanded ? DEPENDENCY_EXPANSION : 1) * 1.2);
           }
           const detailedPoint = emphasis >= .1;
-          if (size > 1.35 && detailedPoint) {
-            const glowScale = focusedDependencyPoint ? 2.2 - deepDetail * .8 : 3.4 - deepDetail * 1.3;
-            context.globalAlpha = visibleAlpha * (focusedDependencyPoint ? .045 : .055);
+          const bloomRetention = namespacePoint
+            ? explorerNamespaceBloomRetention(signal, bloomLod, bloomRecovery, point === selectedPoint)
+            : 1;
+          if (glowSize > 1.35 && detailedPoint) {
+            const glowScale = focusedDependencyPoint
+              ? 2.2 - deepDetail * .8
+              : namespacePoint ? namespaceGlowScale : 3.4 - deepDetail * 1.3;
+            context.globalAlpha = visibleAlpha * (focusedDependencyPoint ? .045 : .055) * bloomRetention;
             context.fillStyle = colour;
-            context.beginPath(); context.arc(x, y, size * glowScale, 0, Math.PI * 2); context.fill();
+            context.beginPath(); context.arc(x, y, glowSize * glowScale, 0, Math.PI * 2); context.fill();
           }
           context.globalAlpha = visibleAlpha;
           context.fillStyle = colour;
           if (!detailedPoint || size < .85) context.fillRect(x, y, 1, 1);
           else { context.beginPath(); context.arc(x, y, size, 0, Math.PI * 2); context.fill(); }
           if (size > 1.1 && detailedPoint) {
+            const hotCoreScale = namespacePoint && point !== selectedPoint ? namespaceHotCoreScale : 1;
             context.globalAlpha = Math.min(.9, visibleAlpha * 1.25);
             context.fillStyle = "#fff8f4";
-            context.beginPath(); context.arc(x, y, Math.max(.45 + deepDetail * .25, size * (.24 + deepDetail * .06)), 0, Math.PI * 2); context.fill();
+            context.beginPath(); context.arc(x, y, Math.max(.45 + deepDetail * .25, size * (.24 + deepDetail * .06)) * hotCoreScale, 0, Math.PI * 2); context.fill();
           }
           if (point === selectedPoint) {
             context.globalAlpha = 1;
