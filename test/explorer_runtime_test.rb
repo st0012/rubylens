@@ -29,9 +29,11 @@ class ExplorerRuntimeTest < Minitest::Test
     refute_includes(RUNTIME, "innerHTML")
   end
 
-  def test_reset_uses_the_existing_flight_and_exact_default_camera_without_changing_drift
+  def test_explorer_initial_and_reset_camera_use_200_percent_without_changing_drift
     assert_includes(SHELL, 'id="reset-view" aria-label="Reset to default view" aria-keyshortcuts="0">Reset</button>')
-    assert_includes(RUNTIME, "const DEFAULT_CAMERA = Object.freeze({ yaw: -.36, pitch: .34, zoom: 1, panX: 0, panY: 0 })")
+    assert_includes(SHELL, '<output class="zoom-level" id="zoom-level" aria-label="Zoom level">200%</output>')
+    assert_includes(RUNTIME, "const DEFAULT_CAMERA = Object.freeze({ yaw: -.36, pitch: .34, zoom: 2, panX: 0, panY: 0 })")
+    assert_match(/populateWarningDisclosure\(\).*?applyCameraTarget\(DEFAULT_CAMERA\).*?createExplorer\(\).*?resize\(\)/m, RUNTIME)
     assert_includes(RUNTIME, "function resetView()")
     assert_match(/function resetView\(\).*?clearCategoryFocus\(\).*?clearExpandedPackage\(\).*?selectPoint\(null\).*?setNavigationMode\("orbit"\).*?setCategoryVisible\(category, true\).*?flyCamera\(DEFAULT_CAMERA\)/m, RUNTIME)
     assert_includes(RUNTIME, "finalTarget,")
@@ -53,10 +55,11 @@ class ExplorerRuntimeTest < Minitest::Test
     assert_includes(RUNTIME, "const MAX_DRIFT_DELTA_MS = 50")
     assert_includes(RUNTIME, "function advanceExplorerDrift(timestamp)")
     assert_includes(RUNTIME, "clamp(timestamp - lastDriftTimestamp, 0, MAX_DRIFT_DELTA_MS)")
-    assert_includes(RUNTIME, "const driftDelta = DRIFT_RADIANS_PER_SECOND * elapsed / 1000")
+    assert_includes(RUNTIME, "const driftDelta = screenRotationYawSign(pitch) * DRIFT_RADIANS_PER_SECOND * elapsed / 1000")
     assert_includes(RUNTIME, "cameraFlight.finalTarget.yaw += driftDelta")
     assert_includes(RUNTIME, "if (cameraFlight || driftAdvanced) requestRender()")
     assert_includes(RUNTIME, "lastDriftTimestamp = null")
+    assert_includes(RUNTIME, "yaw += dx * .006")
     refute_includes(RUNTIME, "yaw += .00055")
     refute_match(/drifting && !dragging/, RUNTIME)
     refute_match(/drifting && .*selectedPoint/, RUNTIME)
@@ -115,7 +118,7 @@ class ExplorerRuntimeTest < Minitest::Test
     refute_includes(RUNTIME, "expandedPackageIndex !== null ? focusedPackagePoint : emphasis >= .1")
   end
 
-  def test_explorer_exposure_is_identity_at_default_and_progressively_attenuates_deep_zoom
+  def test_explorer_exposure_is_identity_through_100_percent_and_progressively_attenuates_deep_zoom
     assert_includes(RUNTIME, "function explorerExposureForZoom(zoomLevel)")
     assert_includes(RUNTIME, "const easedStops = zoomStops * zoomStops / (zoomStops + .5)")
     assert_includes(RUNTIME, "return 1 / (1 + .65 * easedStops)")

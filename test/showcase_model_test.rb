@@ -71,6 +71,20 @@ class ShowcaseModelTest < Minitest::Test
     refute_includes(encoded, "unsafe package")
   end
 
+  def test_annotated_projection_omits_root_runtime_constants_without_removing_their_points
+    model = minimal_model
+    model["namespaceNames"] = ["Object", "Kernel", "BasicObject", "Synthetic::Object"]
+    model["namespaces"] = model.fetch("namespaceNames").each_index.map do |index|
+      [index, 0, 0, 0, index + 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 0]
+    end
+    model.fetch("totals")["namespaces"] = model.fetch("namespaces").length
+
+    showcase = RubyLens::ShowcaseModel.new.call(model, details: true)
+
+    assert_equal(4, showcase.fetch("namespaces").length)
+    assert_equal(["Synthetic::Object"], showcase.fetch("annotations").map { |annotation| annotation.fetch("name") })
+  end
+
   def test_only_literal_true_enables_details
     showcase = RubyLens::ShowcaseModel.new.call(minimal_model, details: "true")
 

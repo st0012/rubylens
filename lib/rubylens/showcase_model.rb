@@ -10,6 +10,7 @@ module RubyLens
     CATEGORY_FIELDS = %w[core tests].freeze
     ANNOTATION_LIMIT = 200
     ANNOTATION_CATEGORIES = %w[core dependencies tests].freeze
+    OMITTED_ANNOTATION_NAMES = %w[BasicObject Kernel Object].freeze
     RUBY_NAME_PATTERN = /\A\p{Lu}[\p{L}\p{N}_]*(?:::\p{Lu}[\p{L}\p{N}_]*)*\z/
     MAX_ANNOTATION_NAME_LENGTH = 160
     RSPEC_PROXY_PREFIX = "RSpec example group #"
@@ -81,6 +82,7 @@ module RubyLens
       names.each_with_index.filter_map do |name, index|
         row = rows.fetch(index)
         next unless (row.fetch(3) == 1) == test
+        next if OMITTED_ANNOTATION_NAMES.include?(name)
         next unless safe_ruby_name?(name)
 
         [row.slice(4, 6).sum, {

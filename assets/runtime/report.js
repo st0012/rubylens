@@ -31,7 +31,8 @@
     const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35, SHOWCASE_POINT_LIMIT = 50_000;
     const CORE_SCALE_BASELINE = 3_000;
     const RSPEC_PROXY_PREFIX = "RSpec example group #";
-    const DEFAULT_CAMERA = Object.freeze({ yaw: -.36, pitch: .34, zoom: 1, panX: 0, panY: 0 });
+    const DEFAULT_CAMERA = Object.freeze({ yaw: -.36, pitch: .34, zoom: 2, panX: 0, panY: 0 });
+    const DEFAULT_ROTATION_DIRECTION = "clockwise";
     const DRIFT_RADIANS_PER_SECOND = .04125;
     const MAX_DRIFT_DELTA_MS = 50;
     const SEARCH_DEBOUNCE_MS = 120;
@@ -50,7 +51,6 @@
       "durationMs": 60000,
       "targetFps": 60,
       "turns": 1,
-      "direction": "clockwise",
       "startAngleDegrees": -54,
       "elevationDegrees": -25,
       "elevationSwayDegrees": 1.5,
@@ -68,6 +68,27 @@
       "mastheadTop": 40,
       "mastheadWidth": 632
     });
+    const SHOWCASE_WIDESCREEN_LAYOUT_PRESET = Object.freeze({
+      "minimumFittedWidth": 1600,
+      "minimumAspectRatio": 1.6,
+      "centerXPercent": 49,
+      "centerYPercent": 54,
+      "textScalePercent": 44,
+      "layoutReferenceWidth": 720,
+      "mastheadLeft": 44,
+      "mastheadTop": 17,
+      "mastheadWidth": 420
+    });
+    const SHOWCASE_DEFAULT_LAYOUT_PRESET = Object.freeze({
+      "centerXPercent": SHOWCASE_PRESET.centerXPercent,
+      "centerYPercent": SHOWCASE_PRESET.centerYPercent,
+      "textScalePercent": SHOWCASE_PRESET.textScalePercent,
+      "layoutReferenceWidth": SHOWCASE_PRESET.layoutReferenceWidth,
+      "mastheadLeft": SHOWCASE_PRESET.mastheadLeft,
+      "mastheadTop": SHOWCASE_PRESET.mastheadTop,
+      "mastheadWidth": SHOWCASE_PRESET.mastheadWidth
+    });
+    let activeShowcaseLayout = SHOWCASE_DEFAULT_LAYOUT_PRESET;
     const SHOWCASE_DEPENDENCY_PRESET = Object.freeze({
       "starSizeScale": 1.5,
       "starAlphaScale": 1.2
@@ -120,6 +141,11 @@
     const unit = (seed, channel) => hash(seed, channel) / 4294967296;
     const normal = (seed, channel) => Math.sqrt(-2 * Math.log(Math.max(unit(seed, channel), 1e-7))) * Math.cos(6.283185 * unit(seed, channel + 1));
     const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+    function screenRotationYawSign(pitchRadians) {
+      const clockwiseSign = Math.sin(pitchRadians) > 0 ? -1 : 1;
+      return DEFAULT_ROTATION_DIRECTION === "clockwise" ? clockwiseSign : -clockwiseSign;
+    }
+
     function explorerExposureForZoom(zoomLevel) {
       const zoomStops = Math.max(0, Math.log2(zoomLevel));
       const easedStops = zoomStops * zoomStops / (zoomStops + .5);
@@ -1047,7 +1073,7 @@
       }
       const elapsed = lastDriftTimestamp === null ? 1000 / 60 : clamp(timestamp - lastDriftTimestamp, 0, MAX_DRIFT_DELTA_MS);
       lastDriftTimestamp = timestamp;
-      const driftDelta = DRIFT_RADIANS_PER_SECOND * elapsed / 1000;
+      const driftDelta = screenRotationYawSign(pitch) * DRIFT_RADIANS_PER_SECOND * elapsed / 1000;
       if (!cameraFlight) {
         yaw += driftDelta;
       } else if (cameraFlight.followDrift) {
@@ -1755,16 +1781,27 @@
       }
     }
 
+    function selectShowcaseLayout() {
+      const fitScale = Math.min(window.innerWidth / SHOWCASE_PRESET.stageWidth, window.innerHeight / SHOWCASE_PRESET.stageHeight);
+      const fittedWidth = SHOWCASE_PRESET.stageWidth * fitScale;
+      const aspectRatio = window.innerWidth / Math.max(1, window.innerHeight);
+      const widescreen = fittedWidth >= SHOWCASE_WIDESCREEN_LAYOUT_PRESET.minimumFittedWidth
+        && aspectRatio >= SHOWCASE_WIDESCREEN_LAYOUT_PRESET.minimumAspectRatio;
+      document.documentElement.dataset.showcaseLayout = widescreen ? "widescreen" : "default";
+      return widescreen ? SHOWCASE_WIDESCREEN_LAYOUT_PRESET : SHOWCASE_DEFAULT_LAYOUT_PRESET;
+    }
+
     function configureShowcaseStage() {
       if (!showcaseStage) return;
-      const stageScale = SHOWCASE_PRESET.stageWidth / SHOWCASE_PRESET.layoutReferenceWidth;
-      const textScale = SHOWCASE_PRESET.textScalePercent / 100;
+      activeShowcaseLayout = selectShowcaseLayout();
+      const stageScale = SHOWCASE_PRESET.stageWidth / activeShowcaseLayout.layoutReferenceWidth;
+      const textScale = activeShowcaseLayout.textScalePercent / 100;
       showcaseStage.style.width = `${SHOWCASE_PRESET.stageWidth}px`;
       showcaseStage.style.height = `${SHOWCASE_PRESET.stageHeight}px`;
       const masthead = showcaseStage.querySelector(".masthead");
-      masthead.style.left = `${SHOWCASE_PRESET.mastheadLeft * stageScale}px`;
-      masthead.style.top = `${SHOWCASE_PRESET.mastheadTop * stageScale}px`;
-      masthead.style.width = `${SHOWCASE_PRESET.mastheadWidth / textScale}px`;
+      masthead.style.left = `${activeShowcaseLayout.mastheadLeft * stageScale}px`;
+      masthead.style.top = `${activeShowcaseLayout.mastheadTop * stageScale}px`;
+      masthead.style.width = `${activeShowcaseLayout.mastheadWidth / textScale}px`;
       masthead.style.transform = `scale(${stageScale * textScale})`;
       if (showcaseAnnotation) {
         showcaseAnnotation.style.setProperty("--annotation-fade-in", `${SHOWCASE_ANNOTATION_PRESET.fadeInMs}ms`);
@@ -1785,6 +1822,7 @@
 
     function resize() {
       if (showcaseMode) {
+        configureShowcaseStage();
         dpr = 1;
         width = SHOWCASE_PRESET.stageWidth;
         height = SHOWCASE_PRESET.stageHeight;
@@ -1813,8 +1851,8 @@
       if (showcaseMode) {
         sceneRight = width;
         sceneBottom = height;
-        sceneCenterX = width * SHOWCASE_PRESET.centerXPercent / 100;
-        sceneCenterY = height * SHOWCASE_PRESET.centerYPercent / 100;
+        sceneCenterX = width * activeShowcaseLayout.centerXPercent / 100;
+        sceneCenterY = height * activeShowcaseLayout.centerYPercent / 100;
         return;
       }
       const panelBounds = panel.getBoundingClientRect();
@@ -2099,8 +2137,8 @@
 
     function applyShowcaseCamera(progress) {
       const wrapped = ((Number(progress) % 1) + 1) % 1;
-      const direction = SHOWCASE_PRESET.direction === "clockwise" ? 1 : -1;
-      const phase = wrapped * Math.PI * 2 * SHOWCASE_PRESET.turns * direction;
+      const yawSign = screenRotationYawSign(SHOWCASE_PRESET.elevationDegrees * Math.PI / 180);
+      const phase = wrapped * Math.PI * 2 * SHOWCASE_PRESET.turns * yawSign;
       const viewportScale = Math.min(width / SHOWCASE_PRESET.layoutReferenceWidth, height / SHOWCASE_PRESET.layoutReferenceHeight);
       yaw = SHOWCASE_PRESET.startAngleDegrees * Math.PI / 180 + phase;
       pitch = (SHOWCASE_PRESET.elevationDegrees + Math.sin(phase) * SHOWCASE_PRESET.elevationSwayDegrees) * Math.PI / 180;
@@ -2426,7 +2464,6 @@
       document.getElementById("showcase-cosmos")?.setAttribute("aria-label", showcaseLabel);
       populateShowcaseStats();
       reducedMotionQuery.addEventListener("change", startShowcase);
-      configureShowcaseStage();
       resize();
       startShowcase();
     } else {
@@ -2434,6 +2471,7 @@
       canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class and module stars for Ruby code details, dependency systems, or gem package subclouds. Selections open a top-down view that keeps the selected target and Core visible. Double-click a dependency system or gem subcloud, press Enter or F on its selected marker, or tap that marker again to expand its stars. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, use arrow keys to move the view, Space to pause or resume drift, and 0 to reset.`);
       document.getElementById("coverage").textContent = `${renderedDependencyStars.toLocaleString()} dependency stars shown`;
       populateWarningDisclosure();
+      applyCameraTarget(DEFAULT_CAMERA);
       setDrifting(driftRequested);
       setNavigationMode(navigationMode);
       createExplorer();
