@@ -66,6 +66,8 @@ module RubyLens
         aggregation = Model::DependencyAggregation.new(package_count: manifest.packages.length)
 
         declarations.each do |declaration|
+          next unless model_eligible_declaration?(declaration)
+
           if namespace?(declaration)
             definitions = declaration.definitions.select do |definition|
               canonical_namespace_definition?(declaration, definition) && workspace_location?(definition.location, manifest)
@@ -315,6 +317,15 @@ module RubyLens
 
       def namespace?(declaration)
         declaration.is_a?(Rubydex::Namespace)
+      end
+
+      def model_eligible_declaration?(declaration)
+        name = declaration.name
+        return false if name.nil? || name.empty? || name.include?("<anonymous>")
+        return false if declaration.is_a?(Rubydex::Todo)
+        return true unless declaration.is_a?(Rubydex::SingletonClass)
+
+        !declaration.attached_class.is_a?(Rubydex::SingletonClass)
       end
 
       def canonical_namespace_definition?(declaration, definition)
