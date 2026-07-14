@@ -325,7 +325,8 @@ module RubyLens
         return false if declaration.is_a?(Rubydex::Todo)
         return true unless declaration.is_a?(Rubydex::SingletonClass)
 
-        !declaration.attached_class.is_a?(Rubydex::SingletonClass)
+        !declaration.attached_class.is_a?(Rubydex::SingletonClass) &&
+          !declaration.attached_class.is_a?(Rubydex::Todo)
       end
 
       def canonical_namespace_definition?(declaration, definition)

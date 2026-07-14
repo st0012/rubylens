@@ -51,6 +51,7 @@ class RubydexAdapterTest < Minitest::Test
         Class.new
         Module.new
         Missing::VALUE = 1
+        class << Missing; end
         class Missing::Nested; end
       RUBY
       system("git", "-C", directory, "init", "--quiet", exception: true)
@@ -63,12 +64,16 @@ class RubydexAdapterTest < Minitest::Test
       direct_singleton = declarations.find { |declaration| declaration.name == "Named::<Named>" }
       nested_singleton = declarations.find { |declaration| declaration.name == "Named::<Named>::<<Named>>" }
       todo = declarations.find { |declaration| declaration.is_a?(Rubydex::Todo) && declaration.name == "Missing" }
+      todo_singleton = declarations.find { |declaration| declaration.name == "Missing::<Missing>" }
+      todo_owned_constant = declarations.find { |declaration| declaration.name == "Missing::VALUE" }
       anonymous = declarations.select { |declaration| declaration.name.include?("<anonymous>") }
       adapter = RubyLens::Index::RubydexAdapter.new
 
       assert(adapter.send(:model_eligible_declaration?, direct_singleton))
       refute(adapter.send(:model_eligible_declaration?, nested_singleton))
       refute(adapter.send(:model_eligible_declaration?, todo))
+      refute(adapter.send(:model_eligible_declaration?, todo_singleton))
+      assert(adapter.send(:model_eligible_declaration?, todo_owned_constant))
       anonymous.each { |declaration| refute(adapter.send(:model_eligible_declaration?, declaration)) }
 
       snapshot = adapter.index(RubyLens::Index::Manifest.build(root: directory))
