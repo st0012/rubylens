@@ -130,6 +130,9 @@
       : [];
     const showcaseAnnotationKey = (category, anchor) => `${category}:${anchor}`;
     const showcaseAnnotationAnchors = new Set(showcaseAnnotationData.map(annotation => showcaseAnnotationKey(annotation.category, annotation.anchor)));
+    const showcasePinnedNamespaceAnchors = new Set(showcaseDetails && Array.isArray(model.pinnedNamespaceAnchors)
+      ? model.pinnedNamespaceAnchors
+      : []);
     const showcasePointsByAnchor = new Map();
 
     const hash = (seed, channel = 0) => {
@@ -296,7 +299,9 @@
         if (interactiveMode) Object.assign(point, { name, kind: row[2] === 0 ? "Class" : "Module", rubyCounts, instanceVariableCount: row[14] || 0, values });
         if (showcaseDetails) {
           const annotationKey = showcaseAnnotationKey(category, index);
-          if (showcaseAnnotationAnchors.has(annotationKey)) showcasePointsByAnchor.set(annotationKey, point);
+          if (showcaseAnnotationAnchors.has(annotationKey) || showcasePinnedNamespaceAnchors.has(index)) {
+            showcasePointsByAnchor.set(annotationKey, point);
+          }
         }
         addPoint(point, !name.startsWith(RSPEC_PROXY_PREFIX));
       });

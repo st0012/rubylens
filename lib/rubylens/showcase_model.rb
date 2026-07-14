@@ -34,6 +34,7 @@ module RubyLens
         "categoryStats" => CATEGORY_FIELDS.to_h do |category|
           [category, numeric_row(model.fetch("categoryStats").fetch(category), 4)]
         end,
+        "pinnedNamespaceAnchors" => pinned_namespace_anchors(model),
         "annotations" => annotation_projection(model),
       )
     end
@@ -74,6 +75,13 @@ module RubyLens
         break unless added
       end
       annotations
+    end
+
+    def pinned_namespace_anchors(model)
+      names = model.fetch("namespaceNames")
+      names.each_index.select do |index|
+        OMITTED_ANNOTATION_NAMES.include?(names.fetch(index))
+      end
     end
 
     def namespace_annotations(model, test:)

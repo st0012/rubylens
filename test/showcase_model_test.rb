@@ -82,6 +82,8 @@ class ShowcaseModelTest < Minitest::Test
     showcase = RubyLens::ShowcaseModel.new.call(model, details: true)
 
     assert_equal(4, showcase.fetch("namespaces").length)
+    assert_equal([0, 1, 2], showcase.fetch("pinnedNamespaceAnchors"))
+    assert(showcase.fetch("pinnedNamespaceAnchors").all? { |anchor| anchor.is_a?(Integer) })
     assert_equal(["Synthetic::Object"], showcase.fetch("annotations").map { |annotation| annotation.fetch("name") })
   end
 

@@ -209,6 +209,42 @@ class ShowcaseContractTest < Minitest::Test
     )
   end
 
+  def test_detailed_showcase_sampling_keeps_hidden_root_points_above_the_global_limit
+    runtime = File.read(RUNTIME_PATH)
+    hash_source = runtime.match(/^    const hash = .*?^    \};/m).to_s.strip
+    refute_empty(hash_source)
+
+    script = <<~JAVASCRIPT
+      const showcaseMode = true;
+      const showcaseDetails = true;
+      const SHOWCASE_POINT_LIMIT = 50_000;
+      #{hash_source}
+      const points = Array.from({ length: SHOWCASE_POINT_LIMIT + 1 }, (_, seed) => ({ category: "core", seed }));
+      const ranked = points.slice().sort((left, right) => hash(left.seed, 73) - hash(right.seed, 73) || left.seed - right.seed);
+      const roots = ranked.slice(-3);
+      const expectedEvicted = ranked.at(-4);
+      const showcasePointsByAnchor = new Map(roots.map((point, index) => [`core:${index}`, point]));
+      #{runtime_function("showcasePointSample")}
+      const sampled = showcasePointSample();
+      process.stdout.write(JSON.stringify({
+        count: sampled.length,
+        rootsRetained: roots.every(point => sampled.includes(point)),
+        expectedUnpinnedPointEvicted: !sampled.includes(expectedEvicted),
+      }));
+    JAVASCRIPT
+    output, error, status = Open3.capture3("node", "-e", script)
+    assert(status.success?, "Node failed: #{error}")
+
+    assert_equal(
+      {
+        "count" => 50_000,
+        "rootsRetained" => true,
+        "expectedUnpinnedPointEvicted" => true,
+      },
+      JSON.parse(output),
+    )
+  end
+
   def test_approved_annotation_timing_and_tracking_contract_is_exact
     assert_equal(APPROVED_ANNOTATION_PRESET, showcase_preset("SHOWCASE_ANNOTATION_PRESET"))
     assert_equal(APPROVED_ANNOTATION_PRESET.fetch("limit"), RubyLens::ShowcaseModel::ANNOTATION_LIMIT)
@@ -232,6 +268,8 @@ class ShowcaseContractTest < Minitest::Test
 
     assert_includes(runtime, "model.details === true")
     assert_includes(runtime, ".slice(0, SHOWCASE_ANNOTATION_PRESET.limit)")
+    assert_includes(runtime, "Array.isArray(model.pinnedNamespaceAnchors)")
+    assert_includes(runtime_function("buildPoints"), "showcasePinnedNamespaceAnchors.has(index)")
     assert_includes(runtime, "showcaseDetails ? Array.from(showcasePointsByAnchor.values()) : []")
     assert_includes(reduced_branch, "showcaseAnnotation.hidden = true")
     assert_includes(reduced_branch, "hideShowcaseAnnotation()")
