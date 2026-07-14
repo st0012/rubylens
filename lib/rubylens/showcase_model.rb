@@ -10,6 +10,7 @@ module RubyLens
     CATEGORY_FIELDS = %w[core tests].freeze
     ANNOTATION_LIMIT = 200
     ANNOTATION_CATEGORIES = %w[core dependencies tests].freeze
+    OMITTED_ANNOTATION_NAMES = %w[BasicObject Kernel Object].freeze
     RUBY_NAME_PATTERN = /\A\p{Lu}[\p{L}\p{N}_]*(?:::\p{Lu}[\p{L}\p{N}_]*)*\z/
     MAX_ANNOTATION_NAME_LENGTH = 160
     RSPEC_PROXY_PREFIX = "RSpec example group #"
@@ -33,6 +34,7 @@ module RubyLens
         "categoryStats" => CATEGORY_FIELDS.to_h do |category|
           [category, numeric_row(model.fetch("categoryStats").fetch(category), 4)]
         end,
+        "pinnedNamespaceAnchors" => pinned_namespace_anchors(model),
         "annotations" => annotation_projection(model),
       )
     end
@@ -75,12 +77,20 @@ module RubyLens
       annotations
     end
 
+    def pinned_namespace_anchors(model)
+      names = model.fetch("namespaceNames")
+      names.each_index.select do |index|
+        OMITTED_ANNOTATION_NAMES.include?(names.fetch(index))
+      end
+    end
+
     def namespace_annotations(model, test:)
       names = model.fetch("namespaceNames")
       rows = model.fetch("namespaces")
       names.each_with_index.filter_map do |name, index|
         row = rows.fetch(index)
         next unless (row.fetch(3) == 1) == test
+        next if OMITTED_ANNOTATION_NAMES.include?(name)
         next unless safe_ruby_name?(name)
 
         [row.slice(4, 6).sum, {

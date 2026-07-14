@@ -6,13 +6,13 @@ require_relative "test_helper"
 
 class ShowcaseContractTest < Minitest::Test
   RUNTIME_PATH = File.expand_path("../assets/runtime/report.js", __dir__)
+  STYLES_PATH = File.expand_path("../assets/styles/showcase.css", __dir__)
   APPROVED_PRESET = {
     "stageWidth" => 1920,
     "stageHeight" => 1080,
     "durationMs" => 60_000,
     "targetFps" => 60,
     "turns" => 1,
-    "direction" => "clockwise",
     "startAngleDegrees" => -54,
     "elevationDegrees" => -25,
     "elevationSwayDegrees" => 1.5,
@@ -42,6 +42,17 @@ class ShowcaseContractTest < Minitest::Test
     "safeInsetBottom" => 90,
     "labelWidth" => 440,
   }.freeze
+  APPROVED_WIDESCREEN_LAYOUT_PRESET = {
+    "minimumFittedWidth" => 1600,
+    "minimumAspectRatio" => 1.6,
+    "centerXPercent" => 49,
+    "centerYPercent" => 54,
+    "textScalePercent" => 44,
+    "layoutReferenceWidth" => 720,
+    "mastheadLeft" => 44,
+    "mastheadTop" => 17,
+    "mastheadWidth" => 420,
+  }.freeze
   APPROVED_DEPENDENCY_PRESET = {
     "starSizeScale" => 1.5,
     "starAlphaScale" => 1.2,
@@ -49,6 +60,25 @@ class ShowcaseContractTest < Minitest::Test
 
   def test_approved_showcase_preset_is_exact
     assert_equal(APPROVED_PRESET, showcase_preset)
+  end
+
+  def test_widescreen_layout_tightens_the_masthead_and_raises_the_scene
+    assert_equal(
+      APPROVED_WIDESCREEN_LAYOUT_PRESET,
+      showcase_preset("SHOWCASE_WIDESCREEN_LAYOUT_PRESET"),
+    )
+
+    layout_selection = runtime_function("selectShowcaseLayout")
+    assert_includes(layout_selection, "fittedWidth >= SHOWCASE_WIDESCREEN_LAYOUT_PRESET.minimumFittedWidth")
+    assert_includes(layout_selection, "aspectRatio >= SHOWCASE_WIDESCREEN_LAYOUT_PRESET.minimumAspectRatio")
+    assert_includes(layout_selection, 'dataset.showcaseLayout = widescreen ? "widescreen" : "default"')
+    assert_includes(runtime_function("configureShowcaseStage"), "activeShowcaseLayout = selectShowcaseLayout()")
+    assert_includes(runtime_function("resize"), "configureShowcaseStage()")
+    assert_includes(runtime_function("updateSceneViewport"), "activeShowcaseLayout.centerYPercent")
+
+    styles = File.read(STYLES_PATH)
+    assert_includes(styles, "font: 500 38.88px/1.05 ui-serif")
+    assert_includes(styles, 'html[data-showcase-layout="widescreen"] .cinema-stats')
   end
 
   def test_approved_camera_positions_complete_one_clockwise_turn_in_sixty_seconds
@@ -76,18 +106,44 @@ class ShowcaseContractTest < Minitest::Test
     assert_in_delta(305.9, last_frame_yaw, 1e-10)
   end
 
+  def test_showcase_clockwise_motion_is_the_shared_default_across_pitch_hemispheres
+    runtime = File.read(RUNTIME_PATH)
+    direction = runtime.match(/^    const DEFAULT_ROTATION_DIRECTION = .*?;$/).to_s.strip
+    refute_empty(direction)
+    assert_equal('const DEFAULT_ROTATION_DIRECTION = "clockwise";', direction)
+
+    script = <<~JAVASCRIPT
+      #{direction}
+      #{runtime_function("screenRotationYawSign")}
+      process.stdout.write(JSON.stringify({
+        showcase: screenRotationYawSign(-25 * Math.PI / 180),
+        explorer: screenRotationYawSign(.34),
+        horizon: screenRotationYawSign(0),
+      }));
+    JAVASCRIPT
+    output, error, status = Open3.capture3("node", "-e", script)
+    assert(status.success?, "Node failed: #{error}")
+    assert_equal(
+      { "showcase" => 1, "explorer" => -1, "horizon" => 1 },
+      JSON.parse(output),
+    )
+
+    showcase_camera = runtime_function("applyShowcaseCamera")
+    assert_includes(showcase_camera, "screenRotationYawSign(SHOWCASE_PRESET.elevationDegrees * Math.PI / 180)")
+    refute_includes(runtime, "SHOWCASE_PRESET.direction")
+  end
+
   def test_runtime_uses_the_preset_for_fixed_stage_motion_and_lighting
     runtime = File.read(RUNTIME_PATH)
 
     %w[
-      stageWidth stageHeight durationMs targetFps turns direction startAngleDegrees
+      stageWidth stageHeight durationMs targetFps turns startAngleDegrees
       elevationDegrees elevationSwayDegrees zoom zoomBreathPercent centerXPercent
       centerYPercent starBrightnessPercent pointGlowPercent backgroundGlowPercent
       textScalePercent
     ].each do |field|
       assert_includes(runtime, "SHOWCASE_PRESET.#{field}")
     end
-    assert_includes(runtime, 'SHOWCASE_PRESET.direction === "clockwise" ? 1 : -1')
     assert_includes(runtime, "requestAnimationFrame(renderShowcase)")
     assert_includes(runtime, "Math.min(window.innerWidth / SHOWCASE_PRESET.stageWidth, window.innerHeight / SHOWCASE_PRESET.stageHeight)")
     refute_includes(runtime, "showcaseSceneRadius")
@@ -153,6 +209,42 @@ class ShowcaseContractTest < Minitest::Test
     )
   end
 
+  def test_detailed_showcase_sampling_keeps_hidden_root_points_above_the_global_limit
+    runtime = File.read(RUNTIME_PATH)
+    hash_source = runtime.match(/^    const hash = .*?^    \};/m).to_s.strip
+    refute_empty(hash_source)
+
+    script = <<~JAVASCRIPT
+      const showcaseMode = true;
+      const showcaseDetails = true;
+      const SHOWCASE_POINT_LIMIT = 50_000;
+      #{hash_source}
+      const points = Array.from({ length: SHOWCASE_POINT_LIMIT + 1 }, (_, seed) => ({ category: "core", seed }));
+      const ranked = points.slice().sort((left, right) => hash(left.seed, 73) - hash(right.seed, 73) || left.seed - right.seed);
+      const roots = ranked.slice(-3);
+      const expectedEvicted = ranked.at(-4);
+      const showcasePointsByAnchor = new Map(roots.map((point, index) => [`core:${index}`, point]));
+      #{runtime_function("showcasePointSample")}
+      const sampled = showcasePointSample();
+      process.stdout.write(JSON.stringify({
+        count: sampled.length,
+        rootsRetained: roots.every(point => sampled.includes(point)),
+        expectedUnpinnedPointEvicted: !sampled.includes(expectedEvicted),
+      }));
+    JAVASCRIPT
+    output, error, status = Open3.capture3("node", "-e", script)
+    assert(status.success?, "Node failed: #{error}")
+
+    assert_equal(
+      {
+        "count" => 50_000,
+        "rootsRetained" => true,
+        "expectedUnpinnedPointEvicted" => true,
+      },
+      JSON.parse(output),
+    )
+  end
+
   def test_approved_annotation_timing_and_tracking_contract_is_exact
     assert_equal(APPROVED_ANNOTATION_PRESET, showcase_preset("SHOWCASE_ANNOTATION_PRESET"))
     assert_equal(APPROVED_ANNOTATION_PRESET.fetch("limit"), RubyLens::ShowcaseModel::ANNOTATION_LIMIT)
@@ -176,6 +268,8 @@ class ShowcaseContractTest < Minitest::Test
 
     assert_includes(runtime, "model.details === true")
     assert_includes(runtime, ".slice(0, SHOWCASE_ANNOTATION_PRESET.limit)")
+    assert_includes(runtime, "Array.isArray(model.pinnedNamespaceAnchors)")
+    assert_includes(runtime_function("buildPoints"), "showcasePinnedNamespaceAnchors.has(index)")
     assert_includes(runtime, "showcaseDetails ? Array.from(showcasePointsByAnchor.values()) : []")
     assert_includes(reduced_branch, "showcaseAnnotation.hidden = true")
     assert_includes(reduced_branch, "hideShowcaseAnnotation()")
