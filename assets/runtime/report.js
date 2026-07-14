@@ -4,7 +4,6 @@
     const showcaseDetails = showcaseMode && model.details === true;
     const interactiveMode = !showcaseMode;
     const canvas = document.getElementById("cosmos");
-    const context = canvas.getContext("2d", { alpha: false });
     const showcaseStage = document.getElementById("showcase-stage");
     const showcaseAnnotation = document.getElementById("cinema-annotation");
     const showcaseAnnotationKind = showcaseAnnotation?.querySelector(".cinema-annotation-kind");
@@ -258,6 +257,35 @@
       return point ? Object.freeze({ ...annotation, point }) : null;
     }).filter(Boolean);
 
+    function compileGlShader(gl, type, source) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        const message = gl.getShaderInfoLog(shader) || "Unknown WebGL shader error";
+        gl.deleteShader(shader);
+        throw new Error(message);
+      }
+      return shader;
+    }
+
+    function createGlProgram(gl, vertexSource, fragmentSource) {
+      const program = gl.createProgram();
+      const vertex = compileGlShader(gl, gl.VERTEX_SHADER, vertexSource);
+      const fragment = compileGlShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
+      gl.attachShader(program, vertex);
+      gl.attachShader(program, fragment);
+      gl.linkProgram(program);
+      gl.deleteShader(vertex);
+      gl.deleteShader(fragment);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        const message = gl.getProgramInfoLog(program) || "Unknown WebGL program error";
+        gl.deleteProgram(program);
+        throw new Error(message);
+      }
+      return program;
+    }
+
     function createShowcaseRenderer() {
       const liveCanvas = document.createElement("canvas");
       liveCanvas.id = "showcase-cosmos";
@@ -278,33 +306,7 @@
         return null;
       }
 
-      const compileShader = (type, source) => {
-        const shader = gl.createShader(type);
-        gl.shaderSource(shader, source);
-        gl.compileShader(shader);
-        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-          const message = gl.getShaderInfoLog(shader) || "Unknown WebGL shader error";
-          gl.deleteShader(shader);
-          throw new Error(message);
-        }
-        return shader;
-      };
-      const createProgram = (vertexSource, fragmentSource) => {
-        const program = gl.createProgram();
-        const vertex = compileShader(gl.VERTEX_SHADER, vertexSource);
-        const fragment = compileShader(gl.FRAGMENT_SHADER, fragmentSource);
-        gl.attachShader(program, vertex);
-        gl.attachShader(program, fragment);
-        gl.linkProgram(program);
-        gl.deleteShader(vertex);
-        gl.deleteShader(fragment);
-        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-          const message = gl.getProgramInfoLog(program) || "Unknown WebGL program error";
-          gl.deleteProgram(program);
-          throw new Error(message);
-        }
-        return program;
-      };
+      const createProgram = (vertexSource, fragmentSource) => createGlProgram(gl, vertexSource, fragmentSource);
 
       const backgroundProgram = createProgram(`#version 300 es
         precision highp float;
@@ -521,6 +523,285 @@
         document.documentElement.dataset.showcaseRendererError = error.message;
       }
     }
+
+    function createExplorerRenderer() {
+      const liveCanvas = document.createElement("canvas");
+      liveCanvas.id = "explorer-cosmos";
+      liveCanvas.setAttribute("aria-hidden", "true");
+      canvas.insertAdjacentElement("beforebegin", liveCanvas);
+      const gl = liveCanvas.getContext("webgl2", {
+        alpha: false,
+        antialias: true,
+        depth: false,
+        powerPreference: "high-performance",
+        preserveDrawingBuffer: false,
+      });
+      if (!gl) {
+        liveCanvas.remove();
+        document.documentElement.dataset.explorerRenderer = "canvas2d-fallback";
+        return null;
+      }
+      // Largest sprite is an unexpanded hub glow: radius 5.2 * 3.4 CSS pixels.
+      const maxSpriteCssSize = 5.2 * 3.4 * 2 + 2;
+      const pointSizeRange = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE);
+      if (pointSizeRange[1] < maxSpriteCssSize) {
+        liveCanvas.remove();
+        document.documentElement.dataset.explorerRenderer = "canvas2d-fallback";
+        return null;
+      }
+      let rendererDpr = 1;
+
+      const backgroundProgram = createGlProgram(gl, `#version 300 es
+        precision highp float;
+        const vec2 POSITIONS[3] = vec2[3](vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
+        void main() { gl_Position = vec4(POSITIONS[gl_VertexID], 0.0, 1.0); }
+      `, `#version 300 es
+        precision highp float;
+        uniform vec2 u_resolution;
+        uniform vec2 u_center;
+        out vec4 outColor;
+        void main() {
+          vec2 pixel = vec2(gl_FragCoord.x, u_resolution.y - gl_FragCoord.y);
+          float radius = max(u_resolution.x, u_resolution.y) * 0.72;
+          float distanceMix = clamp(distance(pixel, u_center) / radius, 0.0, 1.0);
+          vec3 base = vec3(3.0, 4.0, 10.0) / 255.0;
+          vec3 source = mix(vec3(30.0, 16.0, 45.0) / 255.0, vec3(0.0), distanceMix);
+          float alpha = mix(0.18, 0.6, distanceMix);
+          outColor = vec4(mix(base, source, alpha), 1.0);
+        }
+      `);
+
+      const pointProgram = createGlProgram(gl, `#version 300 es
+        precision highp float;
+        layout(location = 0) in vec3 a_position;
+        layout(location = 1) in float a_sizeFactor;
+        layout(location = 2) in float a_alpha;
+        layout(location = 3) in float a_category;
+        layout(location = 4) in float a_maxSize;
+        layout(location = 5) in float a_packageIndex;
+        uniform vec2 u_resolution;
+        uniform vec2 u_center;
+        uniform vec2 u_sceneBounds;
+        uniform float u_yaw;
+        uniform float u_pitch;
+        uniform float u_zoom;
+        uniform float u_cameraDistance;
+        uniform float u_cameraFocalLength;
+        uniform float u_exposure;
+        uniform float u_deepDetail;
+        uniform float u_dpr;
+        uniform vec3 u_categoryVisible;
+        uniform vec3 u_categoryEmphasis;
+        uniform float u_expandedPackage;
+        uniform vec3 u_expandedAnchor;
+        uniform float u_expansion;
+        uniform int u_selectedIndex;
+        uniform int u_pass;
+        out vec3 v_colour;
+        out float v_alpha;
+        out float v_radius;
+
+        void hidePoint() {
+          gl_Position = vec4(2.0, 2.0, 0.0, 1.0);
+          gl_PointSize = 1.0;
+          v_colour = vec3(0.0);
+          v_alpha = 0.0;
+          v_radius = 0.5;
+        }
+
+        void main() {
+          int category = int(a_category + 0.5);
+          if (u_categoryVisible[category] < 0.5) { hidePoint(); return; }
+          vec3 position = a_position;
+          bool expandedPoint = u_expandedPackage >= 0.0 && a_packageIndex == u_expandedPackage;
+          if (expandedPoint) position = u_expandedAnchor + (position - u_expandedAnchor) * u_expansion;
+          float cy = cos(u_yaw);
+          float sy = sin(u_yaw);
+          float cp = cos(u_pitch);
+          float sp = sin(u_pitch);
+          float x1 = position.x * cy - position.z * sy;
+          float z1 = position.x * sy + position.z * cy;
+          float y2 = position.y * cp - z1 * sp;
+          float z2 = position.y * sp + z1 * cp;
+          float depth = u_cameraDistance - z2;
+          if (depth <= 35.0) { hidePoint(); return; }
+
+          float perspective = u_cameraFocalLength / depth * u_zoom;
+          vec2 screen = u_center + vec2(x1, y2) * perspective;
+          bool selected = gl_VertexID == u_selectedIndex;
+          float margin = selected ? 0.0 : 20.0;
+          if (screen.x < -margin || screen.x > u_sceneBounds.x + margin || screen.y < -margin || screen.y > u_sceneBounds.y + margin) {
+            hidePoint();
+            return;
+          }
+
+          float size = clamp(a_sizeFactor * perspective, 0.35, a_maxSize);
+          bool focusedPackagePoint = expandedPoint && category == 2;
+          float emphasis = focusedPackagePoint || selected ? 1.0 : u_categoryEmphasis[category];
+          float visibleAlpha = (focusedPackagePoint ? max(0.34, a_alpha) : a_alpha * emphasis) * u_exposure;
+          bool detailed = emphasis >= 0.1;
+          float radius = size;
+          float alpha = visibleAlpha;
+          vec3 colour = a_category < 0.5
+            ? vec3(244.0, 82.0, 132.0) / 255.0
+            : (a_category < 1.5 ? vec3(87.0, 204.0, 255.0) / 255.0 : vec3(255.0, 184.0, 77.0) / 255.0);
+
+          if (u_pass == 0) {
+            if (size <= 1.35 || !detailed) { hidePoint(); return; }
+            float glowScale = focusedPackagePoint ? 2.2 - u_deepDetail * 0.8 : 3.4 - u_deepDetail * 1.3;
+            radius = size * glowScale;
+            alpha = visibleAlpha * (focusedPackagePoint ? 0.045 : 0.055);
+          } else if (u_pass == 1) {
+            radius = (!detailed || size < 0.85) ? 0.5 : size;
+          } else {
+            if (size <= 1.1 || !detailed) { hidePoint(); return; }
+            radius = max(0.45 + u_deepDetail * 0.25, size * (0.24 + u_deepDetail * 0.06));
+            alpha = min(0.9, visibleAlpha * 1.25);
+            colour = vec3(255.0, 248.0, 244.0) / 255.0;
+          }
+
+          gl_Position = vec4(screen.x / u_resolution.x * 2.0 - 1.0, 1.0 - screen.y / u_resolution.y * 2.0, 0.0, 1.0);
+          gl_PointSize = max(1.0, radius * 2.0) * u_dpr;
+          v_colour = colour;
+          v_alpha = alpha;
+          v_radius = radius * u_dpr;
+        }
+      `, `#version 300 es
+        precision highp float;
+        in vec3 v_colour;
+        in float v_alpha;
+        in float v_radius;
+        out vec4 outColor;
+        void main() {
+          if (v_alpha <= 0.0) discard;
+          float radial = length(gl_PointCoord - vec2(0.5)) * 2.0;
+          float feather = min(1.0, 1.0 / max(v_radius, 1.0));
+          float coverage = 1.0 - smoothstep(1.0 - feather, 1.0, radial);
+          if (coverage <= 0.0) discard;
+          float contribution = v_alpha * coverage;
+          outColor = vec4(v_colour * contribution, contribution);
+        }
+      `);
+
+      const pointData = new Float32Array(renderPoints.length * 8);
+      const categoryIndex = { core: 0, tests: 1, dependencies: 2 };
+      renderPoints.forEach((point, index) => {
+        const offset = index * 8;
+        point.renderIndex = index;
+        pointData[offset] = point.position[0];
+        pointData[offset + 1] = point.position[1];
+        pointData[offset + 2] = point.position[2];
+        pointData[offset + 3] = point.sizeFactor;
+        pointData[offset + 4] = point.alphaBase;
+        pointData[offset + 5] = categoryIndex[point.category];
+        pointData[offset + 6] = point.maxSize;
+        pointData[offset + 7] = point.packageIndex ?? -1;
+      });
+
+      const pointVao = gl.createVertexArray();
+      const pointBuffer = gl.createBuffer();
+      gl.bindVertexArray(pointVao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, pointBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, pointData, gl.STATIC_DRAW);
+      const stride = 8 * Float32Array.BYTES_PER_ELEMENT;
+      [[0, 3, 0], [1, 1, 3], [2, 1, 4], [3, 1, 5], [4, 1, 6], [5, 1, 7]].forEach(([location, size, offset]) => {
+        gl.enableVertexAttribArray(location);
+        gl.vertexAttribPointer(location, size, gl.FLOAT, false, stride, offset * Float32Array.BYTES_PER_ELEMENT);
+      });
+      gl.bindVertexArray(null);
+
+      const backgroundUniforms = {
+        resolution: gl.getUniformLocation(backgroundProgram, "u_resolution"),
+        center: gl.getUniformLocation(backgroundProgram, "u_center"),
+      };
+      const pointUniforms = Object.fromEntries([
+        "u_resolution", "u_center", "u_sceneBounds", "u_yaw", "u_pitch", "u_zoom",
+        "u_cameraDistance", "u_cameraFocalLength", "u_exposure", "u_deepDetail", "u_dpr",
+        "u_categoryVisible", "u_categoryEmphasis", "u_expandedPackage", "u_expandedAnchor",
+        "u_expansion", "u_selectedIndex", "u_pass",
+      ].map(name => [name.slice(2), gl.getUniformLocation(pointProgram, name)]));
+
+      const categoryEmphasisVector = () => {
+        if (expandedPackageIndex !== null) return [contextVisibility.package, contextVisibility.package, contextVisibility.package];
+        if (selectionLocked && selectedPoint) return [contextVisibility.selection, contextVisibility.selection, contextVisibility.selection];
+        if (focusedCategory) {
+          return ["core", "tests", "dependencies"].map(category => (category === focusedCategory ? 1 : contextVisibility.category));
+        }
+        return [1, 1, 1];
+      };
+
+      liveCanvas.addEventListener("webglcontextlost", () => {
+        explorerRenderer = null;
+        liveCanvas.remove();
+        document.documentElement.dataset.explorerRenderer = "canvas2d-fallback";
+        requestRender();
+      });
+
+      document.documentElement.dataset.explorerRenderer = "webgl2";
+      return Object.freeze({
+        resize() {
+          rendererDpr = Math.min(dpr, pointSizeRange[1] / maxSpriteCssSize);
+          liveCanvas.width = Math.round(width * rendererDpr);
+          liveCanvas.height = Math.round(height * rendererDpr);
+          gl.viewport(0, 0, liveCanvas.width, liveCanvas.height);
+        },
+        render() {
+          const deepDetail = clamp(Math.log2(Math.max(1, zoom)) / 5, 0, 1);
+          const centerX = sceneCenterX + panX;
+          const centerY = sceneCenterY + panY;
+          gl.disable(gl.BLEND);
+          gl.useProgram(backgroundProgram);
+          gl.bindVertexArray(null);
+          gl.uniform2f(backgroundUniforms.resolution, liveCanvas.width, liveCanvas.height);
+          gl.uniform2f(backgroundUniforms.center, centerX * rendererDpr, centerY * rendererDpr);
+          gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+          gl.enable(gl.BLEND);
+          gl.blendEquation(gl.FUNC_ADD);
+          gl.blendFunc(gl.ONE, gl.ONE);
+          gl.useProgram(pointProgram);
+          gl.bindVertexArray(pointVao);
+          gl.uniform2f(pointUniforms.resolution, width, height);
+          gl.uniform2f(pointUniforms.center, centerX, centerY);
+          gl.uniform2f(pointUniforms.sceneBounds, sceneRight, sceneBottom);
+          gl.uniform1f(pointUniforms.yaw, yaw);
+          gl.uniform1f(pointUniforms.pitch, pitch);
+          gl.uniform1f(pointUniforms.zoom, zoom);
+          gl.uniform1f(pointUniforms.cameraDistance, cameraDistance);
+          gl.uniform1f(pointUniforms.cameraFocalLength, cameraFocalLength);
+          gl.uniform1f(pointUniforms.exposure, explorerExposureForZoom(zoom));
+          gl.uniform1f(pointUniforms.deepDetail, deepDetail);
+          gl.uniform1f(pointUniforms.dpr, rendererDpr);
+          gl.uniform3f(pointUniforms.categoryVisible, visibleCategories.core ? 1 : 0, visibleCategories.tests ? 1 : 0, visibleCategories.dependencies ? 1 : 0);
+          const emphasis = categoryEmphasisVector();
+          gl.uniform3f(pointUniforms.categoryEmphasis, emphasis[0], emphasis[1], emphasis[2]);
+          const anchor = expandedPackageIndex === null ? null : packageAnchors[expandedPackageIndex];
+          gl.uniform1f(pointUniforms.expandedPackage, expandedPackageIndex === null ? -1 : expandedPackageIndex);
+          gl.uniform3f(pointUniforms.expandedAnchor, anchor ? anchor[0] : 0, anchor ? anchor[1] : 0, anchor ? anchor[2] : 0);
+          gl.uniform1f(pointUniforms.expansion, DEPENDENCY_EXPANSION);
+          gl.uniform1i(pointUniforms.selectedIndex, selectedPoint ? selectedPoint.renderIndex : -1);
+          for (let pass = 0; pass < 3; pass += 1) {
+            gl.uniform1i(pointUniforms.pass, pass);
+            gl.drawArrays(gl.POINTS, 0, renderPoints.length);
+          }
+          gl.bindVertexArray(null);
+          gl.disable(gl.BLEND);
+        },
+      });
+    }
+
+    let explorerRenderer = null;
+    if (interactiveMode) {
+      try {
+        explorerRenderer = createExplorerRenderer();
+      } catch (error) {
+        document.getElementById("explorer-cosmos")?.remove();
+        explorerRenderer = null;
+        document.documentElement.dataset.explorerRenderer = "canvas2d-fallback";
+        document.documentElement.dataset.explorerRendererError = error.message;
+      }
+    }
+    const context = canvas.getContext("2d", { alpha: Boolean(explorerRenderer) });
     const totals = model.totals || {
       namespaces: model.namespaces.length,
       packages: model.packages.length,
@@ -731,20 +1012,115 @@
       requestRender();
     }
 
+    function viewMatrix() {
+      return [Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch)];
+    }
+
+    function screenDataFor(point, matrix, cullMargin) {
+      point.screen = null;
+      if (point.hub) point.cloudScreenRadius = null;
+      if (!visibleCategories[point.category]) return null;
+      const projected = project(point, matrix, projectionScratch);
+      if (!projected) return null;
+      const x = projected[0], y = projected[1], perspective = projected[2];
+      if (x < -cullMargin || x > sceneRight + cullMargin || y < -cullMargin || y > sceneBottom + cullMargin) return null;
+      const screen = point.screenData || (point.screenData = [0, 0, 0]);
+      screen[0] = x;
+      screen[1] = y;
+      screen[2] = clamp(point.sizeFactor * perspective, .35, point.maxSize);
+      point.screen = screen;
+      if (point.hub) {
+        const expansion = expandedPackageIndex === point.packageIndex ? DEPENDENCY_EXPANSION : 1;
+        point.cloudScreenRadius = Math.max(12, packageAnchors[point.packageIndex][3] * perspective * expansion * 1.2);
+      }
+      return screen;
+    }
+
+    let hitScanRows = null;
+    const HIT_SCAN_STRIDE = 7;
+    const categoryCodes = { core: 0, tests: 1, dependencies: 2 };
+
+    function ensureHitScanRows() {
+      if (hitScanRows) return hitScanRows;
+      hitScanRows = new Float32Array(interactivePoints.length * HIT_SCAN_STRIDE);
+      interactivePoints.forEach((point, index) => {
+        const offset = index * HIT_SCAN_STRIDE;
+        hitScanRows[offset] = point.position[0];
+        hitScanRows[offset + 1] = point.position[1];
+        hitScanRows[offset + 2] = point.position[2];
+        hitScanRows[offset + 3] = point.sizeFactor;
+        hitScanRows[offset + 4] = point.maxSize;
+        hitScanRows[offset + 5] = categoryCodes[point.category];
+        hitScanRows[offset + 6] = point.packageIndex ?? -1;
+      });
+      return hitScanRows;
+    }
+
+    function hitTestProjected(x, y) {
+      const rows = ensureHitScanRows();
+      const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+      const centerX = sceneCenterX + panX;
+      const centerY = sceneCenterY + panY;
+      const rightBound = sceneRight + 20;
+      const bottomBound = sceneBottom + 20;
+      const visible = [visibleCategories.core ? 1 : 0, visibleCategories.tests ? 1 : 0, visibleCategories.dependencies ? 1 : 0];
+      const focusCode = focusedCategory === null ? -1 : categoryCodes[focusedCategory];
+      const expanded = expandedPackageIndex === null ? -1 : expandedPackageIndex;
+      const anchor = expanded >= 0 ? packageAnchors[expanded] : null;
+      let bestIndex = -1;
+      let bestDistanceSq = Infinity;
+      for (let index = 0, offset = 0; offset < rows.length; index += 1, offset += HIT_SCAN_STRIDE) {
+        const category = rows[offset + 5];
+        if (visible[category] === 0) continue;
+        if (focusCode >= 0 && category !== focusCode) continue;
+        const packageIndex = rows[offset + 6];
+        if (expanded >= 0 && (category !== 2 || packageIndex !== expanded)) continue;
+        let px = rows[offset], py = rows[offset + 1], pz = rows[offset + 2];
+        if (expanded >= 0 && packageIndex === expanded) {
+          px = anchor[0] + (px - anchor[0]) * DEPENDENCY_EXPANSION;
+          py = anchor[1] + (py - anchor[1]) * DEPENDENCY_EXPANSION;
+          pz = anchor[2] + (pz - anchor[2]) * DEPENDENCY_EXPANSION;
+        }
+        const x1 = px * cy - pz * sy;
+        const z1 = px * sy + pz * cy;
+        const y2 = py * cp - z1 * sp;
+        const z2 = py * sp + z1 * cp;
+        const pointDepth = cameraDistance - z2;
+        if (pointDepth <= 35) continue;
+        const perspective = cameraFocalLength / pointDepth * zoom;
+        const screenX = centerX + x1 * perspective;
+        const screenY = centerY + y2 * perspective;
+        if (screenX < -20 || screenX > rightBound || screenY < -20 || screenY > bottomBound) continue;
+        const dx = screenX - x;
+        const dy = screenY - y;
+        const distanceSq = dx * dx + dy * dy;
+        if (distanceSq >= bestDistanceSq) continue;
+        const size = Math.min(Math.max(rows[offset + 3] * perspective, .35), rows[offset + 4]);
+        const radius = Math.max(8, size + 4);
+        if (distanceSq <= radius * radius) {
+          bestIndex = index;
+          bestDistanceSq = distanceSq;
+        }
+      }
+      return bestIndex >= 0 ? interactivePoints[bestIndex] : null;
+    }
+
     function hitTest(x, y) {
+      if (explorerRenderer) return hitTestProjected(x, y);
       let nearest = null;
-      let nearestDistance = Infinity;
+      let nearestDistanceSq = Infinity;
       for (const point of interactivePoints) {
-        if (!point.screen) continue;
+        const screen = point.screen;
+        if (!screen) continue;
         if (focusedCategory && point.category !== focusedCategory) continue;
         if (expandedPackageIndex !== null && (point.category !== "dependencies" || point.packageIndex !== expandedPackageIndex)) continue;
-        const dx = point.screen[0] - x;
-        const dy = point.screen[1] - y;
-        const distance = Math.hypot(dx, dy);
-        const radius = Math.max(8, point.screen[2] + 4);
-        if (distance <= radius && distance < nearestDistance) {
+        const dx = screen[0] - x;
+        const dy = screen[1] - y;
+        const radius = Math.max(8, screen[2] + 4);
+        const distanceSq = dx * dx + dy * dy;
+        if (distanceSq <= radius * radius && distanceSq < nearestDistanceSq) {
           nearest = point;
-          nearestDistance = distance;
+          nearestDistanceSq = distanceSq;
         }
       }
       return nearest;
@@ -755,7 +1131,9 @@
 
       let nearestHub = null;
       let nearestRatio = Infinity;
+      const matrix = explorerRenderer ? viewMatrix() : null;
       for (const point of dependencyHubs) {
+        if (matrix) screenDataFor(point, matrix, 20);
         if (!point.screen || !point.cloudScreenRadius) continue;
         if (expandedPackageIndex !== null && point.packageIndex !== expandedPackageIndex) continue;
         const distance = Math.hypot(point.screen[0] - x, point.screen[1] - y);
@@ -1283,6 +1661,7 @@
       width = window.innerWidth; height = window.innerHeight;
       canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (explorerRenderer) explorerRenderer.resize();
       updateSceneViewport();
       requestRender();
     }
@@ -1401,6 +1780,23 @@
       return vignetteGradient;
     }
 
+    function updateExplorerOverlay() {
+      context.clearRect(0, 0, width, height);
+      if (!selectedPoint) return;
+      const screen = screenDataFor(selectedPoint, viewMatrix(), 0);
+      if (!screen) return;
+      const [x, y, size] = screen;
+      context.globalCompositeOperation = "lighter";
+      context.globalAlpha = 1;
+      context.beginPath(); context.arc(x, y, Math.max(7, size * 2.5), 0, Math.PI * 2);
+      context.strokeStyle = "rgba(255,255,255,.95)"; context.lineWidth = 1.2; context.stroke();
+      context.globalAlpha = .5;
+      context.beginPath(); context.arc(x, y, Math.max(12, size * 4), 0, Math.PI * 2);
+      context.strokeStyle = colourStyles[selectedPoint.category]; context.lineWidth = 1; context.stroke();
+      context.globalAlpha = 1;
+      context.globalCompositeOperation = "source-over";
+    }
+
     function renderShowcaseFallback() {
       context.globalCompositeOperation = "source-over";
       context.fillStyle = "#03040a";
@@ -1454,67 +1850,72 @@
         return;
       }
       if (interactiveMode) updateZoomReadout();
-      context.globalCompositeOperation = "source-over";
-      context.globalAlpha = 1;
-      context.fillStyle = "#03040a";
-      context.fillRect(0, 0, width, height);
-      context.fillStyle = explorerVignette();
-      context.fillRect(0, 0, width, height);
-      context.globalCompositeOperation = "lighter";
-      const matrix = [Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch)];
-      const deepDetail = clamp(Math.log2(Math.max(1, zoom)) / 5, 0, 1);
-      const exposure = explorerExposureForZoom(zoom);
-      for (const point of renderPoints) {
-        point.screen = null;
-        if (point.hub) point.cloudScreenRadius = null;
-        if (!visibleCategories[point.category]) continue;
-        const projected = project(point, matrix, projectionScratch);
-        if (!projected) continue;
-        const [x, y, perspective] = projected;
-        const cullMargin = point === selectedPoint ? 0 : 20;
-        if (x < -cullMargin || x > sceneRight + cullMargin || y < -cullMargin || y > sceneBottom + cullMargin) continue;
-        const size = clamp(point.sizeFactor * perspective, .35, point.maxSize);
-        const alpha = point.alphaBase;
-        const focusedPackagePoint = expandedPackageIndex !== null && point.category === "dependencies" && point.packageIndex === expandedPackageIndex;
-        const emphasis = expandedPackageIndex !== null
-          ? (focusedPackagePoint ? 1 : contextVisibility.package)
-          : selectionLocked && selectedPoint ? (point === selectedPoint ? 1 : contextVisibility.selection) : focusedCategory && point.category !== focusedCategory ? contextVisibility.category : 1;
-        const visibleAlpha = (focusedPackagePoint ? Math.max(.34, alpha) : alpha * emphasis) * exposure;
-        const colour = colourStyles[point.category];
-        const screen = point.screenData || (point.screenData = [0, 0, 0]);
-        screen[0] = x; screen[1] = y; screen[2] = size;
-        point.screen = screen;
-        if (point.hub) {
-          const expansion = expandedPackageIndex === point.packageIndex ? DEPENDENCY_EXPANSION : 1;
-          point.cloudScreenRadius = Math.max(12, packageAnchors[point.packageIndex][3] * perspective * expansion * 1.2);
-        }
-        const detailedPoint = emphasis >= .1;
-        if (size > 1.35 && detailedPoint) {
-          const glowScale = focusedPackagePoint ? 2.2 - deepDetail * .8 : 3.4 - deepDetail * 1.3;
-          context.globalAlpha = visibleAlpha * (focusedPackagePoint ? .045 : .055);
+      if (explorerRenderer) {
+        explorerRenderer.render();
+        updateExplorerOverlay();
+      } else {
+        context.globalCompositeOperation = "source-over";
+        context.globalAlpha = 1;
+        context.fillStyle = "#03040a";
+        context.fillRect(0, 0, width, height);
+        context.fillStyle = explorerVignette();
+        context.fillRect(0, 0, width, height);
+        context.globalCompositeOperation = "lighter";
+        const matrix = viewMatrix();
+        const deepDetail = clamp(Math.log2(Math.max(1, zoom)) / 5, 0, 1);
+        const exposure = explorerExposureForZoom(zoom);
+        for (const point of renderPoints) {
+          point.screen = null;
+          if (point.hub) point.cloudScreenRadius = null;
+          if (!visibleCategories[point.category]) continue;
+          const projected = project(point, matrix, projectionScratch);
+          if (!projected) continue;
+          const [x, y, perspective] = projected;
+          const cullMargin = point === selectedPoint ? 0 : 20;
+          if (x < -cullMargin || x > sceneRight + cullMargin || y < -cullMargin || y > sceneBottom + cullMargin) continue;
+          const size = clamp(point.sizeFactor * perspective, .35, point.maxSize);
+          const alpha = point.alphaBase;
+          const focusedPackagePoint = expandedPackageIndex !== null && point.category === "dependencies" && point.packageIndex === expandedPackageIndex;
+          const emphasis = expandedPackageIndex !== null
+            ? (focusedPackagePoint ? 1 : contextVisibility.package)
+            : selectionLocked && selectedPoint ? (point === selectedPoint ? 1 : contextVisibility.selection) : focusedCategory && point.category !== focusedCategory ? contextVisibility.category : 1;
+          const visibleAlpha = (focusedPackagePoint ? Math.max(.34, alpha) : alpha * emphasis) * exposure;
+          const colour = colourStyles[point.category];
+          const screen = point.screenData || (point.screenData = [0, 0, 0]);
+          screen[0] = x; screen[1] = y; screen[2] = size;
+          point.screen = screen;
+          if (point.hub) {
+            const expansion = expandedPackageIndex === point.packageIndex ? DEPENDENCY_EXPANSION : 1;
+            point.cloudScreenRadius = Math.max(12, packageAnchors[point.packageIndex][3] * perspective * expansion * 1.2);
+          }
+          const detailedPoint = emphasis >= .1;
+          if (size > 1.35 && detailedPoint) {
+            const glowScale = focusedPackagePoint ? 2.2 - deepDetail * .8 : 3.4 - deepDetail * 1.3;
+            context.globalAlpha = visibleAlpha * (focusedPackagePoint ? .045 : .055);
+            context.fillStyle = colour;
+            context.beginPath(); context.arc(x, y, size * glowScale, 0, Math.PI * 2); context.fill();
+          }
+          context.globalAlpha = visibleAlpha;
           context.fillStyle = colour;
-          context.beginPath(); context.arc(x, y, size * glowScale, 0, Math.PI * 2); context.fill();
+          if (!detailedPoint || size < .85) context.fillRect(x, y, 1, 1);
+          else { context.beginPath(); context.arc(x, y, size, 0, Math.PI * 2); context.fill(); }
+          if (size > 1.1 && detailedPoint) {
+            context.globalAlpha = Math.min(.9, visibleAlpha * 1.25);
+            context.fillStyle = "#fff8f4";
+            context.beginPath(); context.arc(x, y, Math.max(.45 + deepDetail * .25, size * (.24 + deepDetail * .06)), 0, Math.PI * 2); context.fill();
+          }
+          if (point === selectedPoint) {
+            context.globalAlpha = 1;
+            context.beginPath(); context.arc(x, y, Math.max(7, size * 2.5), 0, Math.PI * 2);
+            context.strokeStyle = "rgba(255,255,255,.95)"; context.lineWidth = 1.2; context.stroke();
+            context.globalAlpha = .5;
+            context.beginPath(); context.arc(x, y, Math.max(12, size * 4), 0, Math.PI * 2);
+            context.strokeStyle = colour; context.lineWidth = 1; context.stroke();
+          }
         }
-        context.globalAlpha = visibleAlpha;
-        context.fillStyle = colour;
-        if (!detailedPoint || size < .85) context.fillRect(x, y, 1, 1);
-        else { context.beginPath(); context.arc(x, y, size, 0, Math.PI * 2); context.fill(); }
-        if (size > 1.1 && detailedPoint) {
-          context.globalAlpha = Math.min(.9, visibleAlpha * 1.25);
-          context.fillStyle = "#fff8f4";
-          context.beginPath(); context.arc(x, y, Math.max(.45 + deepDetail * .25, size * (.24 + deepDetail * .06)), 0, Math.PI * 2); context.fill();
-        }
-        if (point === selectedPoint) {
-          context.globalAlpha = 1;
-          context.beginPath(); context.arc(x, y, Math.max(7, size * 2.5), 0, Math.PI * 2);
-          context.strokeStyle = "rgba(255,255,255,.95)"; context.lineWidth = 1.2; context.stroke();
-          context.globalAlpha = .5;
-          context.beginPath(); context.arc(x, y, Math.max(12, size * 4), 0, Math.PI * 2);
-          context.strokeStyle = colour; context.lineWidth = 1; context.stroke();
-        }
+        context.globalAlpha = 1;
+        context.globalCompositeOperation = "source-over";
       }
-      context.globalAlpha = 1;
-      context.globalCompositeOperation = "source-over";
       if (selectedPoint) {
         if (cameraFlight) tooltip.hidden = true;
         else positionTooltip(selectedPoint);
