@@ -25,6 +25,10 @@ const NAMESPACES = Number(process.env.NAMESPACES || 100_000);
 const TEST_RATIO = Number(process.env.TEST_RATIO || 0.15);
 const PACKAGES = Number(process.env.PACKAGES || 400);
 const DEPENDENCY_STARS = Number(process.env.DEPENDENCY_STARS || 18_000);
+// Multi-gem Git dependency systems (rubylens.art.v8): each groups three
+// consecutive packages. Default 0 keeps published benchmark numbers stable.
+const DEPENDENCY_SYSTEMS = Number(process.env.DEPENDENCY_SYSTEMS || 0);
+const SYSTEM_SPAN = 3;
 const WARMUP_FRAMES = Number(process.env.WARMUP_FRAMES || 20);
 const MEASURE_FRAMES = Number(process.env.MEASURE_FRAMES || 100);
 const MEASURE_MS = Number(process.env.MEASURE_MS || 10_000);
@@ -78,10 +82,13 @@ function buildModel() {
   const packageNames = [];
   const packages = [];
   const packageWeights = [];
+  const dependencySystems = [];
+  for (let index = 0; index < DEPENDENCY_SYSTEMS; index += 1) dependencySystems.push([randomSeed(), index * SYSTEM_SPAN]);
   for (let index = 0; index < PACKAGES; index += 1) {
     const weight = Math.pow(random(), 4) + 0.02;
     packageWeights.push(weight);
     packageNames.push(`gem-${String(index).padStart(4, "0")}`);
+    const systemIndex = index < DEPENDENCY_SYSTEMS * SYSTEM_SPAN ? Math.floor(index / SYSTEM_SPAN) : -1;
     packages.push([
       randomSeed(),
       index % 7 === 0 ? 0 : 1,
@@ -91,6 +98,7 @@ function buildModel() {
       1 + heavyTail(120, 3),
       20 + heavyTail(4_000, 3),
       heavyTail(600, 3),
+      systemIndex,
     ]);
   }
   const totalWeight = packageWeights.reduce((sum, weight) => sum + weight, 0);
@@ -120,7 +128,7 @@ function buildModel() {
   }));
 
   return {
-    schema: "rubylens.art.v7",
+    schema: "rubylens.art.v8",
     projectName: "Synthetic Metropolis",
     totals: {
       namespaces: namespaces.length,
@@ -135,6 +143,7 @@ function buildModel() {
     namespaces,
     packageNames,
     packages,
+    dependencySystems,
     dependencyStars,
     dependencyWarnings: [],
     warningCounts: { manifest: 0, index: 0, integrity: 0 },

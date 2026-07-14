@@ -36,7 +36,7 @@ module RubyLens
         category_stats.fetch("tests")[2] += rspec.method_count
 
         {
-          "schema" => "rubylens.snapshot.v5",
+          "schema" => "rubylens.snapshot.v6",
           "project_name" => project_name(manifest),
           "components" => workspace.fetch(:component_counts),
           "namespace_names" => workspace.fetch(:namespace_names),
@@ -44,6 +44,7 @@ module RubyLens
           "category_stats" => category_stats,
           "dependency_signal_maxima" => collected.fetch(:dependency_aggregation).signal_maxima,
           "packages" => build_package_rows(collected.fetch(:dependency_aggregation), manifest),
+          "dependency_systems" => build_dependency_system_rows(manifest),
           "dependency_warnings" => manifest.respond_to?(:dependency_warnings) ? manifest.dependency_warnings : [],
           "warning_counts" => {
             "manifest" => manifest.warnings.length,
@@ -139,6 +140,18 @@ module RubyLens
             "declaration_count" => aggregate.fetch(:declaration_count),
             "ruby_counts" => aggregate.fetch(:ruby_counts),
             "declarations" => aggregate.fetch(:declarations),
+          }
+        end
+      end
+
+      def build_dependency_system_rows(manifest)
+        return [] unless manifest.respond_to?(:dependency_systems)
+
+        manifest.dependency_systems.map do |system|
+          {
+            "id" => system.id,
+            "package_indexes" => system.package_indexes,
+            "label_package_index" => system.label_package_index,
           }
         end
       end

@@ -94,12 +94,42 @@ class ExplorerRuntimeTest < Minitest::Test
     assert_includes(RUNTIME, "searchVisibleCount + SEARCH_BATCH_SIZE")
     assert_includes(RUNTIME, "renderSearchResults(firstNewResult)")
     assert_includes(RUNTIME, 'querySelectorAll(".search-result")[focusIndex]?.focus()')
-    assert_includes(RUNTIME, "if (point.hub) focusDependencyPackage(point.packageIndex)")
+    assert_includes(RUNTIME, "if (point.systemHub && !point.packageHub) focusDependencySystem(point.systemIndex)")
+    assert_includes(RUNTIME, "else if (point.packageHub) focusDependencyPackage(point.packageIndex)")
     assert_includes(RUNTIME, "else focusPoint(point)")
     assert_includes(RUNTIME, 'event.stopPropagation()')
     assert_includes(RUNTIME, 'clearSearch({ focus: true })')
     assert_operator(RUNTIME.index("function initializeSearch()"), :>, RUNTIME.index("function ensureSearchIndex()"))
     refute_match(/function render\(timestamp\).*?ensureSearchIndex/m, RUNTIME)
+  end
+
+  def test_git_source_system_layout_is_deterministic_linear_and_keeps_member_hubs
+    model = {
+      "packages" => [
+        [101, 0, 1, 0, 0, 0, 0, 0, 0],
+        [202, 1, 1, 3, 1, 0, 2, 0, 0],
+        [303, 1, 1, 2, 0, 1, 1, 0, -1],
+      ],
+      "dependencySystems" => [[404, 0]],
+    }
+    first = dependency_layout(model)
+    second = dependency_layout(model)
+
+    assert_equal(first, second)
+    assert_equal([[0, 1]], first.fetch("systemMembers"))
+    assert_equal(3, first.fetch("systemAggregates").first.fetch("declarationCount"))
+    assert_equal(1, first.fetch("systemAggregates").first.fetch("directCount"))
+    assert_equal(1.6, first.fetch("packageAnchors").first[3])
+    refute_equal(first.fetch("packageAnchors")[0].first(3), first.fetch("packageAnchors")[1].first(3))
+    assert_equal(-1, first.fetch("packageAnchors")[2][5])
+    assert_includes(RUNTIME, "const systemMembers = Array.from({ length: dependencySystems.length }, () => [])")
+    assert_includes(RUNTIME, "const systemAggregates = systemMembers.map(packageIndexes =>")
+    assert_includes(RUNTIME, "systemAnchors.forEach((anchor, index) =>")
+    assert_includes(RUNTIME, "packageAnchors.forEach((anchor, index) =>")
+    assert_includes(RUNTIME, "hub: true, systemHub: true")
+    assert_includes(RUNTIME, "hub: true, packageHub: true")
+    refute_includes(runtime_function("render"), "systemMembers")
+    refute_includes(runtime_function("project"), ".find(")
   end
 
   private
@@ -117,5 +147,30 @@ class ExplorerRuntimeTest < Minitest::Test
     raise "Node failed: #{error}" unless status.success?
 
     JSON.parse(output)
+  end
+
+  def dependency_layout(model)
+    helpers = RUNTIME.match(/^    const hash = .*?^    const clamp = .*?;$/m).to_s
+    source = RUNTIME.match(/^    const dependencySystems = .*?(?=^    function dependencyPosition)/m).to_s
+    raise "dependency layout source not found" if source.empty?
+
+    script = <<~JAVASCRIPT
+      const model = #{JSON.generate(model)};
+      const layoutScale = { dependencyInnerRadius: 70, tests: 1 };
+      #{helpers}
+      #{source}
+      process.stdout.write(JSON.stringify({ systemMembers, systemAggregates, systemAnchors, packageAnchors }));
+    JAVASCRIPT
+    output, error, status = Open3.capture3("node", "-e", script)
+    raise "Node failed: #{error}" unless status.success?
+
+    JSON.parse(output)
+  end
+
+  def runtime_function(name)
+    source = RUNTIME.match(/^    function #{Regexp.escape(name)}\b.*?^    \}\n/m).to_s
+    raise "#{name} function not found" if source.empty?
+
+    source
   end
 end
