@@ -3,7 +3,7 @@
 //
 //   node benchmark/explorer_frame.mjs [output.html]
 //
-// The synthetic model matches rubylens.art.v7 as consumed by the runtime:
+// The synthetic model matches rubylens.art.v8 as consumed by the runtime:
 // NAMESPACES class/module rows (TEST_RATIO of them tests), DEPENDENCY_STARS
 // sampled dependency rows across PACKAGES gems, exact aggregate totals, and
 // signal domains derived from the generated rows. Defaults model a codebase
