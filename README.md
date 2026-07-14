@@ -27,7 +27,7 @@ Passing `output:` selects a custom path. Custom paths are written exactly where 
 
 `RubyLens.generate` remains a thin alias for `RubyLens.generate_report`.
 
-The report is fully local: it makes no network requests and needs neither Node nor a server to open. Drag to orbit, zoom toward the cursor, Shift-drag or use Pan mode to traverse dense clouds, or use the arrow keys to move the view. Show or focus core code, tests, and gems independently; sidebar highlights fly to a top-down view of the relevant star or system. Double-clicking a gem cloud pauses drift and expands that one existing system for a sharper, more separated view without loading another model.
+The report is fully local: it makes no network requests and needs neither Node nor a server to open. Drag to orbit, zoom toward the cursor, Shift-drag or use Pan mode to traverse dense clouds, or use the arrow keys to move the view. Show or focus core code, tests, and gems independently; selecting a Ruby node or dependency system flies to a top-down relationship view that keeps both the target and Core visible. Drift continues through exploration unless you pause it with the toolbar control or Space. Reset returns to the default camera without changing that explicit drift choice. Double-clicking a gem cloud expands that one existing system for a sharper, more separated view without loading another model.
 
 RubyDex-indexed Ruby documents under `spec/` or `specs/` contribute non-interactive class-like stars for `describe` and `context` calls. `it` and `specify` calls contribute only to the aggregate Tests method count; RubyLens does not execute specs or infer nesting.
 
