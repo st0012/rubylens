@@ -114,6 +114,8 @@ class ReportWriterTest < Minitest::Test
       assert_equal(model, JSON.parse(Base64.strict_decode64(encoded)))
       assert_includes(html, "connect-src 'none'")
       assert(RubyLens::ReportWriter.new.rubylens_report?(output))
+      assert_includes(html, "RubyLens · Explorer")
+      refute_includes(html, "RubyLens · local report")
       assert_includes(html, "Explore this codebase")
       assert_includes(html, 'const rubyMetricLabels = ["Classes", "Modules", "Methods", "Constants"]')
       assert_includes(html, "const dependencyRubyCounts")

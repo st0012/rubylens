@@ -34,6 +34,57 @@ class RubydexAdapterTest < Minitest::Test
     assert_nil(adapter.instance_variable_get(:@workspace_location_cache))
   end
 
+  def test_filters_synthetic_declarations_before_visual_aggregation
+    Dir.mktmpdir("rubylens-declaration-shapes-") do |directory|
+      source_path = File.join(directory, "shapes.rb")
+      File.write(source_path, <<~RUBY)
+        class Named
+          class << self
+            def class_method; end
+            class << self
+              def nested_meta_method; end
+            end
+          end
+        end
+
+        Assigned = Class.new
+        Class.new
+        Module.new
+        Missing::VALUE = 1
+        class << Missing; end
+        class Missing::Nested; end
+      RUBY
+      system("git", "-C", directory, "init", "--quiet", exception: true)
+      system("git", "-C", directory, "add", "shapes.rb", exception: true)
+
+      graph = Rubydex::Graph.new(workspace_path: directory)
+      assert_empty(graph.index_all([source_path]))
+      graph.resolve
+      declarations = graph.declarations.to_a
+      direct_singleton = declarations.find { |declaration| declaration.name == "Named::<Named>" }
+      nested_singleton = declarations.find { |declaration| declaration.name == "Named::<Named>::<<Named>>" }
+      todo = declarations.find { |declaration| declaration.is_a?(Rubydex::Todo) && declaration.name == "Missing" }
+      todo_singleton = declarations.find { |declaration| declaration.name == "Missing::<Missing>" }
+      todo_owned_constant = declarations.find { |declaration| declaration.name == "Missing::VALUE" }
+      anonymous = declarations.select { |declaration| declaration.name.include?("<anonymous>") }
+      adapter = RubyLens::Index::RubydexAdapter.new
+
+      assert(adapter.send(:model_eligible_declaration?, direct_singleton))
+      refute(adapter.send(:model_eligible_declaration?, nested_singleton))
+      refute(adapter.send(:model_eligible_declaration?, todo))
+      refute(adapter.send(:model_eligible_declaration?, todo_singleton))
+      assert(adapter.send(:model_eligible_declaration?, todo_owned_constant))
+      anonymous.each { |declaration| refute(adapter.send(:model_eligible_declaration?, declaration)) }
+
+      snapshot = adapter.index(RubyLens::Index::Manifest.build(root: directory))
+      serialized = JSON.generate(snapshot)
+
+      assert_equal(%w[Assigned Missing::Nested Named], snapshot.fetch("namespace_names").sort)
+      assert_equal({ "core" => [3, 0, 2, 1], "tests" => [0, 0, 0, 0] }, snapshot.fetch("category_stats"))
+      refute_includes(serialized, "<anonymous>")
+    end
+  end
+
   def test_models_raw_rspec_references_as_statless_nonidentifying_proxies
     manifest = RubyLens::Index::Manifest.build(root: RSPEC_FIXTURE)
     snapshot = RubyLens::Index::RubydexAdapter.new.index(manifest)
