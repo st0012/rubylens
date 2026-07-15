@@ -6,8 +6,9 @@ class ShowcaseModelTest < Minitest::Test
   def test_minimal_projection_omits_statistics_and_private_names
     private_value = "/private/path/Secret::Namespace hidden-gem source comment"
     model = {
-      "schema" => "rubylens.art.v8",
+      "schema" => "rubylens.art.v9",
       "projectName" => "Synthetic App",
+      "morphology" => { "family" => 3, "designation" => "SBb", "knobs" => [0, 240, 3, 105, 500, 400, 0, 0, 1234, private_value] },
       "totals" => { "namespaces" => 1, "packages" => 1, "dependencyStars" => 1, "renderedDependencyStars" => 1, "future" => private_value },
       "domains" => RubyLens::ArtModelBuilder::SIGNAL_FIELDS.to_h { |field| [field, 3] }.merge("future" => private_value),
       "categoryStats" => { "core" => [1, 2, 3, 4], "tests" => [5, 6, 7, 8], "future" => private_value },
@@ -26,11 +27,12 @@ class ShowcaseModelTest < Minitest::Test
     encoded = JSON.generate(showcase)
 
     assert_equal(
-      %w[dependencyStars dependencySystems details domains namespaces packages projectName schema],
+      %w[dependencyStars dependencySystems details domains morphology namespaces packages projectName schema],
       showcase.keys.sort,
     )
     assert_equal(false, showcase.fetch("details"))
-    assert_equal("rubylens.showcase.v2", showcase.fetch("schema"))
+    assert_equal("rubylens.showcase.v3", showcase.fetch("schema"))
+    assert_equal([3, 0, 240, 3, 105, 500, 400, 0, 0, 1234], showcase.fetch("morphology"))
     assert_equal(15, showcase.fetch("namespaces").first.length)
     assert_equal(9, showcase.fetch("packages").first.length)
     assert_equal(2, showcase.fetch("dependencySystems").first.length)
@@ -44,6 +46,7 @@ class ShowcaseModelTest < Minitest::Test
     refute_includes(encoded, "totals")
     refute_includes(encoded, "categoryStats")
     refute_includes(encoded, "annotations")
+    refute_includes(encoded, "SBb")
   end
 
   def test_annotated_projection_is_safe_balanced_deterministic_and_capped
@@ -104,11 +107,21 @@ class ShowcaseModelTest < Minitest::Test
     assert_equal("showcase model rows must contain only numbers", error.message)
   end
 
+  def test_rejects_private_values_inside_morphology
+    model = minimal_model
+    model.fetch("morphology").fetch("knobs")[4] = "secret"
+
+    error = assert_raises(RubyLens::Error) { RubyLens::ShowcaseModel.new.call(model) }
+
+    assert_equal("showcase model rows must contain only numbers", error.message)
+  end
+
   private
 
   def minimal_model
     {
       "projectName" => "Synthetic App",
+      "morphology" => { "family" => 2, "designation" => "Sb", "knobs" => [0, 240, 3, 105, 500, 0, 0, 0, 1234] },
       "totals" => { "namespaces" => 1, "packages" => 0, "dependencyStars" => 0, "renderedDependencyStars" => 0 },
       "domains" => RubyLens::ArtModelBuilder::SIGNAL_FIELDS.to_h { |field| [field, 0] },
       "categoryStats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
@@ -134,6 +147,7 @@ class ShowcaseModelTest < Minitest::Test
     packages.concat(Array.new(3) { |index| [40_000 + index, 0, 1, 1, 1, 2, 3, 4, -1] })
     {
       "projectName" => "Synthetic App",
+      "morphology" => { "family" => 2, "designation" => "Sb", "knobs" => [0, 240, 3, 105, 500, 0, 0, 0, 1234] },
       "totals" => { "namespaces" => namespaces.length, "packages" => packages.length, "dependencyStars" => 0, "renderedDependencyStars" => 0 },
       "domains" => RubyLens::ArtModelBuilder::SIGNAL_FIELDS.to_h { |field| [field, 10] },
       "categoryStats" => { "core" => [count, count / 2, count * 2, count / 3], "tests" => [count, 0, count * 3, 0] },

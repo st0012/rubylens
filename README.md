@@ -12,7 +12,7 @@ Add RubyLens to the bundle of the project you want to visualize, then run:
 bundle exec rubylens report
 ```
 
-When `TARGET` is omitted, RubyLens uses the current working directory. Pass a path after the command to visualize a different project. The default report is `rubylens-report.html` in the project root. It contains fully qualified class, module, and gem names for local hover details, but no source text, comments, or paths. Dependency stars remain anonymous and are summarized at the gem level. RubyLens adds that exact default path to Git's local exclude file and writes the report with owner-only permissions, so it stays out of commits without changing the project's `.gitignore`. The model reveals private codebase structure, so keep it local unless you intend to share it.
+When `TARGET` is omitted, RubyLens uses the current working directory. Pass a path after the command to visualize a different project. The default report is `rubylens-report.html` in the project root. It contains fully qualified class, module, and gem names for local hover details, but no source text, comments, or paths. Dependency stars remain anonymous and are summarized at the gem level. RubyLens adds that exact default path to Git's local exclude file and writes the report with owner-only permissions, so it stays out of commits without changing the project's `.gitignore`. The model reveals private codebase structure, so keep it local unless you intend to share it. Galaxy morphology is derived from coarse code proportions, so a shared report or Showcase can also reveal bucketed traits such as a test-light or module-heavy project.
 
 Ruby API:
 
@@ -50,9 +50,11 @@ result = RubyLens.generate_showcase(path: ".", details: true)
 puts result.output_path
 ```
 
-Showcase generation and viewing need no Chrome, Chromium, Ferrum, FFmpeg, Node, or HTTP server. Both disclosure levels reveal the project name and visual structure; `details: true` additionally reveals selected code/dependency names and aggregate statistics, so review it before sharing.
+Showcase generation and viewing need no Chrome, Chromium, Ferrum, FFmpeg, Node, or HTTP server. Both disclosure levels reveal the project name and the numeric visual structure, including the derived morphology family; someone familiar with the family bands can infer coarse code proportions. `details: true` additionally reveals selected code/dependency names and aggregate statistics, so review it before sharing.
 
 The configurable multi-system design for repositories with many first-class applications or components is documented in [`docs/MONOREPO_BOUNDARIES.md`](docs/MONOREPO_BOUNDARIES.md). Reference-route experiments are paused and preserved in [`docs/REFERENCE_ROUTES_FUTURE.md`](docs/REFERENCE_ROUTES_FUTURE.md).
+
+The accepted deterministic morphology design and its self-contained visual prototype are preserved in [`docs/specs/2026-07-14-galaxy-morphology-design.md`](docs/specs/2026-07-14-galaxy-morphology-design.md).
 
 ## Development
 

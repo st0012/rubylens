@@ -45,8 +45,12 @@ class ArtModelBuilderTest < Minitest::Test
     second = builder.build(snapshot)
 
     assert_equal(first, second)
-    assert_equal("rubylens.art.v8", first.fetch("schema"))
+    assert_equal("rubylens.art.v9", first.fetch("schema"))
     assert_equal("Demo", first.fetch("projectName"))
+    assert_equal(4, first.dig("morphology", "family"))
+    assert_equal("Irr", first.dig("morphology", "designation"))
+    assert_equal(9, first.dig("morphology", "knobs").length)
+    assert(first.dig("morphology", "knobs").all?(Integer))
     assert_equal(2, first.dig("totals", "namespaces"))
     assert_equal(1, first.dig("totals", "dependencyStars"))
     assert_equal(1, first.dig("totals", "renderedDependencyStars"))
@@ -88,7 +92,7 @@ class ArtModelBuilderTest < Minitest::Test
 
     model = RubyLens::ArtModelBuilder.new(seed: 12).build(snapshot)
 
-    assert_equal("rubylens.art.v8", model.fetch("schema"))
+    assert_equal("rubylens.art.v9", model.fetch("schema"))
     assert_equal(2, model.dig("totals", "dependencyStars"))
     assert_equal(2, model.dig("totals", "renderedDependencyStars"))
     assert_equal({ "ancestorDepth" => 2, "definitionSites" => 1, "reopenings" => 0, "descendants" => 0,

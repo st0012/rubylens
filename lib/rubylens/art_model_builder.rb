@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "dependency_warning"
+require_relative "morphology_classifier"
 
 module RubyLens
   class ArtModelBuilder
@@ -12,6 +13,7 @@ module RubyLens
 
     def build(snapshot)
       random = Random.new(@seed)
+      morphology = MorphologyClassifier.new.call(snapshot)
       namespace_order = (0...snapshot.fetch("namespaces").length).to_a.shuffle(random: random)
       namespaces = namespace_order.map do |index|
         row = snapshot.fetch("namespaces").fetch(index)
@@ -58,8 +60,9 @@ module RubyLens
         end
       end
       {
-        "schema" => "rubylens.art.v8",
+        "schema" => "rubylens.art.v9",
         "projectName" => snapshot.fetch("project_name"),
+        "morphology" => morphology,
         "totals" => {
           "namespaces" => namespaces.length,
           "packages" => packages.length,

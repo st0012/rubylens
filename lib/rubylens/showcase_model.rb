@@ -18,10 +18,11 @@ module RubyLens
     def call(model, details: false)
       details = details == true
       showcase = {
-        "schema" => "rubylens.showcase.v2",
+        "schema" => "rubylens.showcase.v3",
         "projectName" => model.fetch("projectName"),
         "details" => details,
         "domains" => project_hash(model.fetch("domains"), SIGNAL_FIELDS),
+        "morphology" => morphology_row(model),
         "namespaces" => model.fetch("namespaces").map { |row| numeric_row(row, 15) },
         "packages" => model.fetch("packages").map { |row| numeric_row(row, 9) },
         "dependencySystems" => model.fetch("dependencySystems", []).map { |row| numeric_row(row, 2) },
@@ -40,6 +41,11 @@ module RubyLens
     end
 
     private
+
+    def morphology_row(model)
+      morphology = model.fetch("morphology")
+      numeric_row([morphology.fetch("family"), *morphology.fetch("knobs")], 10)
+    end
 
     def project_hash(source, fields)
       fields.to_h { |field| [field, Integer(source.fetch(field))] }

@@ -13,6 +13,7 @@ class LayoutDensityRuntimeTest < Minitest::Test
     "cameraScale" => 1,
     "cameraDistance" => 270,
     "cameraFocalLength" => 440,
+    "coreOuterRadius" => 42,
     "testOuterRadius" => 62,
     "dependencyInnerRadius" => 70,
   }.freeze
@@ -22,7 +23,7 @@ class LayoutDensityRuntimeTest < Minitest::Test
       assert_equal(BASELINE_METRICS, layout_metrics(core_count), "Core count: #{core_count}")
     end
 
-    assert_includes(RUNTIME, "function layoutMetricsForCoreCount(coreCount) {")
+    assert_includes(RUNTIME, "function layoutMetricsForCoreCount(coreCount, activeMorphology) {")
     refute_includes(RUNTIME, "TEST_SCALE_BASELINE")
   end
 
@@ -78,7 +79,7 @@ class LayoutDensityRuntimeTest < Minitest::Test
     assert_includes(RUNTIME, "const depth = cameraDistance - z2;")
     assert_includes(RUNTIME, "const perspective = cameraFocalLength / depth * zoom;")
     assert_includes(RUNTIME, "function contextualSelectionCameraTarget(point, preferredZoom = point.hub ? 4 : point.category === \"dependencies\" ? 5 : 7) {")
-    assert_includes(RUNTIME, "const coreFitZoom = Math.min(sceneRight, sceneBottom) * .28 * cameraDistance / (42 * layoutScale.disk * cameraFocalLength);")
+    assert_includes(RUNTIME, "const coreFitZoom = Math.min(sceneRight, sceneBottom) * .28 * cameraDistance / (layoutScale.coreOuterRadius * cameraFocalLength);")
     refute_includes(RUNTIME, "float depth = 270.0 - z2;")
     refute_includes(RUNTIME, "const depth = 270 - z2;")
   end
@@ -92,7 +93,7 @@ class LayoutDensityRuntimeTest < Minitest::Test
       RUNTIME,
       "radius = layoutScale.dependencyInnerRadius + 72 * Math.sqrt(layoutScale.tests) * Math.pow(unit(seed, 14), .72)",
     )
-    assert_includes(RUNTIME, "dependencyInnerRadius: 62 * tests + 8")
+    assert_includes(RUNTIME, "dependencyInnerRadius: testExtent * tests + 8")
   end
 
   def test_adaptive_layout_work_is_confined_to_load_time_setup
@@ -100,7 +101,7 @@ class LayoutDensityRuntimeTest < Minitest::Test
     assert_equal(1, RUNTIME.scan("model.namespaces.reduce").length)
     assert_operator(RUNTIME.index("model.namespaces.reduce"), :<, RUNTIME.index("function corePosition"))
     assert_operator(
-      RUNTIME.index("const layoutScale = layoutMetricsForCoreCount(coreCount);"),
+      RUNTIME.index("const layoutScale = layoutMetricsForCoreCount(coreCount, morphology);"),
       :<,
       RUNTIME.index("function buildPoints"),
     )
@@ -122,7 +123,7 @@ class LayoutDensityRuntimeTest < Minitest::Test
     script = <<~JAVASCRIPT
       #{constants}
       #{function}
-      process.stdout.write(JSON.stringify(layoutMetricsForCoreCount(#{core_count})));
+      process.stdout.write(JSON.stringify(layoutMetricsForCoreCount(#{core_count}, { legacy: true, family: 2, clumpSpread: 0 })));
     JAVASCRIPT
     output, error, status = Open3.capture3("node", "-e", script)
     raise "Node failed: #{error}" unless status.success?

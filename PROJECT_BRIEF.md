@@ -27,7 +27,7 @@ Accuracy note: this brief uses the preferred narrative spelling **RubyDex**. The
 - Make deep inspection spatially navigable: zoom toward the cursor or pinch midpoint, preserve orbit controls, and support explicit mouse, touch, and keyboard panning through dense clouds.
 - Treat dependency focus as a lightweight level-of-detail state: double-click one existing gem system to pause drift, expand its current points, and sharpen its stars without duplicating dependency models in memory.
 - Keep Galaxy A as the selected direction. City Blocks is paused until the stellar direction and gem pipeline are mature.
-- Keep 3D coordinates and layout simulation renderer-owned rather than embedding positions in the compact `rubylens.art.v8` model.
+- Keep 3D coordinates and layout simulation renderer-owned rather than embedding positions in the compact `rubylens.art.v9` model.
 
 ## Confirmed RubyDex reality
 

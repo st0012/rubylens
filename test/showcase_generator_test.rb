@@ -52,6 +52,8 @@ class ShowcaseGeneratorTest < Minitest::Test
       model = JSON.parse(Base64.strict_decode64(encoded))
 
       assert_equal(true, model.fetch("details"))
+      assert_equal("rubylens.showcase.v3", model.fetch("schema"))
+      assert_equal(10, model.fetch("morphology").length)
       assert(model.key?("totals"))
       assert(model.key?("annotations"))
     end
@@ -94,6 +96,7 @@ class ShowcaseGeneratorTest < Minitest::Test
     model_builder.define_singleton_method(:build) do |_snapshot|
       {
         "projectName" => "Synthetic App",
+        "morphology" => { "family" => 2, "designation" => "Sb", "knobs" => [0, 240, 3, 105, 500, 0, 0, 0, 1234] },
         "totals" => { "namespaces" => 0, "packages" => 0, "dependencyStars" => 0, "renderedDependencyStars" => 0 },
         "domains" => RubyLens::ArtModelBuilder::SIGNAL_FIELDS.to_h { |field| [field, 0] },
         "categoryStats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },

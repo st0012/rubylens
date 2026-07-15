@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RubyLens galaxy morphology prototype</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #05060d; color: #cfd3e6; font: 14px/1.5 -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 20px 28px 6px; }
+  header h1 { font-size: 18px; margin: 0 0 4px; color: #eef0fa; }
+  header p { margin: 0; max-width: 900px; color: #9aa0bd; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(810px, 1fr)); gap: 18px; padding: 18px 28px 40px; }
+  .card { background: #090b16; border: 1px solid #1c2036; border-radius: 10px; padding: 14px 14px 10px; }
+  .card h2 { margin: 0 0 2px; font-size: 15px; color: #eef0fa; }
+  .card h2 .designation { color: #ffb84d; font-weight: 700; margin-right: 8px; }
+  .card p.note { margin: 2px 0 10px; font-size: 12px; color: #8b91b0; }
+  .views { display: flex; gap: 10px; }
+  canvas { border-radius: 6px; background: #03040a; display: block; }
+  .views figure { margin: 0; }
+  .views figcaption { font-size: 11px; color: #6d7392; margin-top: 4px; text-align: center; }
+  footer { padding: 0 28px 30px; font-size: 12px; color: #6d7392; max-width: 960px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>RubyLens galaxy morphology prototype</h1>
+  <p>Every panel renders the <strong>same synthetic project</strong> — identical star counts, seeds, colors, and camera —
+     through a different family recipe. Any visible difference is morphology alone.
+     Core <span style="color:rgb(244,82,132)">■</span> · Tests <span style="color:rgb(87,204,255)">■</span> · Dependencies <span style="color:rgb(255,184,77)">■</span></p>
+</header>
+<div class="grid" id="grid"></div>
+<footer>
+  Rendering mimics <code>assets/runtime/report.js</code>: additive compositing, glow halo + colored core + white-hot
+  center, camera distance 270 / focal length 440. Dark-only by design (the product renders on space black).
+</footer>
+<script>
+"use strict";
+
+/* ---- deterministic PRNG, verbatim from report.js ---- */
+const hash = (seed, channel = 0) => {
+  let value = (seed ^ (channel * 0x9e3779b9)) >>> 0;
+  value = Math.imul(value ^ value >>> 16, 0x21f0aaad);
+  value = Math.imul(value ^ value >>> 15, 0x735a2d97);
+  return (value ^ value >>> 15) >>> 0;
+};
+const unit = (seed, channel) => hash(seed, channel) / 4294967296;
+const normal = (seed, channel) => Math.sqrt(-2 * Math.log(Math.max(unit(seed, channel), 1e-7))) * Math.cos(6.283185 * unit(seed, channel + 1));
+const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+
+/* ---- shared synthetic project: identical across all panels ---- */
+const COUNTS = { core: 1500, tests: 1150, depStars: 2100, packages: 22, systems: 6 };
+const coreSeeds = Array.from({ length: COUNTS.core }, (_, i) => hash(0x51A7E11A + i, 1));
+const testSeeds = Array.from({ length: COUNTS.tests }, (_, i) => hash(0x7E57A11 + i, 1));
+const colours = { core: [244, 82, 132], tests: [87, 204, 255], dependencies: [255, 184, 77] };
+
+/* ---- morphology recipes ----
+   knobs: { family, ellipticity, bulgeShare, armCount, winding, armFraction, barLength, clumpCount, clumpSpread, phase } */
+
+function clumpCenters(knobs) {
+  const centers = [];
+  for (let i = 0; i < knobs.clumpCount; i += 1) {
+    const s = hash(0xC1_00 + i, knobs.phase);
+    centers.push({
+      x: (unit(s, 1) - .5) * 2 * knobs.clumpSpread,
+      y: (unit(s, 2) - .5) * knobs.clumpSpread * .5,
+      z: (unit(s, 3) - .5) * 2 * knobs.clumpSpread,
+      r: 7 + unit(s, 4) * 9,
+      squash: .45 + unit(s, 5) * .5,
+    });
+  }
+  return centers;
+}
+
+function corePosition(seed, knobs) {
+  if (knobs.family === "E") {
+    const radial = 30 * Math.pow(unit(seed, 3), 1.9);
+    const theta = unit(seed, 4) * Math.PI * 2;
+    const cosPhi = unit(seed, 5) * 2 - 1;
+    const sinPhi = Math.sqrt(Math.max(0, 1 - cosPhi * cosPhi));
+    return [
+      radial * sinPhi * Math.cos(theta),
+      radial * cosPhi * (1 - knobs.ellipticity),
+      radial * sinPhi * Math.sin(theta),
+    ];
+  }
+  if (knobs.family === "Irr") {
+    const centers = knobs._centers;
+    const c = centers[hash(seed, 6) % centers.length];
+    return [
+      c.x + normal(seed, 3) * c.r,
+      c.y + normal(seed, 5) * c.r * c.squash * .45,
+      c.z + normal(seed, 7) * c.r * c.squash,
+    ];
+  }
+  const bulge = unit(seed, 2) < knobs.bulgeShare;
+  if (!bulge && knobs.barLength > 0 && unit(seed, 25) < .30) {
+    /* bar: elongated slab along the bar axis */
+    const along = (unit(seed, 26) - .5) * 2 * knobs.barLength * 42;
+    const across = normal(seed, 27) * 2.1;
+    const barAngle = knobs.phaseAngle;
+    return [
+      Math.cos(barAngle) * along - Math.sin(barAngle) * across,
+      normal(seed, 28) * 1.5,
+      Math.sin(barAngle) * along + Math.cos(barAngle) * across,
+    ];
+  }
+  const radial = bulge ? 17 * Math.pow(unit(seed, 3), 1.75) : Math.min(42, -10 * Math.log(Math.max(1e-5, 1 - unit(seed, 3))));
+  /* spiral families borrow core disc points into the arms (spec: arms draw from whichever categories occupy the disc) */
+  if (!bulge && knobs.armFraction > 0 && unit(seed, 31) < .5) {
+    const arm = hash(seed, 32) % knobs.armCount;
+    const barR = knobs.barLength * 42;
+    const start = knobs.barLength > 0 ? knobs.phaseAngle + arm * Math.PI : knobs.phaseAngle + arm * (Math.PI * 2 / knobs.armCount);
+    const armRadial = Math.max(radial, barR + 2);
+    const theta = start + (armRadial - barR) * knobs.winding + normal(seed, 33) * (knobs.armScatter ?? .18);
+    return [Math.cos(theta) * armRadial, normal(seed, 5) * (1.2 + armRadial * .02), Math.sin(theta) * armRadial];
+  }
+  const theta = unit(seed, 4) * Math.PI * 2 + radial * .04;
+  const vertical = normal(seed, 5) * (bulge ? 5.8 : 1.4 + radial * .025);
+  return [Math.cos(theta) * radial, vertical, Math.sin(theta) * radial];
+}
+
+function testPosition(seed, knobs) {
+  if (knobs.family === "E") {
+    const radial = 20 + 26 * Math.pow(unit(seed, 7), .85);
+    const theta = unit(seed, 10) * Math.PI * 2;
+    const cosPhi = unit(seed, 9) * 2 - 1;
+    const sinPhi = Math.sqrt(Math.max(0, 1 - cosPhi * cosPhi));
+    return [
+      radial * sinPhi * Math.cos(theta),
+      radial * cosPhi * (1 - knobs.ellipticity),
+      radial * sinPhi * Math.sin(theta),
+    ];
+  }
+  if (knobs.family === "Irr") {
+    const centers = knobs._centers;
+    const c = centers[hash(seed, 8) % centers.length];
+    const spread = 1.7;
+    return [
+      c.x + normal(seed, 9) * c.r * spread,
+      c.y + normal(seed, 11) * c.r * c.squash * .5 * spread,
+      c.z + normal(seed, 13) * c.r * c.squash * spread,
+    ];
+  }
+  const barR = knobs.barLength * 42;
+  const radial = (knobs.barLength > 0 ? Math.max(17, barR) : 17) + Math.min(45, -14 * Math.log(Math.max(1e-5, 1 - unit(seed, 7))));
+  const inArm = knobs.armFraction > 0 && unit(seed, 9) < knobs.armFraction;
+  let theta;
+  if (inArm) {
+    const arm = hash(seed, 8) % knobs.armCount;
+    const start = knobs.barLength > 0 ? knobs.phaseAngle + arm * Math.PI : knobs.phaseAngle + arm * (Math.PI * 2 / knobs.armCount);
+    theta = start + (radial - (knobs.barLength > 0 ? barR : 0)) * knobs.winding + normal(seed, 10) * (knobs.armScatter ?? .22);
+  } else {
+    theta = unit(seed, 10) * Math.PI * 2;
+  }
+  const vertical = normal(seed, 11) * (1.4 + radial * .035);
+  return [Math.cos(theta) * radial, vertical, Math.sin(theta) * radial];
+}
+
+/* dependency halo: unchanged recipe from report.js, shared by every family */
+function buildDependencies(knobs) {
+  const points = [];
+  const outer = knobs.family === "E" ? 50 : 64;
+  for (let s = 0; s < COUNTS.systems; s += 1) {
+    const seed = hash(0xDEE0 + s, 2);
+    const radius = outer + 8 + 72 * Math.pow(unit(seed, 14), .72);
+    const theta = unit(seed, 15) * Math.PI * 2;
+    const cx = Math.cos(theta) * radius, cy = normal(seed, 16) * 22, cz = Math.sin(theta) * radius;
+    const cloud = 3.4 + unit(seed, 17) * 5.5;
+    const perSystem = Math.floor(COUNTS.depStars / COUNTS.systems);
+    for (let i = 0; i < perSystem; i += 1) {
+      const p = hash(seed + i * 7919, 3);
+      const r = Math.min(cloud, -cloud * .34 * Math.log(Math.max(1e-5, 1 - unit(p, 18))));
+      const a = unit(p, 19) * Math.PI * 2;
+      points.push({
+        category: "dependencies",
+        seed: p,
+        position: [cx + Math.cos(a) * r, cy + normal(p, 20) * cloud * .17, cz + Math.sin(a) * r],
+      });
+    }
+    points.push({ category: "dependencies", seed, position: [cx, cy, cz], hub: true });
+  }
+  return points;
+}
+
+/* ---- panel definitions ---- */
+const FAMILIES = [
+  {
+    designation: "E2", title: "Elliptical, nearly round",
+    note: "Smooth spheroid, no disc, no arms. Tests form a diffuse outer shell.",
+    knobs: { family: "E", ellipticity: .2, phase: 11 },
+  },
+  {
+    designation: "E6", title: "Elliptical, flattened",
+    note: "Same spheroid at ellipticity 0.6 — reads clearly different from E2 in orbit view.",
+    knobs: { family: "E", ellipticity: .6, phase: 12 },
+  },
+  {
+    designation: "S0", title: "Lenticular",
+    note: "Large bulge + smooth featureless disc. No arm term at all.",
+    knobs: { family: "S0", bulgeShare: .42, armCount: 0, winding: 0, armFraction: 0, barLength: 0, phase: 13, phaseAngle: 0 },
+  },
+  {
+    designation: "Sa", title: "Spiral, tight",
+    note: "Big bulge, 2 tightly wound arms (winding .16), 45% of disc in arms.",
+    knobs: { family: "S", bulgeShare: .34, armCount: 2, winding: .16, armFraction: .45, barLength: 0, phase: 14, phaseAngle: .8 },
+  },
+  {
+    designation: "Sc", title: "Spiral, loose",
+    note: "Small bulge, 3 loose arms (winding .07) — today's RubyLens look sits near Sb/Sc.",
+    knobs: { family: "S", bulgeShare: .14, armCount: 3, winding: .07, armFraction: .40, barLength: 0, phase: 15, phaseAngle: 2.1 },
+  },
+  {
+    designation: "SBa", title: "Barred spiral, tight",
+    note: "Central bar (30% of inner disc), 2 arms unwinding from the bar ends.",
+    knobs: { family: "SB", bulgeShare: .26, armCount: 2, winding: .15, armFraction: .48, barLength: .55, phase: 16, phaseAngle: -.5 },
+  },
+  {
+    designation: "SBc", title: "Barred spiral, loose",
+    note: "Longer bar, loose arms — bar + open arms is the most recognizable silhouette.",
+    knobs: { family: "SB", bulgeShare: .14, armCount: 2, winding: .085, armFraction: .45, barLength: .7, phase: 17, phaseAngle: .35 },
+  },
+  {
+    designation: "S(6)", title: "Many-armed spiral, 6 arms",
+    note: "Beyond real Hubble types (nature stops around 4-5 coherent arms). Tighter scatter keeps arms readable.",
+    knobs: { family: "S", bulgeShare: .16, armCount: 6, winding: .09, armFraction: .5, armScatter: .12, barLength: 0, phase: 19, phaseAngle: 1.3 },
+  },
+  {
+    designation: "S(8)", title: "Many-armed spiral, 8 arms",
+    note: "Eight arms at scatter .10 — the readability limit; beyond this, arms blur into a disc.",
+    knobs: { family: "S", bulgeShare: .12, armCount: 8, winding: .075, armFraction: .55, armScatter: .10, barLength: 0, phase: 20, phaseAngle: .2 },
+  },
+  {
+    designation: "Irr", title: "Irregular",
+    note: "Four offset clumps, no symmetry. Also the floor for tiny projects (<30 namespaces).",
+    knobs: { family: "Irr", clumpCount: 4, clumpSpread: 30, phase: 18 },
+  },
+];
+
+/* ---- projection + painter, mimicking report.js showcase fallback ---- */
+function drawScene(canvas, points, yaw, pitch, zoom) {
+  const context = canvas.getContext("2d");
+  const width = canvas.width, height = canvas.height;
+  const cameraDistance = 270, cameraFocalLength = 440;
+  context.globalCompositeOperation = "source-over";
+  context.fillStyle = "#03040a";
+  context.fillRect(0, 0, width, height);
+  const vignette = context.createRadialGradient(width / 2, height / 2, 0, width / 2, height / 2, Math.max(width, height) * .72);
+  vignette.addColorStop(0, "rgba(30,16,45,.18)");
+  vignette.addColorStop(1, "rgba(0,0,0,.6)");
+  context.fillStyle = vignette;
+  context.fillRect(0, 0, width, height);
+  context.globalCompositeOperation = "lighter";
+  const [cy, sy, cp, sp] = [Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch)];
+  for (const point of points) {
+    const [px, py, pz] = point.position;
+    const x1 = px * cy - pz * sy;
+    const z1 = px * sy + pz * cy;
+    const y2 = py * cp - z1 * sp;
+    const z2 = py * sp + z1 * cp;
+    const depth = cameraDistance - z2;
+    if (depth <= 35) continue;
+    const perspective = cameraFocalLength / depth * zoom;
+    const x = width / 2 + x1 * perspective;
+    const y = height / 2 + y2 * perspective;
+    if (x < -20 || x > width + 20 || y < -20 || y > height + 20) continue;
+    const signal = Math.pow(unit(point.seed, 30), 2.6);
+    const base = point.hub ? 1.15 : point.category === "core" ? .82 : point.category === "tests" ? .68 : .5;
+    const size = clamp(base * (.62 + signal * .9) * perspective, .35, point.hub ? 5.2 : 3.2);
+    const alpha = clamp(.13 + signal * .4, .1, point.hub ? .85 : .6);
+    const colour = colours[point.category];
+    if (size > 1.35) {
+      context.beginPath();
+      context.arc(x, y, size * 3.1, 0, Math.PI * 2);
+      context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${alpha * .05})`;
+      context.fill();
+    }
+    context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${alpha})`;
+    if (size < .85) context.fillRect(x, y, 1, 1);
+    else {
+      context.beginPath();
+      context.arc(x, y, size, 0, Math.PI * 2);
+      context.fill();
+    }
+    if (size > 1.1) {
+      context.beginPath();
+      context.arc(x, y, Math.max(.45, size * .24), 0, Math.PI * 2);
+      context.fillStyle = `rgba(255,248,244,${Math.min(.9, alpha * 1.25)})`;
+      context.fill();
+    }
+  }
+  context.globalCompositeOperation = "source-over";
+}
+
+/* ---- build page ---- */
+const grid = document.getElementById("grid");
+for (const family of FAMILIES) {
+  const knobs = family.knobs;
+  if (knobs.family === "Irr") knobs._centers = clumpCenters(knobs);
+  const points = [];
+  for (const seed of coreSeeds) points.push({ category: "core", seed, position: corePosition(seed, knobs) });
+  for (const seed of testSeeds) points.push({ category: "tests", seed, position: testPosition(seed, knobs) });
+  points.push(...buildDependencies(knobs));
+
+  const card = document.createElement("div");
+  card.className = "card";
+  card.innerHTML = `<h2><span class="designation">${family.designation}</span>${family.title}</h2>
+    <p class="note">${family.note}</p>`;
+  const views = document.createElement("div");
+  views.className = "views";
+  const orbit = document.createElement("figure");
+  const orbitCanvas = document.createElement("canvas");
+  orbitCanvas.width = 430; orbitCanvas.height = 330;
+  drawScene(orbitCanvas, points, .6, .45, 1.05);
+  orbit.appendChild(orbitCanvas);
+  orbit.insertAdjacentHTML("beforeend", "<figcaption>orbit view (report default)</figcaption>");
+  const top = document.createElement("figure");
+  const topCanvas = document.createElement("canvas");
+  topCanvas.width = 330; topCanvas.height = 330;
+  drawScene(topCanvas, points, 0, Math.PI / 2 - .001, 1.0);
+  top.appendChild(topCanvas);
+  top.insertAdjacentHTML("beforeend", "<figcaption>top view</figcaption>");
+  views.append(orbit, top);
+  card.appendChild(views);
+  grid.appendChild(card);
+}
+</script>
+</body>
+</html>

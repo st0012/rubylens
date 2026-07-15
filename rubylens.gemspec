@@ -28,7 +28,7 @@ Gem::Specification.new do |specification|
     "assets/styles/showcase.css",
     "exe/rubylens",
     "lib/rubylens.rb",
-    *Dir["lib/rubylens/{art_model_builder,cli,dependency_warning,errors,generator,git_repository,paths,report_asset_assembler,report_writer,showcase_generator,showcase_model,showcase_writer,version}.rb"],
+    *Dir["lib/rubylens/{art_model_builder,cli,dependency_warning,errors,generator,git_repository,morphology_classifier,paths,report_asset_assembler,report_writer,showcase_generator,showcase_model,showcase_writer,version}.rb"],
     *Dir["lib/rubylens/index/*.rb"],
     *Dir["lib/rubylens/model/*.rb"],
   ]

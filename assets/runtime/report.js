@@ -33,6 +33,21 @@
     let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedSystemIndex = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, showcaseRenderer = null, showcaseAnnotationSlot = -1, activeShowcaseAnnotation = null;
     const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35, SHOWCASE_POINT_LIMIT = 50_000;
     const CORE_SCALE_BASELINE = 3_000;
+    const MORPHOLOGY_FAMILY = Object.freeze({ elliptical: 0, lenticular: 1, spiral: 2, barredSpiral: 3, irregular: 4 });
+    const LEGACY_MORPHOLOGY = Object.freeze({
+      legacy: true,
+      family: MORPHOLOGY_FAMILY.spiral,
+      ellipticity: 0,
+      bulgeShare: .24,
+      armCount: 3,
+      winding: .105,
+      armFraction: .38,
+      barLength: 0,
+      clumpCount: 0,
+      clumpSpread: 0,
+      phaseSeed: 0,
+      phase: 0,
+    });
     const RSPEC_PROXY_PREFIX = "RSpec example group #";
     const DEFAULT_CAMERA = Object.freeze({ yaw: -.36, pitch: .34, zoom: 2, panX: 0, panY: 0 });
     const DEFAULT_ROTATION_DIRECTION = "clockwise";
@@ -147,6 +162,40 @@
     const unit = (seed, channel) => hash(seed, channel) / 4294967296;
     const normal = (seed, channel) => Math.sqrt(-2 * Math.log(Math.max(unit(seed, channel), 1e-7))) * Math.cos(6.283185 * unit(seed, channel + 1));
     const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+    function decodeMorphology(raw) {
+      const row = Array.isArray(raw)
+        ? raw
+        : raw && typeof raw === "object" && Array.isArray(raw.knobs)
+          ? [raw.family, ...raw.knobs]
+          : null;
+      if (!row || row.length !== 10 || !row.every(Number.isInteger)) return LEGACY_MORPHOLOGY;
+      const family = row[0];
+      if (family < MORPHOLOGY_FAMILY.elliptical || family > MORPHOLOGY_FAMILY.irregular) return LEGACY_MORPHOLOGY;
+      if (row[9] < 0 || row[9] > 0xffff_ffff) return LEGACY_MORPHOLOGY;
+      const legacy = family === MORPHOLOGY_FAMILY.spiral &&
+        row.slice(1).every((value, index) => value === [0, 240, 3, 105, 380, 0, 0, 0, 0][index]);
+      const phaseSeed = row[9] >>> 0;
+      return Object.freeze({
+        legacy,
+        family,
+        ellipticity: family === MORPHOLOGY_FAMILY.elliptical ? clamp(row[1], 0, 700) / 1000 : 0,
+        bulgeShare: [MORPHOLOGY_FAMILY.lenticular, MORPHOLOGY_FAMILY.spiral, MORPHOLOGY_FAMILY.barredSpiral].includes(family)
+          ? clamp(row[2], 80, 600) / 1000
+          : 0,
+        armCount: family === MORPHOLOGY_FAMILY.spiral
+          ? clamp(row[3], 2, 6)
+          : family === MORPHOLOGY_FAMILY.barredSpiral ? clamp(row[3], 2, 4) : 0,
+        winding: [MORPHOLOGY_FAMILY.spiral, MORPHOLOGY_FAMILY.barredSpiral].includes(family) ? clamp(row[4], 40, 220) / 1000 : 0,
+        armFraction: [MORPHOLOGY_FAMILY.spiral, MORPHOLOGY_FAMILY.barredSpiral].includes(family) ? clamp(row[5], 0, 800) / 1000 : 0,
+        barLength: family === MORPHOLOGY_FAMILY.barredSpiral ? clamp(row[6], 100, 700) / 1000 : 0,
+        clumpCount: family === MORPHOLOGY_FAMILY.irregular ? clamp(row[7], 2, 5) : 0,
+        clumpSpread: family === MORPHOLOGY_FAMILY.irregular ? clamp(row[8], 250, 1000) / 1000 : 0,
+        phaseSeed,
+        phase: unit(phaseSeed, 80) * Math.PI * 2,
+      });
+    }
+    const morphology = decodeMorphology(model.morphology);
+    const spiralMorphology = morphology.family === MORPHOLOGY_FAMILY.spiral || morphology.family === MORPHOLOGY_FAMILY.barredSpiral;
     function screenRotationYawSign(pitchRadians) {
       const clockwiseSign = Math.sin(pitchRadians) > 0 ? -1 : 1;
       return DEFAULT_ROTATION_DIRECTION === "clockwise" ? clockwiseSign : -clockwiseSign;
@@ -166,44 +215,174 @@
       return fields.reduce((total, field, index) => total + signalWeights[category][field] * normalized[index], .12);
     }
 
-    function layoutMetricsForCoreCount(coreCount) {
+    function layoutMetricsForCoreCount(coreCount, activeMorphology) {
       const coreRatio = Math.max(1, coreCount / CORE_SCALE_BASELINE);
       const disk = Math.pow(coreRatio, .45);
       const tests = disk;
       const cameraScale = Math.pow(tests, .8);
+      let coreExtent = 42;
+      let testExtent = 62;
+      if (!activeMorphology.legacy) {
+        if (activeMorphology.family === MORPHOLOGY_FAMILY.elliptical) {
+          coreExtent = 36;
+          testExtent = 52;
+        } else if (activeMorphology.family === MORPHOLOGY_FAMILY.lenticular) {
+          const discProgress = clamp((.42 - activeMorphology.bulgeShare) / .08, 0, 1);
+          coreExtent = 42 + 2 * discProgress;
+          testExtent = 54 + 4 * discProgress;
+        } else if (activeMorphology.family === MORPHOLOGY_FAMILY.irregular) {
+          const centerSpread = 12 + 18 * activeMorphology.clumpSpread;
+          coreExtent = centerSpread + 24;
+          testExtent = centerSpread + 32;
+        }
+      }
       return Object.freeze({
         disk,
         bulge: Math.pow(coreRatio, .35),
         tests,
         cameraScale,
-        cameraDistance: 270 * cameraScale,
+        cameraDistance: 270 * cameraScale * testExtent / 62,
         cameraFocalLength: 440,
-        testOuterRadius: 62 * tests,
-        dependencyInnerRadius: 62 * tests + 8,
+        coreOuterRadius: coreExtent * disk,
+        testOuterRadius: testExtent * tests,
+        dependencyInnerRadius: testExtent * tests + 8,
       });
     }
 
     const coreCount = model.namespaces.reduce((count, row) => count + (row[3] === 1 ? 0 : 1), 0);
-    const layoutScale = layoutMetricsForCoreCount(coreCount);
+    const layoutScale = layoutMetricsForCoreCount(coreCount, morphology);
     const cameraDistance = layoutScale.cameraDistance;
     const cameraFocalLength = layoutScale.cameraFocalLength;
 
+    const irregularClumpCenters = morphology.family === MORPHOLOGY_FAMILY.irregular && !morphology.legacy
+      ? Array.from({ length: morphology.clumpCount }, (_, index) => {
+          const centerSpread = 12 + 18 * morphology.clumpSpread;
+          const angle = morphology.phase + index * Math.PI * 2 / morphology.clumpCount + (unit(morphology.phaseSeed, 90 + index * 3) - .5) * .8;
+          const distance = centerSpread * (.42 + unit(morphology.phaseSeed, 91 + index * 3) * .58);
+          return [
+            Math.cos(angle) * distance,
+            normal(morphology.phaseSeed, 92 + index * 3) * centerSpread * .12,
+            Math.sin(angle) * distance,
+            angle,
+          ];
+        })
+      : [];
+
+    function spheroidPosition(seed, outerShell) {
+      const radius = outerShell
+        ? 28 + 24 * Math.pow(unit(seed, 3), .72)
+        : 36 * Math.pow(unit(seed, 3), 1.7);
+      const polar = unit(seed, 4) * 2 - 1;
+      const equatorial = Math.sqrt(Math.max(0, 1 - polar * polar));
+      const theta = morphology.phase + unit(seed, 5) * Math.PI * 2;
+      const scale = outerShell ? layoutScale.tests : layoutScale.disk;
+      return [
+        Math.cos(theta) * equatorial * radius * scale,
+        polar * radius * (1 - morphology.ellipticity) * scale,
+        Math.sin(theta) * equatorial * radius * scale,
+      ];
+    }
+
+    function spiralArmTheta(seed, radial, channel) {
+      const arm = Math.floor(unit(seed, channel) * morphology.armCount);
+      const scatter = .22 - (morphology.armCount - 2) * .025;
+      let origin;
+      let armRadial = radial;
+      if (morphology.family === MORPHOLOGY_FAMILY.barredSpiral) {
+        const barEnd = arm % 2;
+        const branch = Math.floor(arm / 2);
+        const branchesAtEnd = Math.ceil((morphology.armCount - barEnd) / 2);
+        const branchOffset = (branch - (branchesAtEnd - 1) / 2) * Math.PI / Math.max(3, morphology.armCount);
+        origin = morphology.phase + barEnd * Math.PI + branchOffset;
+        armRadial = Math.max(0, radial - (12 + morphology.barLength * 24) * .55);
+      } else {
+        origin = morphology.phase + arm * Math.PI * 2 / morphology.armCount;
+      }
+      return origin + armRadial * morphology.winding + normal(seed, channel + 1) * scatter;
+    }
+
+    function irregularPosition(seed, outer) {
+      const clumpIndex = Math.min(irregularClumpCenters.length - 1, Math.floor(unit(seed, 52) * irregularClumpCenters.length));
+      const center = irregularClumpCenters[clumpIndex] || [0, 0, 0, morphology.phase];
+      const localSpread = outer ? 10 : 7.5;
+      const along = clamp(normal(seed, 53), -2.6, 2.6) * localSpread;
+      const across = clamp(normal(seed, 55), -2.6, 2.6) * localSpread * .62;
+      const vertical = center[1] + clamp(normal(seed, 57), -2.6, 2.6) * localSpread * .38;
+      const cos = Math.cos(center[3]), sin = Math.sin(center[3]);
+      const scale = outer ? layoutScale.tests : layoutScale.disk;
+      return [
+        (center[0] + cos * along - sin * across) * scale,
+        vertical * scale,
+        (center[2] + sin * along + cos * across) * scale,
+      ];
+    }
+
+    function barredCorePosition(seed, vertical, scale) {
+      const halfLength = 12 + morphology.barLength * 24;
+      const along = (unit(seed, 34) * 2 - 1) * halfLength;
+      const across = normal(seed, 35) * (1 + Math.abs(along) * .025);
+      const cos = Math.cos(morphology.phase), sin = Math.sin(morphology.phase);
+      return [
+        (cos * along - sin * across) * scale,
+        vertical * scale,
+        (sin * along + cos * across) * scale,
+      ];
+    }
+
+    function coreDiscUsesArm(seed, bulge) {
+      return !bulge &&
+        spiralMorphology &&
+        unit(seed, 30) < morphology.armFraction;
+    }
+
     function corePosition(seed) {
-      const bulge = unit(seed, 2) < .24;
-      const radial = bulge ? 17 * Math.pow(unit(seed, 3), 1.75) : Math.min(42, -10 * Math.log(Math.max(1e-5, 1 - unit(seed, 3))));
-      const theta = unit(seed, 4) * Math.PI * 2 + radial * .04;
+      if (morphology.legacy) {
+        const bulge = unit(seed, 2) < .24;
+        const radial = bulge ? 17 * Math.pow(unit(seed, 3), 1.75) : Math.min(42, -10 * Math.log(Math.max(1e-5, 1 - unit(seed, 3))));
+        const theta = unit(seed, 4) * Math.PI * 2 + radial * .04;
+        const vertical = normal(seed, 5) * (bulge ? 5.8 : 1.4 + radial * .025);
+        const scale = bulge ? layoutScale.bulge : layoutScale.disk;
+        return [Math.cos(theta) * radial * scale, vertical * scale, Math.sin(theta) * radial * scale];
+      }
+      if (morphology.family === MORPHOLOGY_FAMILY.elliptical) return spheroidPosition(seed, false);
+      if (morphology.family === MORPHOLOGY_FAMILY.irregular) return irregularPosition(seed, false);
+
+      const bulge = unit(seed, 2) < morphology.bulgeShare;
+      const discLimit = morphology.family === MORPHOLOGY_FAMILY.lenticular ? layoutScale.coreOuterRadius / layoutScale.disk : 42;
+      const radial = bulge ? 17 * Math.pow(unit(seed, 3), 1.75) : Math.min(discLimit, -10 * Math.log(Math.max(1e-5, 1 - unit(seed, 3))));
       const vertical = normal(seed, 5) * (bulge ? 5.8 : 1.4 + radial * .025);
       const scale = bulge ? layoutScale.bulge : layoutScale.disk;
+      if (!bulge && morphology.family === MORPHOLOGY_FAMILY.barredSpiral && radial < 12 + morphology.barLength * 24 && unit(seed, 33) < .72) {
+        return barredCorePosition(seed, vertical, scale);
+      }
+      const inArm = coreDiscUsesArm(seed, bulge);
+      const theta = inArm
+        ? spiralArmTheta(seed, radial, 31)
+        : morphology.phase + unit(seed, 4) * Math.PI * 2 + radial * .04;
       return [Math.cos(theta) * radial * scale, vertical * scale, Math.sin(theta) * radial * scale];
     }
 
     function testPosition(seed) {
-      const radial = 17 + Math.min(45, -14 * Math.log(Math.max(1e-5, 1 - unit(seed, 7))));
-      const arm = Math.floor(unit(seed, 8) * 3);
-      const inArm = unit(seed, 9) < .38;
+      if (morphology.legacy) {
+        const radial = 17 + Math.min(45, -14 * Math.log(Math.max(1e-5, 1 - unit(seed, 7))));
+        const arm = Math.floor(unit(seed, 8) * 3);
+        const inArm = unit(seed, 9) < .38;
+        const theta = inArm
+          ? arm * (Math.PI * 2 / 3) + radial * .105 + normal(seed, 10) * .22
+          : unit(seed, 10) * Math.PI * 2;
+        const vertical = normal(seed, 11) * (1.4 + radial * .035);
+        return [Math.cos(theta) * radial * layoutScale.tests, vertical * layoutScale.tests, Math.sin(theta) * radial * layoutScale.tests];
+      }
+      if (morphology.family === MORPHOLOGY_FAMILY.elliptical) return spheroidPosition(seed, true);
+      if (morphology.family === MORPHOLOGY_FAMILY.irregular) return irregularPosition(seed, true);
+
+      const radial = morphology.family === MORPHOLOGY_FAMILY.lenticular
+        ? 16 + Math.min(layoutScale.testOuterRadius / layoutScale.tests - 16, -13 * Math.log(Math.max(1e-5, 1 - unit(seed, 7))))
+        : 17 + Math.min(45, -14 * Math.log(Math.max(1e-5, 1 - unit(seed, 7))));
+      const inArm = spiralMorphology && unit(seed, 9) < morphology.armFraction;
       const theta = inArm
-        ? arm * (Math.PI * 2 / 3) + radial * .105 + normal(seed, 10) * .22
-        : unit(seed, 10) * Math.PI * 2;
+        ? spiralArmTheta(seed, radial, 8)
+        : morphology.phase + unit(seed, 10) * Math.PI * 2;
       const vertical = normal(seed, 11) * (1.4 + radial * .035);
       return [Math.cos(theta) * radial * layoutScale.tests, vertical * layoutScale.tests, Math.sin(theta) * radial * layoutScale.tests];
     }
@@ -972,7 +1151,7 @@
       const fitZoom = radialDistance > 1
         ? desiredSeparation * Math.max(35, cameraDistance - z2) / (radialDistance * cameraFocalLength)
         : preferredZoom;
-      const coreFitZoom = Math.min(sceneRight, sceneBottom) * .28 * cameraDistance / (42 * layoutScale.disk * cameraFocalLength);
+      const coreFitZoom = Math.min(sceneRight, sceneBottom) * .28 * cameraDistance / (layoutScale.coreOuterRadius * cameraFocalLength);
       const targetZoom = clamp(fitZoom, MIN_ZOOM, Math.min(preferredZoom, coreFitZoom));
       const actualSeparation = Math.abs(x1) * cameraFocalLength / Math.max(35, cameraDistance - z2) * targetZoom;
       return {
