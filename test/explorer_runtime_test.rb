@@ -29,6 +29,35 @@ class ExplorerRuntimeTest < Minitest::Test
     refute_includes(RUNTIME, "innerHTML")
   end
 
+  def test_dependency_coverage_distinguishes_sampled_rows_from_exact_totals
+    function = RUNTIME.match(/^    function dependencyCoverageText\b.*?^    \}\n/m).to_s
+    raise "dependency coverage formatter not found" if function.empty?
+
+    script = <<~JAVASCRIPT
+      #{function}
+      process.stdout.write(JSON.stringify([
+        dependencyCoverageText(18, 163, 3),
+        dependencyCoverageText(1, 2, 1),
+        dependencyCoverageText(1, 1, 1),
+        dependencyCoverageText(0, 0, 2),
+      ]));
+    JAVASCRIPT
+    output, error, status = Open3.capture3("node", "-e", script)
+    raise "Node failed: #{error}" unless status.success?
+
+    assert_equal(
+      [
+        "18 sampled dependency declarations plotted · 163 total across 3 gems",
+        "1 sampled dependency declaration plotted · 2 total across 1 gem",
+        "1 dependency declaration plotted across 1 gem",
+        "0 dependency declarations plotted across 2 gems",
+      ],
+      JSON.parse(output),
+    )
+    assert_includes(RUNTIME, "plottedDependencyDeclarations = totals.renderedDependencyStars")
+    refute_includes(RUNTIME, "dependency stars shown")
+  end
+
   def test_explorer_initial_and_reset_camera_use_200_percent_without_changing_drift
     assert_includes(SHELL, 'id="reset-view" aria-label="Reset to default view" aria-keyshortcuts="0">Reset</button>')
     assert_includes(SHELL, '<output class="zoom-level" id="zoom-level" aria-label="Zoom level">200%</output>')

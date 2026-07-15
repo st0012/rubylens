@@ -295,6 +295,6 @@ const totalDeclarations = model.totals.namespaces
   + model.categoryStats.tests[2] + model.categoryStats.tests[3]
   + model.totals.dependencyStars;
 console.log(`wrote ${OUTPUT} (${(html.length / 1024 / 1024).toFixed(1)} MiB)`);
-console.log(`namespaces ${model.totals.namespaces.toLocaleString()} · packages ${model.totals.packages.toLocaleString()} · rendered dependency stars ${model.totals.renderedDependencyStars.toLocaleString()}`);
+console.log(`namespaces ${model.totals.namespaces.toLocaleString()} · packages ${model.totals.packages.toLocaleString()} · plotted dependency declarations ${model.totals.renderedDependencyStars.toLocaleString()}`);
 console.log(`points rendered ${(model.totals.namespaces + model.totals.renderedDependencyStars + model.totals.packages).toLocaleString()} · declarations represented ${totalDeclarations.toLocaleString()}`);
 console.log(`open the file in a browser; results appear in the overlay, title, and window.__RUBYLENS_BENCH__ (${WARMUP_FRAMES}+${MEASURE_FRAMES} driven frames, then ${MEASURE_MS / 1000}s of rAF sampling when visible)`);

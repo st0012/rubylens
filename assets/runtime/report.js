@@ -926,7 +926,7 @@
       dependencyStars: model.dependencyStars.length,
       renderedDependencyStars: model.dependencyStars.length,
     };
-    const renderedDependencyStars = totals.renderedDependencyStars;
+    const plottedDependencyDeclarations = totals.renderedDependencyStars;
     const directGemCount = model.packages.filter(row => row[1] === 0).length;
     const transitiveGemCount = totals.packages - directGemCount;
     const allRubyMetricIndexes = [0, 1, 2, 3];
@@ -940,6 +940,16 @@
       tests: { title: "Tests", rubyCounts: model.categoryStats?.tests || [0, 0, 0, 0], metricIndexes: testRubyMetricIndexes, focusZoom: 1.35 },
       dependencies: { title: "Gems", summary: `${totals.packages.toLocaleString()} dependency gems`, rubyCounts: dependencyRubyCounts, metricIndexes: allRubyMetricIndexes, note: `${directGemCount.toLocaleString()} direct · ${transitiveGemCount.toLocaleString()} transitive`, focusZoom: .72 },
     };
+
+    function dependencyCoverageText(plotted, total, packageCount) {
+      const gemCount = `${packageCount.toLocaleString()} ${packageCount === 1 ? "gem" : "gems"}`;
+      const plottedDeclarations = `${plotted.toLocaleString()} sampled dependency declaration${plotted === 1 ? "" : "s"}`;
+      if (plotted < total) {
+        return `${plottedDeclarations} plotted · ${total.toLocaleString()} total across ${gemCount}`;
+      }
+      const declarationCount = `${total.toLocaleString()} dependency declaration${total === 1 ? "" : "s"}`;
+      return `${declarationCount} plotted across ${gemCount}`;
+    }
     if (showcaseMode) {
       model.namespaces = [];
       model.packages = [];
@@ -2474,7 +2484,11 @@
     } else {
       document.title = `RubyLens · ${model.projectName}`;
       canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class and module stars for Ruby code details, dependency systems, or gem package subclouds. Selections open a top-down view that keeps the selected target and Core visible. Double-click a dependency system or gem subcloud, press Enter or F on its selected marker, or tap that marker again to expand its stars. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, use arrow keys to move the view, Space to pause or resume drift, and 0 to reset.`);
-      document.getElementById("coverage").textContent = `${renderedDependencyStars.toLocaleString()} dependency stars shown`;
+      document.getElementById("coverage").textContent = dependencyCoverageText(
+        plottedDependencyDeclarations,
+        totals.dependencyStars,
+        totals.packages,
+      );
       populateWarningDisclosure();
       applyCameraTarget(DEFAULT_CAMERA);
       setDrifting(driftRequested);
