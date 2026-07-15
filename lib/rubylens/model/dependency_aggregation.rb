@@ -10,13 +10,18 @@ module RubyLens
 
       def initialize(package_count:, row_limit: DEFAULT_ROW_LIMIT, seed: 0x51A7_E11A)
         raise ArgumentError, "package_count must be nonnegative" if package_count.negative?
-        raise ArgumentError, "row_limit must be nonnegative" if row_limit.negative?
+        raise ArgumentError, "row_limit must be nonnegative" if row_limit&.negative?
 
         @row_limit = row_limit
         @seed = seed
         @counts = Array.new(package_count, 0)
         @ruby_counts = Array.new(package_count) { Array.new(4, 0) }
         @signal_maxima = Array.new(6, 0)
+        if @row_limit.nil?
+          @all_rows = Array.new(package_count) { [] }
+          return
+        end
+
         @representatives = Array.new(package_count)
         @nonempty_package_count = 0
         @sample = []
@@ -29,7 +34,13 @@ module RubyLens
           @signal_maxima[index] = [@signal_maxima[index], row[column]].max
         end
 
-        entry = [sample_rank(package_index, sample_key), package_index, row.dup.freeze]
+        retained_row = row.dup.freeze
+        if @row_limit.nil?
+          @all_rows[package_index] << retained_row
+          return
+        end
+
+        entry = [sample_rank(package_index, sample_key), package_index, retained_row]
         representative = @representatives[package_index]
         @nonempty_package_count += 1 unless representative
         @representatives[package_index] = entry if !representative || compare_entries(entry, representative).negative?
@@ -37,22 +48,26 @@ module RubyLens
       end
 
       def packages
-        sampled_rows = Array.new(@counts.length) { [] }
-        selected = selected_representatives
-        selected_ids = selected.each_with_object({}) { |entry, ids| ids[entry.object_id] = true }
-        remaining = @row_limit - selected.length
-        if remaining.positive?
-          selected.concat(@sample.reject { |entry| selected_ids.key?(entry.object_id) }
-            .sort { |left, right| compare_entries(left, right) }
-            .first(remaining))
+        if @row_limit.nil?
+          sampled_rows = @all_rows
+        else
+          sampled_rows = Array.new(@counts.length) { [] }
+          selected = selected_representatives
+          selected_ids = selected.each_with_object({}) { |entry, ids| ids[entry.object_id] = true }
+          remaining = @row_limit - selected.length
+          if remaining.positive?
+            selected.concat(@sample.reject { |entry| selected_ids.key?(entry.object_id) }
+              .sort { |left, right| compare_entries(left, right) }
+              .first(remaining))
+          end
+          selected.sort { |left, right| compare_entries(left, right) }
+            .each { |_rank, package_index, row| sampled_rows[package_index] << row }
         end
-        selected.sort { |left, right| compare_entries(left, right) }
-          .each { |_rank, package_index, row| sampled_rows[package_index] << row }
         @counts.each_index.map do |index|
           {
             declaration_count: @counts[index],
             ruby_counts: @ruby_counts[index].dup.freeze,
-            declarations: sampled_rows[index].freeze,
+            declarations: sampled_rows[index].dup.freeze,
           }.freeze
         end.freeze
       end

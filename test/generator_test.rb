@@ -3,6 +3,13 @@
 require_relative "test_helper"
 
 class GeneratorTest < Minitest::Test
+  def test_report_pipeline_requests_complete_dependency_rows
+    pipeline = RubyLens::Generator.new.instance_variable_get(:@pipeline)
+    adapter = pipeline.instance_variable_get(:@adapter)
+
+    assert_nil(adapter.instance_variable_get(:@dependency_row_limit))
+  end
+
   def test_generation_pipeline_builds_the_model_and_shared_warnings
     manifest = Struct.new(:warnings).new(["manifest warning"])
     manifest_builder = Object.new

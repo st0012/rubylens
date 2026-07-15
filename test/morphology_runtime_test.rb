@@ -83,10 +83,11 @@ class MorphologyRuntimeTest < Minitest::Test
       ["Elliptical galaxy", "Lenticular galaxy", "Spiral galaxy", "Barred spiral galaxy", "Irregular galaxy"],
       JSON.parse(labels),
     )
-    assert_includes(RUNTIME, "const renderedStarCount = renderPoints.length;")
+    assert_includes(RUNTIME, "function updateGalaxySummary()")
+    assert_equal(2, RUNTIME.scan("updateGalaxySummary();").length)
     assert_includes(
       RUNTIME,
-      '`${MORPHOLOGY_FAMILY_LABELS[morphology.family]} - ${renderedStarCount.toLocaleString("en-US")} ${renderedStarCount === 1 ? "star" : "stars"}`',
+      '`${MORPHOLOGY_FAMILY_LABELS[morphology.family]} - ${renderPoints.length.toLocaleString("en-US")} ${renderPoints.length === 1 ? "star" : "stars"}`',
     )
   end
 

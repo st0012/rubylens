@@ -11,8 +11,9 @@ module RubyLens
     class RubydexAdapter
       TEST_SEGMENTS = %w[test tests spec specs feature features].freeze
 
-      def initialize(graph_factory: nil)
+      def initialize(graph_factory: nil, dependency_row_limit: Model::DependencyAggregation::DEFAULT_ROW_LIMIT)
         @graph_factory = graph_factory || ->(root) { Rubydex::Graph.new(workspace_path: root.to_s) }
+        @dependency_row_limit = dependency_row_limit
       end
 
       def index(manifest)
@@ -63,7 +64,10 @@ module RubyLens
       def collect_declarations(declarations, manifest)
         records = []
         category_stats = { "core" => Array.new(4, 0), "tests" => Array.new(4, 0) }
-        aggregation = Model::DependencyAggregation.new(package_count: manifest.packages.length)
+        aggregation = Model::DependencyAggregation.new(
+          package_count: manifest.packages.length,
+          row_limit: @dependency_row_limit,
+        )
 
         declarations.each do |declaration|
           next unless model_eligible_declaration?(declaration)

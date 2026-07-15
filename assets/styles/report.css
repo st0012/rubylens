@@ -36,6 +36,7 @@
     .panel-header p { margin: 4px 0 0; color: #8d8798; font-size: 11px; line-height: 1.4; }
     button { border: 1px solid rgba(255,255,255,.12); border-radius: 9px; padding: 7px 10px; background: rgba(255,255,255,.06); color: #eeeaf4; font: inherit; font-size: 11px; cursor: pointer; }
     button:hover { background: rgba(255,255,255,.1); }
+    button:disabled { opacity: .45; cursor: not-allowed; }
     button:focus-visible { outline: 2px solid rgba(216, 200, 255, .9); outline-offset: 2px; }
     details { border-bottom: 1px solid rgba(255,255,255,.07); }
     summary { display: flex; align-items: center; gap: 10px; padding: 14px 18px; cursor: pointer; list-style: none; }
@@ -70,6 +71,7 @@
     .fact-name { overflow: hidden; color: #ece6f2; font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
     .fact[aria-pressed="true"] { border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.12); }
     .explorer-search { display: grid; gap: 7px; padding: 14px 18px; border-bottom: 1px solid rgba(255,255,255,.08); }
+    .explorer-search[hidden] { display: none; }
     .explorer-search label { color: #b8b1c0; font-size: 10px; font-weight: 700; }
     .explorer-search input { width: 100%; min-width: 0; border: 1px solid rgba(255,255,255,.13); border-radius: 9px; padding: 9px 10px; background: rgba(255,255,255,.055); color: #f4eff8; font: inherit; font-size: 12px; }
     .explorer-search input::placeholder { color: #8f8998; opacity: 1; }
@@ -84,6 +86,7 @@
     .search-more { justify-self: start; margin-top: 2px; }
     .foot { padding: 15px 18px 17px; color: #7d7788; font-size: 10px; line-height: 1.55; }
     .toolbar { position: fixed; z-index: 2; left: 32px; bottom: 28px; display: flex; gap: 8px; }
+    .toolbar[hidden] { display: none; }
     #pan-mode[aria-pressed="true"] { border-color: rgba(216,200,255,.36); background: rgba(216,200,255,.14); color: #fff; }
     .zoom-level { min-width: 43px; align-content: center; color: #9f98a8; font-size: 10px; font-variant-numeric: tabular-nums; text-align: center; }
     .hint { position: fixed; right: 28px; bottom: 24px; z-index: 2; color: #777181; font-size: 10px; pointer-events: none; }

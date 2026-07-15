@@ -115,14 +115,14 @@ The default share overlay should say `Core systems · N` alongside repository-wi
 
 ## Shopify-scale safeguards
 
-- Separate indexed namespace totals from plotted namespace points, matching the existing dependency-star contract.
+- Separate indexed namespace totals from plotted namespace points, matching the Explorer dependency contract: exact totals and complete WebGL2 marks, with an explicit unsupported-renderer state instead of a sampled scene.
 - Start hierarchical overview mode around 25,000–30,000 workspace stars, then tune from real profiling rather than treating the threshold as permanent.
 - Give each nonempty group a minimum point quota; distribute the remaining budget proportional to `sqrt(group_size)`.
 - Always retain group hubs, high-signal namespaces, explorer-highlight winners, and cross-group namespaces before deterministic sampling.
 - Store each group's plotted namespaces contiguously and expose `groupRanges`, so focus and hit testing do not scan every point.
 - At overview, disable per-star hit testing. Enable it only for the focused group.
 - Suppress most labels when group counts are extreme and require search or focus for detail.
-- Keep Canvas 2D with hierarchical level of detail first. Move plotted marks to WebGL only if profiling shows animated mark throughput—not model construction or payload size—is the remaining bottleneck.
+- Require measured compatibility demand and performance proof before adding any alternate Explorer renderer or hierarchical level of detail.
 
 ## Implementation batches
 

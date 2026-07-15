@@ -142,8 +142,6 @@
     const projectionScratch = [0, 0, 0];
     let zoomReadout = null;
     let zoomReadoutText = "";
-    let vignetteGradient = null;
-    let vignetteKey = "";
     const showcaseAnnotationData = showcaseDetails && Array.isArray(model.annotations)
       ? model.annotations.slice(0, SHOWCASE_ANNOTATION_PRESET.limit)
       : [];
@@ -542,6 +540,111 @@
       return sample(namespacePoints, availableAfterDependencies).concat(dependencyStars, hubs, pinned);
     }
     const renderPoints = showcasePointSample();
+    const totals = model.totals || {
+      namespaces: model.namespaces.length,
+      packages: model.packages.length,
+      dependencyStars: model.dependencyStars.length,
+      renderedDependencyStars: model.dependencyStars.length,
+    };
+    const exactDependencyDeclarations = Math.max(0, Number(totals.dependencyStars) || 0);
+    const embeddedDependencyDeclarations = model.dependencyStars.length;
+    let plottedDependencyDeclarations = embeddedDependencyDeclarations;
+    function dependencyCoverageText(plotted, embedded, exact, packageCount, rendererUnavailable = false) {
+      const formattedPlotted = plotted.toLocaleString();
+      const formattedEmbedded = embedded.toLocaleString();
+      const formattedExact = exact.toLocaleString();
+      const gems = `${packageCount.toLocaleString()} ${packageCount === 1 ? "gem" : "gems"}`;
+      if (rendererUnavailable) {
+        if (embedded < exact) {
+          return `WebGL2 is required to plot this report's ${formattedEmbedded} sampled dependency declarations (of ${formattedExact} across ${gems})`;
+        }
+        return `WebGL2 is required to plot ${formattedExact} dependency declaration${exact === 1 ? "" : "s"} across ${gems}`;
+      }
+      if (plotted < exact) {
+        return `${formattedPlotted} sampled dependency declarations plotted (of ${formattedExact} across ${gems})`;
+      }
+      return `${formattedPlotted} dependency declaration${plotted === 1 ? "" : "s"} plotted across ${gems}`;
+    }
+
+    function dependencySamplingState(exact, embedded, packageCount) {
+      if (embedded >= exact) return null;
+      const gems = `${packageCount.toLocaleString()} ${packageCount === 1 ? "gem" : "gems"}`;
+      return {
+        summary: "Dependency sampling",
+        title: "Report data",
+        countLabel: `${embedded.toLocaleString()} embedded`,
+        note: `This report embeds ${embedded.toLocaleString()} sampled dependency declarations of ${exact.toLocaleString()}. Exact totals across ${gems} remain complete.`,
+      };
+    }
+
+    function updateDependencyCoverage() {
+      const coverage = document.getElementById("coverage");
+      if (!coverage) return;
+      const rendererUnavailable = document.documentElement.dataset.explorerRenderer === "unavailable";
+      coverage.textContent = dependencyCoverageText(plottedDependencyDeclarations, embeddedDependencyDeclarations, exactDependencyDeclarations, totals.packages, rendererUnavailable);
+    }
+
+    function updateGalaxySummary() {
+      const summary = document.getElementById("galaxy-summary");
+      if (document.documentElement.dataset.explorerRenderer === "unavailable") {
+        summary.textContent = `${MORPHOLOGY_FAMILY_LABELS[morphology.family]} · WebGL2 required`;
+        return;
+      }
+      summary.textContent = `${MORPHOLOGY_FAMILY_LABELS[morphology.family]} - ${renderPoints.length.toLocaleString("en-US")} ${renderPoints.length === 1 ? "star" : "stars"}`;
+    }
+
+    function disableExplorerControls() {
+      document.querySelectorAll("button").forEach(button => { if (button !== panelToggle) button.disabled = true; });
+      document.querySelectorAll("#controls input").forEach(input => { input.disabled = true; });
+      document.querySelector(".toolbar").hidden = true;
+      searchInput.disabled = true;
+      searchRegion.hidden = true;
+      searchResults.hidden = true;
+      canvas.removeAttribute("tabindex");
+      canvas.classList.add("is-unavailable");
+      canvas.style.pointerEvents = "none";
+      canvas.style.cursor = "default";
+      const hint = document.querySelector(".hint");
+      if (hint) hint.textContent = "WebGL2 is required to view this report";
+    }
+
+    function markExplorerUnavailable(reason, error = null) {
+      const activeElement = document.activeElement;
+      const hadInteractiveFocus = !helpOverlay.hidden || activeElement === canvas || Boolean(activeElement?.closest?.(".toolbar, #controls, #explorer-search-region"));
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      if (hoverFrame) cancelAnimationFrame(hoverFrame);
+      animationFrame = 0;
+      hoverFrame = 0;
+      pendingHover = null;
+      pointers.clear();
+      gesture = null;
+      pinchState = null;
+      dragging = false;
+      cameraFlight = null;
+      drifting = false;
+      driftRequested = false;
+      lastDriftTimestamp = null;
+      selectedPoint = null;
+      selectionLocked = false;
+      doubleClickTarget = null;
+      tooltip.hidden = true;
+      canvas.classList.remove("is-dragging-pan", "is-star");
+      if (!helpOverlay.hidden) closeHelp();
+      plottedDependencyDeclarations = 0;
+      document.documentElement.dataset.explorerRenderer = "unavailable";
+      document.documentElement.dataset.explorerUnavailableReason = reason;
+      document.documentElement.dataset.dependencySampling = String(embeddedDependencyDeclarations < exactDependencyDeclarations);
+      document.documentElement.dataset.embeddedDependencySampling = String(embeddedDependencyDeclarations < exactDependencyDeclarations);
+      document.documentElement.dataset.plottedDependencyDeclarations = String(plottedDependencyDeclarations);
+      document.documentElement.dataset.plottedScenePoints = "0";
+      if (error) document.documentElement.dataset.explorerRendererError = error.message;
+      canvas.setAttribute("aria-label", "Interactive artwork unavailable because WebGL2 is required.");
+      disableExplorerControls();
+      updateDependencyCoverage();
+      updateGalaxySummary();
+      populateWarningDisclosure();
+      if (hadInteractiveFocus) document.getElementById("warning-summary").focus({ preventScroll: true });
+    }
     const renderedShowcaseAnnotations = showcaseAnnotationData.map(annotation => {
       const point = showcasePointsByAnchor.get(showcaseAnnotationKey(annotation.category, annotation.anchor));
       return point ? Object.freeze({ ...annotation, point }) : null;
@@ -831,7 +934,7 @@
       });
       if (!gl) {
         liveCanvas.remove();
-        document.documentElement.dataset.explorerRenderer = "canvas2d-fallback";
+        document.documentElement.dataset.explorerUnavailableReason = "webgl2-unavailable";
         return null;
       }
       // Largest sprite is an unexpanded hub glow: radius 5.2 * 3.4 CSS pixels.
@@ -839,7 +942,7 @@
       const pointSizeRange = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE);
       if (pointSizeRange[1] < maxSpriteCssSize) {
         liveCanvas.remove();
-        document.documentElement.dataset.explorerRenderer = "canvas2d-fallback";
+        document.documentElement.dataset.explorerUnavailableReason = "webgl2-point-size-range";
         return null;
       }
       let rendererDpr = 1;
@@ -1030,8 +1133,8 @@
       liveCanvas.addEventListener("webglcontextlost", () => {
         explorerRenderer = null;
         liveCanvas.remove();
-        document.documentElement.dataset.explorerRenderer = "canvas2d-fallback";
-        requestRender();
+        markExplorerUnavailable("webgl2-context-lost");
+        context.clearRect(0, 0, width, height);
       });
 
       document.documentElement.dataset.explorerRenderer = "webgl2";
@@ -1092,24 +1195,29 @@
     }
 
     let explorerRenderer = null;
+    let explorerRendererError = null;
     if (interactiveMode) {
       try {
         explorerRenderer = createExplorerRenderer();
       } catch (error) {
         document.getElementById("explorer-cosmos")?.remove();
         explorerRenderer = null;
-        document.documentElement.dataset.explorerRenderer = "canvas2d-fallback";
-        document.documentElement.dataset.explorerRendererError = error.message;
+        explorerRendererError = error;
+        document.documentElement.dataset.explorerUnavailableReason = "webgl2-initialization-error";
+      }
+      if (explorerRenderer) {
+        document.documentElement.dataset.dependencySampling = String(plottedDependencyDeclarations < exactDependencyDeclarations);
+        document.documentElement.dataset.embeddedDependencySampling = String(embeddedDependencyDeclarations < exactDependencyDeclarations);
+        document.documentElement.dataset.plottedDependencyDeclarations = String(plottedDependencyDeclarations);
+        document.documentElement.dataset.plottedScenePoints = String(renderPoints.length);
+      } else {
+        markExplorerUnavailable(
+          document.documentElement.dataset.explorerUnavailableReason || "webgl2-unavailable",
+          explorerRendererError,
+        );
       }
     }
     const context = canvas.getContext("2d", { alpha: Boolean(explorerRenderer) });
-    const totals = model.totals || {
-      namespaces: model.namespaces.length,
-      packages: model.packages.length,
-      dependencyStars: model.dependencyStars.length,
-      renderedDependencyStars: model.dependencyStars.length,
-    };
-    const renderedDependencyStars = totals.renderedDependencyStars;
     const directGemCount = model.packages.filter(row => row[1] === 0).length;
     const transitiveGemCount = totals.packages - directGemCount;
     const allRubyMetricIndexes = [0, 1, 2, 3];
@@ -1123,11 +1231,9 @@
       tests: { title: "Tests", rubyCounts: model.categoryStats?.tests || [0, 0, 0, 0], metricIndexes: testRubyMetricIndexes, focusZoom: 1.35 },
       dependencies: { title: "Gems", summary: `${totals.packages.toLocaleString()} dependency gems`, rubyCounts: dependencyRubyCounts, metricIndexes: allRubyMetricIndexes, note: `${directGemCount.toLocaleString()} direct · ${transitiveGemCount.toLocaleString()} transitive`, focusZoom: .72 },
     };
-    if (showcaseMode) {
-      model.namespaces = [];
-      model.packages = [];
-      model.dependencyStars = [];
-    }
+    model.namespaces = [];
+    model.packages = [];
+    model.dependencyStars = [];
 
     function applyCameraTarget(target) {
       yaw = target.yaw;
@@ -1453,35 +1559,18 @@
     }
 
     function hitTest(x, y) {
-      if (explorerRenderer) return hitTestProjected(x, y);
-      let nearest = null;
-      let nearestDistanceSq = Infinity;
-      for (const point of interactivePoints) {
-        const screen = point.screen;
-        if (!screen) continue;
-        if (focusedCategory && point.category !== focusedCategory) continue;
-        if (expandedPackageIndex !== null && (point.category !== "dependencies" || point.packageIndex !== expandedPackageIndex)) continue;
-        if (expandedPackageIndex === null && expandedSystemIndex !== null && (point.category !== "dependencies" || point.systemIndex !== expandedSystemIndex)) continue;
-        const dx = screen[0] - x;
-        const dy = screen[1] - y;
-        const radius = Math.max(8, screen[2] + 4);
-        const distanceSq = dx * dx + dy * dy;
-        if (distanceSq <= radius * radius && distanceSq < nearestDistanceSq) {
-          nearest = point;
-          nearestDistanceSq = distanceSq;
-        }
-      }
-      return nearest;
+      return explorerRenderer ? hitTestProjected(x, y) : null;
     }
 
     function dependencyPackageAt(x, y, exact = hitTest(x, y)) {
+      if (!explorerRenderer) return null;
       if (exact) return exact.hub ? exact : null;
 
       let nearestHub = null;
       let nearestRatio = Infinity;
-      const matrix = explorerRenderer ? viewMatrix() : null;
+      const matrix = viewMatrix();
       for (const point of dependencyHubs) {
-        if (matrix) screenDataFor(point, matrix, 20);
+        screenDataFor(point, matrix, 20);
         if (!point.screen || !point.cloudScreenRadius) continue;
         if (expandedPackageIndex !== null && point.packageIndex !== expandedPackageIndex) continue;
         if (expandedPackageIndex === null && expandedSystemIndex !== null && point.systemIndex !== expandedSystemIndex) continue;
@@ -1713,7 +1802,7 @@
       return navigateToSelection(hub, { button, expandDependency: true });
     }
 
-    function appendWarningGroup(container, title, count, rows = [], note = "") {
+    function appendWarningGroup(container, title, count, rows = [], note = "", countLabel = null) {
       if (count <= 0) return;
       const group = document.createElement("section");
       group.className = "warning-group";
@@ -1722,7 +1811,7 @@
       const label = document.createElement("span");
       label.textContent = title;
       const total = document.createElement("span");
-      total.textContent = `${count.toLocaleString()} ${count === 1 ? "warning" : "warnings"}`;
+      total.textContent = countLabel || `${count.toLocaleString()} ${count === 1 ? "warning" : "warnings"}`;
       heading.append(label, total);
       group.append(heading);
       if (rows.length) {
@@ -1755,11 +1844,43 @@
       const container = document.getElementById("warning-details");
       const counts = Object.fromEntries(["manifest", "index", "integrity"].map(category => [category, Math.max(0, Number(model.warningCounts?.[category]) || 0)]));
       const warningTotal = Object.values(counts).reduce((sum, count) => sum + count, 0);
-      if (!warningTotal) return;
-
-      details.hidden = false;
-      summary.textContent = `${warningTotal.toLocaleString()} partial-index warning${warningTotal === 1 ? "" : "s"}`;
+      const rendererUnavailable = interactiveMode && document.documentElement.dataset.explorerRenderer === "unavailable";
+      const sampling = interactiveMode
+        ? dependencySamplingState(exactDependencyDeclarations, embeddedDependencyDeclarations, totals.packages)
+        : null;
       container.textContent = "";
+      details.hidden = !rendererUnavailable && !sampling && warningTotal === 0;
+      if (details.hidden) return;
+
+      const partialIndexSummary = `${warningTotal.toLocaleString()} partial-index warning${warningTotal === 1 ? "" : "s"}`;
+      const statusSummaries = [];
+      if (rendererUnavailable) statusSummaries.push("WebGL2 required");
+      if (sampling) statusSummaries.push(sampling.summary);
+      if (warningTotal > 0) statusSummaries.push(partialIndexSummary);
+      summary.textContent = statusSummaries.join(" · ");
+
+      if (rendererUnavailable) {
+        details.open = true;
+        appendWarningGroup(
+          container,
+          "Interactive rendering",
+          1,
+          [],
+          `This report requires WebGL2 to display its ${renderPoints.length.toLocaleString()}-point interactive scene. Exact dependency totals across ${totals.packages.toLocaleString()} ${totals.packages === 1 ? "gem" : "gems"} remain complete.`,
+          "Unavailable",
+        );
+      }
+
+      if (sampling) {
+        appendWarningGroup(
+          container,
+          sampling.title,
+          1,
+          [],
+          sampling.note,
+          sampling.countLabel,
+        );
+      }
 
       const safeWarnings = (Array.isArray(model.dependencyWarnings) ? model.dependencyWarnings : []).filter(warning =>
         warning && typeof warning.name === "string" && warning.name.length > 0 && typeof warning.reason === "string" && warning.reason.length > 0
@@ -2239,19 +2360,6 @@
       zoomReadout.value = text;
     }
 
-    function explorerVignette() {
-      const centerX = sceneCenterX + panX;
-      const centerY = sceneCenterY + panY;
-      const key = `${width}|${height}|${centerX}|${centerY}`;
-      if (key !== vignetteKey) {
-        vignetteKey = key;
-        vignetteGradient = context.createRadialGradient(centerX, centerY, 0, centerX, centerY, Math.max(width, height) * .72);
-        vignetteGradient.addColorStop(0, "rgba(30,16,45,.18)");
-        vignetteGradient.addColorStop(1, "rgba(0,0,0,.6)");
-      }
-      return vignetteGradient;
-    }
-
     function updateExplorerOverlay() {
       context.clearRect(0, 0, width, height);
       if (!selectedPoint) return;
@@ -2318,89 +2426,17 @@
 
     function render(timestamp) {
       animationFrame = 0;
-      const driftAdvanced = advanceExplorerDrift(timestamp);
-      updateCameraFlight(timestamp);
       if (showcaseMode) {
         if (showcaseRenderer) showcaseRenderer.render();
         else renderShowcaseFallback();
         return;
       }
-      if (interactiveMode) updateZoomReadout();
-      if (explorerRenderer) {
-        explorerRenderer.render();
-        updateExplorerOverlay();
-      } else {
-        context.globalCompositeOperation = "source-over";
-        context.globalAlpha = 1;
-        context.fillStyle = "#03040a";
-        context.fillRect(0, 0, width, height);
-        context.fillStyle = explorerVignette();
-        context.fillRect(0, 0, width, height);
-        context.globalCompositeOperation = "lighter";
-        const matrix = viewMatrix();
-        const deepDetail = clamp(Math.log2(Math.max(1, zoom)) / 5, 0, 1);
-        const exposure = explorerExposureForZoom(zoom);
-        for (const point of renderPoints) {
-          point.screen = null;
-          if (point.hub) point.cloudScreenRadius = null;
-          if (!visibleCategories[point.category]) continue;
-          const projected = project(point, matrix, projectionScratch);
-          if (!projected) continue;
-          const [x, y, perspective] = projected;
-          const cullMargin = point === selectedPoint ? 0 : 20;
-          if (x < -cullMargin || x > sceneRight + cullMargin || y < -cullMargin || y > sceneBottom + cullMargin) continue;
-          const size = clamp(point.sizeFactor * perspective, .35, point.maxSize);
-          const alpha = point.alphaBase;
-          const focusedDependencyPoint = point.category === "dependencies" && (
-            expandedPackageIndex !== null
-              ? point.packageIndex === expandedPackageIndex
-              : expandedSystemIndex !== null && point.systemIndex === expandedSystemIndex
-          );
-          const dependencyExpanded = expandedPackageIndex !== null || expandedSystemIndex !== null;
-          const emphasis = dependencyExpanded
-            ? (focusedDependencyPoint ? 1 : contextVisibility.package)
-            : selectionLocked && selectedPoint ? (point === selectedPoint ? 1 : contextVisibility.selection) : focusedCategory && point.category !== focusedCategory ? contextVisibility.category : 1;
-          const visibleAlpha = (focusedDependencyPoint ? Math.max(.34, alpha) : alpha * emphasis) * exposure;
-          const colour = colourStyles[point.category];
-          const screen = point.screenData || (point.screenData = [0, 0, 0]);
-          screen[0] = x; screen[1] = y; screen[2] = size;
-          point.screen = screen;
-          if (point.hub) {
-            const parentSystem = point.systemHub && !point.packageHub;
-            const anchor = parentSystem ? systemAnchors[point.systemIndex] : packageAnchors[point.packageIndex];
-            const expanded = parentSystem
-              ? expandedPackageIndex === null && expandedSystemIndex === point.systemIndex
-              : expandedPackageIndex === point.packageIndex;
-            point.cloudScreenRadius = Math.max(12, anchor[3] * perspective * (expanded ? DEPENDENCY_EXPANSION : 1) * 1.2);
-          }
-          const detailedPoint = emphasis >= .1;
-          if (size > 1.35 && detailedPoint) {
-            const glowScale = focusedDependencyPoint ? 2.2 - deepDetail * .8 : 3.4 - deepDetail * 1.3;
-            context.globalAlpha = visibleAlpha * (focusedDependencyPoint ? .045 : .055);
-            context.fillStyle = colour;
-            context.beginPath(); context.arc(x, y, size * glowScale, 0, Math.PI * 2); context.fill();
-          }
-          context.globalAlpha = visibleAlpha;
-          context.fillStyle = colour;
-          if (!detailedPoint || size < .85) context.fillRect(x, y, 1, 1);
-          else { context.beginPath(); context.arc(x, y, size, 0, Math.PI * 2); context.fill(); }
-          if (size > 1.1 && detailedPoint) {
-            context.globalAlpha = Math.min(.9, visibleAlpha * 1.25);
-            context.fillStyle = "#fff8f4";
-            context.beginPath(); context.arc(x, y, Math.max(.45 + deepDetail * .25, size * (.24 + deepDetail * .06)), 0, Math.PI * 2); context.fill();
-          }
-          if (point === selectedPoint) {
-            context.globalAlpha = 1;
-            context.beginPath(); context.arc(x, y, Math.max(7, size * 2.5), 0, Math.PI * 2);
-            context.strokeStyle = "rgba(255,255,255,.95)"; context.lineWidth = 1.2; context.stroke();
-            context.globalAlpha = .5;
-            context.beginPath(); context.arc(x, y, Math.max(12, size * 4), 0, Math.PI * 2);
-            context.strokeStyle = colour; context.lineWidth = 1; context.stroke();
-          }
-        }
-        context.globalAlpha = 1;
-        context.globalCompositeOperation = "source-over";
-      }
+      if (!explorerRenderer) return;
+      const driftAdvanced = advanceExplorerDrift(timestamp);
+      updateCameraFlight(timestamp);
+      updateZoomReadout();
+      explorerRenderer.render();
+      updateExplorerOverlay();
       if (selectedPoint) {
         if (cameraFlight) tooltip.hidden = true;
         else positionTooltip(selectedPoint);
@@ -2551,11 +2587,17 @@
     }
 
     function syncDrifting() {
-      drifting = interactiveMode && driftRequested && !reducedMotionQuery.matches;
+      const rendererUnavailable = document.documentElement.dataset.explorerRenderer === "unavailable";
+      drifting = interactiveMode && !rendererUnavailable && driftRequested && !reducedMotionQuery.matches;
       lastDriftTimestamp = null;
       const motion = document.getElementById("motion");
-      motion.disabled = reducedMotionQuery.matches;
-      if (reducedMotionQuery.matches) {
+      motion.disabled = rendererUnavailable || reducedMotionQuery.matches;
+      if (rendererUnavailable) {
+        motion.textContent = "Drift unavailable";
+        motion.setAttribute("aria-label", "Drift unavailable because WebGL2 is required");
+        motion.setAttribute("aria-pressed", "true");
+        motion.title = "WebGL2 required";
+      } else if (reducedMotionQuery.matches) {
         motion.textContent = "Drift off";
         motion.setAttribute("aria-label", "Drift disabled by reduced motion preference");
         motion.setAttribute("aria-pressed", "true");
@@ -2718,6 +2760,7 @@
         else if (event.key === "Tab") { event.preventDefault(); helpClose.focus(); }
         return;
       }
+      if (!explorerRenderer) return;
       if (toggleDriftWithSpace(event)) return;
       if (event.key === "Escape") exitExplorationFocus();
       else if (!handleViewShortcut(event)) moveViewWithArrow(event);
@@ -2740,8 +2783,7 @@
 
     window.addEventListener("resize", resize);
     document.querySelector("h1").textContent = model.projectName;
-    const renderedStarCount = renderPoints.length;
-    document.getElementById("galaxy-summary").textContent = `${MORPHOLOGY_FAMILY_LABELS[morphology.family]} - ${renderedStarCount.toLocaleString("en-US")} ${renderedStarCount === 1 ? "star" : "stars"}`;
+    updateGalaxySummary();
     if (showcaseMode) {
       document.title = `${model.projectName} · RubyLens showcase`;
       const showcaseLabel = `Autonomous stellar artwork of ${model.projectName}, completing one slow rotation each minute.`;
@@ -2753,13 +2795,16 @@
       startShowcase();
     } else {
       document.title = `RubyLens · ${model.projectName}`;
-      canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class and module stars for Ruby code details, dependency systems, or gem package subclouds. Selections open a top-down view that keeps the selected target and Core visible. Double-click a dependency system or gem subcloud, press Enter or F on its selected marker, or tap that marker again to expand its stars. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, use arrow keys to move the view, Space to pause or resume drift, 0 to reset, slash to search, and question mark for the full shortcut list.`);
-      document.getElementById("coverage").textContent = `${renderedDependencyStars.toLocaleString()} dependency stars shown`;
+      if (explorerRenderer) {
+        canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class and module stars for Ruby code details, dependency systems, or gem package subclouds. Selections open a top-down view that keeps the selected target and Core visible. Double-click a dependency system or gem subcloud, press Enter or F on its selected marker, or tap that marker again to expand its stars. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, use arrow keys to move the view, Space to pause or resume drift, 0 to reset, slash to search, and question mark for the full shortcut list.`);
+      }
+      updateDependencyCoverage();
       populateWarningDisclosure();
       applyCameraTarget(DEFAULT_CAMERA);
       setDrifting(driftRequested);
       setNavigationMode(navigationMode);
       createExplorer();
+      if (!explorerRenderer) disableExplorerControls();
       initializeSearch();
       setPanelCollapsed(window.matchMedia("(max-width: 760px)").matches);
       resize();

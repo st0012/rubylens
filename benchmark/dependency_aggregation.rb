@@ -5,7 +5,8 @@ require "json"
 require_relative "../lib/rubylens/model/dependency_aggregation"
 
 declaration_count = Integer(ENV.fetch("DECLARATIONS", "1000000"))
-row_limit = Integer(ENV.fetch("ROW_LIMIT", RubyLens::Model::DependencyAggregation::DEFAULT_ROW_LIMIT.to_s))
+row_limit_value = ENV.fetch("ROW_LIMIT", RubyLens::Model::DependencyAggregation::DEFAULT_ROW_LIMIT)
+row_limit = row_limit_value == "unlimited" ? nil : Integer(row_limit_value)
 package_count = Integer(ENV.fetch("PACKAGES", "250"))
 aggregation = RubyLens::Model::DependencyAggregation.new(package_count:, row_limit:)
 GC.start
@@ -25,13 +26,13 @@ packages = aggregation.packages
 retained_rows = packages.sum { |package| package.fetch(:declarations).length }
 payload = Marshal.dump([packages, aggregation.signal_maxima])
 exact_declaration_total = packages.sum { |package| package.fetch(:declaration_count) }
-raise "retained row limit exceeded" if retained_rows > row_limit
+raise "retained row limit exceeded" if row_limit && retained_rows > row_limit
 raise "declaration total changed" unless exact_declaration_total == declaration_count
 
 puts JSON.pretty_generate(
   declarations: declaration_count,
   packages: package_count,
-  row_limit: row_limit,
+  row_limit: row_limit || "unlimited",
   retained_rows: retained_rows,
   retention_ratio: retained_rows.fdiv(declaration_count),
   exact_declaration_total: exact_declaration_total,
