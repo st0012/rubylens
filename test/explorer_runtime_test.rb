@@ -119,7 +119,7 @@ class ExplorerRuntimeTest < Minitest::Test
     assert_includes(dblclick, "const exact = hitTest(event.clientX, event.clientY)")
     assert_includes(dblclick, "if (exact && !exact.hub) return;")
     assert_includes(dblclick, 'if (dependency?.category === "dependencies") {')
-    assert_includes(dblclick, "if (dependency) return;")
+    assert_match(/if \(dependency\) \{\s+navigateToSelection\(dependency\);\s+return;\s+\}/m, dblclick)
     assert_includes(dblclick, "zoomBetween(event.shiftKey ? zoom / 2 : zoom * 2, event.clientX, event.clientY)")
     assert_operator(dblclick.index("if (exact && !exact.hub) return;"), :<, dblclick.index("const dependency ="))
   end
@@ -167,7 +167,7 @@ class ExplorerRuntimeTest < Minitest::Test
     assert_includes(RUNTIME, "if (searchMatches.length) activateSearchResult(interactivePoints[searchMatches[0]])")
     assert_includes(RUNTIME, "if (event.target === searchInput) flushPendingSearch()")
     assert_includes(RUNTIME, 'if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return')
-    assert_includes(RUNTIME, "const focusables = [...searchResults.querySelectorAll(\"button\")]")
+    assert_includes(RUNTIME, "const focusables = [...searchResults.querySelectorAll(\".search-result\")]")
     assert_includes(RUNTIME, "else if (index === 0) searchInput.focus()")
   end
 

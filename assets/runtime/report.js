@@ -1745,7 +1745,7 @@
         }
         if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
         if (event.target === searchInput) flushPendingSearch();
-        const focusables = [...searchResults.querySelectorAll("button")];
+        const focusables = [...searchResults.querySelectorAll(".search-result")];
         if (!focusables.length) return;
         event.preventDefault();
         if (event.target === searchInput) {
@@ -2523,7 +2523,10 @@
         else focusDependencyPackage(dependency.packageIndex);
         return;
       }
-      if (dependency) return;
+      if (dependency) {
+        navigateToSelection(dependency);
+        return;
+      }
       cancelCameraFlight();
       zoomBetween(event.shiftKey ? zoom / 2 : zoom * 2, event.clientX, event.clientY);
       requestRender();
