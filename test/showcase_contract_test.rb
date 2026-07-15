@@ -160,97 +160,44 @@ class ShowcaseContractTest < Minitest::Test
   def test_dependency_preset_only_amplifies_ordinary_showcase_stars
     assert_equal(APPROVED_DEPENDENCY_PRESET, showcase_preset("SHOWCASE_DEPENDENCY_PRESET"))
 
-    [runtime_function("createShowcaseRenderer"), runtime_function("renderShowcaseFallback")].each do |source|
-      assert_includes(source, 'point.category === "dependencies" && !point.hub')
-      assert_includes(source, "SHOWCASE_DEPENDENCY_PRESET.starSizeScale")
-      assert_includes(source, "SHOWCASE_DEPENDENCY_PRESET.starAlphaScale")
-    end
+    renderer = runtime_function("createShowcaseRenderer")
+    assert_includes(renderer, 'point.category === "dependencies" && !point.hub')
+    assert_includes(renderer, "SHOWCASE_DEPENDENCY_PRESET.starSizeScale")
+    assert_includes(renderer, "SHOWCASE_DEPENDENCY_PRESET.starAlphaScale")
   end
 
-  def test_showcase_sampling_preserves_the_bounded_dependency_budget_before_namespaces
+  def test_showcase_renders_the_complete_scene_without_a_second_sampler
     runtime = File.read(RUNTIME_PATH)
-    hash_source = runtime.match(/^    const hash = .*?^    \};/m).to_s.strip
-    refute_empty(hash_source)
-
-    script = <<~JAVASCRIPT
-      const showcaseMode = true;
-      const showcaseDetails = false;
-      const showcasePointsByAnchor = new Map();
-      const SHOWCASE_POINT_LIMIT = 12;
-      #{hash_source}
-      let points = [
-        ...Array.from({ length: 20 }, (_, seed) => ({ category: "core", seed })),
-        ...Array.from({ length: 10 }, (_, offset) => ({ category: "tests", seed: 20 + offset })),
-        ...Array.from({ length: 8 }, (_, offset) => ({ category: "dependencies", seed: 30 + offset })),
-        { category: "dependencies", seed: 38, hub: true },
-      ];
-      #{runtime_function("showcasePointSample")}
-      const summarize = sampled => ({
-        total: sampled.length,
-        dependencyStars: sampled.filter(point => point.category === "dependencies" && !point.hub).length,
-        hubs: sampled.filter(point => point.hub).length,
-        namespaces: sampled.filter(point => point.category !== "dependencies").length,
-      });
-      const preserved = summarize(showcasePointSample());
-      points = [
-        ...Array.from({ length: 20 }, (_, seed) => ({ category: "core", seed })),
-        ...Array.from({ length: 20 }, (_, offset) => ({ category: "dependencies", seed: 20 + offset })),
-        { category: "dependencies", seed: 40, hub: true },
-      ];
-      const bounded = summarize(showcasePointSample());
-      process.stdout.write(JSON.stringify({
-        preserved,
-        bounded,
-      }));
-    JAVASCRIPT
-    output, error, status = Open3.capture3("node", "-e", script)
-    assert(status.success?, "Node failed: #{error}")
-
-    result = JSON.parse(output)
-    assert_equal(
-      { "total" => 12, "dependencyStars" => 8, "hubs" => 1, "namespaces" => 3 },
-      result.fetch("preserved"),
-    )
-    assert_equal(
-      { "total" => 12, "dependencyStars" => 11, "hubs" => 1, "namespaces" => 0 },
-      result.fetch("bounded"),
-    )
+    assert_includes(runtime, "const renderPoints = points")
+    assert_includes(runtime_function("createShowcaseRenderer"), "new Float32Array(renderPoints.length * 7)")
+    assert_includes(runtime_function("updateGalaxySummary"), '"scene points"')
+    refute_includes(runtime, "SHOWCASE_POINT_LIMIT")
+    refute_includes(runtime, "showcasePointSample")
   end
 
-  def test_detailed_showcase_sampling_keeps_hidden_root_points_above_the_global_limit
+  def test_showcase_requires_webgl2_and_fails_explicitly
     runtime = File.read(RUNTIME_PATH)
-    hash_source = runtime.match(/^    const hash = .*?^    \};/m).to_s.strip
-    refute_empty(hash_source)
+    shell = File.read(File.expand_path("../assets/shells/showcase.html", __dir__))
+    renderer = runtime_function("createShowcaseRenderer")
+    unavailable = runtime_function("markShowcaseUnavailable")
 
-    script = <<~JAVASCRIPT
-      const showcaseMode = true;
-      const showcaseDetails = true;
-      const SHOWCASE_POINT_LIMIT = 50_000;
-      #{hash_source}
-      const points = Array.from({ length: SHOWCASE_POINT_LIMIT + 1 }, (_, seed) => ({ category: "core", seed }));
-      const ranked = points.slice().sort((left, right) => hash(left.seed, 73) - hash(right.seed, 73) || left.seed - right.seed);
-      const roots = ranked.slice(-3);
-      const expectedEvicted = ranked.at(-4);
-      const showcasePointsByAnchor = new Map(roots.map((point, index) => [`core:${index}`, point]));
-      #{runtime_function("showcasePointSample")}
-      const sampled = showcasePointSample();
-      process.stdout.write(JSON.stringify({
-        count: sampled.length,
-        rootsRetained: roots.every(point => sampled.includes(point)),
-        expectedUnpinnedPointEvicted: !sampled.includes(expectedEvicted),
-      }));
-    JAVASCRIPT
-    output, error, status = Open3.capture3("node", "-e", script)
-    assert(status.success?, "Node failed: #{error}")
-
-    assert_equal(
-      {
-        "count" => 50_000,
-        "rootsRetained" => true,
-        "expectedUnpinnedPointEvicted" => true,
-      },
-      JSON.parse(output),
-    )
+    assert_includes(shell, 'id="showcase-status" role="status" aria-live="polite" hidden')
+    assert_includes(renderer, 'canvas.getContext("webgl2"')
+    assert_includes(renderer, 'dataset.showcaseUnavailableReason = "webgl2-unavailable"')
+    assert_includes(renderer, 'dataset.showcaseUnavailableReason = "webgl2-point-size-range"')
+    assert_includes(renderer, 'markShowcaseUnavailable("webgl2-context-lost")')
+    assert_includes(runtime, 'dataset.showcaseUnavailableReason = "webgl2-initialization-error"')
+    assert_includes(unavailable, 'dataset.showcaseRenderer = "unavailable"')
+    assert_includes(unavailable, "plottedDependencyDeclarations = 0")
+    assert_includes(unavailable, "dataset.plottedDependencyDeclarations = String(plottedDependencyDeclarations)")
+    assert_includes(unavailable, 'dataset.plottedScenePoints = "0"')
+    assert_includes(unavailable, 'dataset.showcaseMotion = "unavailable"')
+    assert_includes(unavailable, 'dataset.showcaseReady = "true"')
+    assert_includes(unavailable, 'showcaseStatus.textContent = "WebGL2 is required to render this complete Showcase."')
+    assert_includes(runtime, 'const context = interactiveMode ? canvas.getContext("2d"')
+    assert_includes(File.read(STYLES_PATH), ".showcase-status { max-width: 720px; font-size: 24px; }")
+    refute_includes(runtime, "renderShowcaseFallback")
+    refute_includes(runtime, "canvas2d-fallback")
   end
 
   def test_approved_annotation_timing_and_tracking_contract_is_exact
@@ -278,7 +225,7 @@ class ShowcaseContractTest < Minitest::Test
     assert_includes(runtime, ".slice(0, SHOWCASE_ANNOTATION_PRESET.limit)")
     assert_includes(runtime, "Array.isArray(model.pinnedNamespaceAnchors)")
     assert_includes(runtime_function("buildPoints"), "showcasePinnedNamespaceAnchors.has(index)")
-    assert_includes(runtime, "showcaseDetails ? Array.from(showcasePointsByAnchor.values()) : []")
+    assert_includes(runtime_function("buildPoints"), "showcasePointsByAnchor.set(annotationKey, point)")
     assert_includes(reduced_branch, "showcaseAnnotation.hidden = true")
     assert_includes(reduced_branch, "hideShowcaseAnnotation()")
     refute_includes(reduced_branch, "updateShowcaseAnnotation")

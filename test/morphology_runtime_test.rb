@@ -76,7 +76,7 @@ class MorphologyRuntimeTest < Minitest::Test
     assert_equal(4, stats.dig("morphology", "family"))
   end
 
-  def test_all_family_labels_share_the_actual_rendered_star_count
+  def test_all_family_labels_share_the_actual_rendered_count
     labels = RUNTIME.match(/^    const MORPHOLOGY_FAMILY_LABELS = Object\.freeze\((?<labels>\[.*\])\);$/)[:labels]
 
     assert_equal(
@@ -84,10 +84,14 @@ class MorphologyRuntimeTest < Minitest::Test
       JSON.parse(labels),
     )
     assert_includes(RUNTIME, "function updateGalaxySummary()")
-    assert_equal(2, RUNTIME.scan("updateGalaxySummary();").length)
+    assert_equal(3, RUNTIME.scan("updateGalaxySummary();").length)
     assert_includes(
       RUNTIME,
       '`${MORPHOLOGY_FAMILY_LABELS[morphology.family]} - ${renderPoints.length.toLocaleString("en-US")} ${renderPoints.length === 1 ? "star" : "stars"}`',
+    )
+    assert_includes(
+      RUNTIME,
+      '`${MORPHOLOGY_FAMILY_LABELS[morphology.family]} · ${renderPoints.length.toLocaleString("en-US")} ${renderPoints.length === 1 ? "scene point" : "scene points"}`',
     )
   end
 

@@ -8,8 +8,9 @@
     .eyebrow { margin: 0 0 10px; color: #c2b3d4; font-size: 11px; font-weight: 750; letter-spacing: .18em; text-transform: uppercase; }
     h1 { display: -webkit-box; margin: 0; overflow: hidden; overflow-wrap: anywhere; color: #f6f2ff; font: 500 38.88px/1.05 ui-serif, Georgia, serif; letter-spacing: -.04em; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
     .galaxy-summary { margin: 10px 0 0; color: #aaa0b8; font-size: 11px; font-weight: 650; letter-spacing: .025em; line-height: 1.35; }
+    .showcase-status { max-width: 420px; margin: 18px 0 0; color: #ddd4e8; font-size: 13px; font-weight: 650; letter-spacing: .015em; line-height: 1.45; }
     .cinema-stats { display: grid; grid-template-columns: repeat(4, minmax(72px, auto)); gap: 10px 24px; margin: 16px 0 0; }
-    .cinema-stats[hidden], .cinema-secondary[hidden], .cinema-annotation[hidden] { display: none; }
+    .showcase-status[hidden], .cinema-stats[hidden], .cinema-secondary[hidden], .cinema-annotation[hidden], canvas[hidden] { display: none; }
     .cinema-stats div { min-width: 0; }
     .cinema-stats dt, .cinema-stats dd { margin: 0; }
     .cinema-stats dt { color: #8e8799; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
@@ -40,6 +41,7 @@
     }
     @media (max-width: 600px) {
       .galaxy-summary { font-size: 24px; }
+      .showcase-status { max-width: 720px; font-size: 24px; }
       .cinema-annotation::before { width: 32px; height: 32px; border-width: 3px; }
       .cinema-annotation::after { width: 144px; height: 3px; }
       .cinema-annotation-copy { left: 120px; top: -64px; width: 560px; min-height: 104px; padding: 16px 22px 18px; }

@@ -70,7 +70,7 @@ class LayoutDensityRuntimeTest < Minitest::Test
     assert_in_delta(8, metrics.fetch("dependencyInnerRadius") - metrics.fetch("testOuterRadius"), 1e-12)
   end
 
-  def test_canvas_and_webgl_share_the_adaptive_camera
+  def test_cpu_projection_and_webgl_share_the_adaptive_camera
     assert_includes(RUNTIME, "float depth = u_cameraDistance - z2;")
     assert_includes(RUNTIME, "float perspective = u_cameraFocalLength / depth * u_zoom;")
     assert_includes(RUNTIME, "gl.uniform1f(pointUniforms.cameraDistance, cameraDistance);")
@@ -103,7 +103,7 @@ class LayoutDensityRuntimeTest < Minitest::Test
       RUNTIME.index("function buildPoints"),
     )
 
-    %w[createShowcaseRenderer project renderShowcaseFallback render applyShowcaseCamera renderShowcase].each do |name|
+    %w[createShowcaseRenderer project render applyShowcaseCamera renderShowcase].each do |name|
       function = runtime_function(name)
       refute_includes(function, "model.namespaces")
       refute_includes(function, "layoutMetricsForCoreCount")

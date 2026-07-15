@@ -59,7 +59,7 @@ bundle exec rubylens showcase
 
 The default output is `rubylens-showcase.html` in the project root. It is self-contained, offline, atomically written with mode `0600`, and locally excludes only that exact default path and its atomic temporary-file pattern. Explicit custom outputs remain unmanaged. RubyLens refuses to replace a tracked default or an unrelated existing file.
 
-The default Minimal Showcase intentionally includes only the project name and numeric visual structure. It omits aggregate statistics and does not serialize declaration names, gem names, source text, comments, or paths. Pass `--details` to add the aggregate Ruby statistics and one-at-a-time cinematic labels for a deterministic, capped selection of Core/Test declarations and dependency systems. Individual dependency stars remain anonymous. Its deterministic renderer bounds large scenes to 50,000 plotted points, preserving selected annotation anchors, gem hubs, and the 18,000-row dependency-declaration budget before sampling Core/Test namespace points. `prefers-reduced-motion` produces one stable frame instead of a continuous orbit and hides cinematic labels.
+The default Minimal Showcase intentionally includes only the project name and numeric visual structure. It omits aggregate statistics and does not serialize declaration names, gem names, source text, comments, or paths. Pass `--details` to add the aggregate Ruby statistics and one-at-a-time cinematic labels for a deterministic, capped selection of Core/Test declarations and dependency systems. Individual dependency stars remain anonymous. Showcase embeds every model-eligible dependency declaration and renders every Core, Test, dependency, and hub point with WebGL2; it does not substitute a sampled Canvas scene. If WebGL2 is unavailable or loses its context, the artwork stops and says that WebGL2 is required. `prefers-reduced-motion` produces one stable frame instead of a continuous orbit and hides cinematic labels.
 
 Ruby API:
 
@@ -68,7 +68,7 @@ result = RubyLens.generate_showcase(path: ".", details: true)
 puts result.output_path
 ```
 
-Showcase generation and viewing need no Chrome, Chromium, Ferrum, FFmpeg, Node, or HTTP server. Both disclosure levels reveal the project name and the numeric visual structure, including the derived morphology family; someone familiar with the family bands can infer coarse code proportions. `details: true` additionally reveals selected code/dependency names and aggregate statistics, so review it before sharing.
+Showcase generation and viewing need no Chrome, Chromium, Ferrum, FFmpeg, Node, or HTTP server; viewing requires a browser with WebGL2. Both disclosure levels reveal the project name and the numeric visual structure, including the derived morphology family; someone familiar with the family bands can infer coarse code proportions. `details: true` additionally reveals selected code/dependency names and aggregate statistics, so review it before sharing.
 
 The accepted deterministic morphology design and its self-contained visual prototype are preserved in [`docs/specs/2026-07-14-galaxy-morphology-design.md`](docs/specs/2026-07-14-galaxy-morphology-design.md).
 
