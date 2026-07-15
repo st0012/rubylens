@@ -70,8 +70,6 @@ puts result.output_path
 
 Showcase generation and viewing need no Chrome, Chromium, Ferrum, FFmpeg, Node, or HTTP server. Both disclosure levels reveal the project name and the numeric visual structure, including the derived morphology family; someone familiar with the family bands can infer coarse code proportions. `details: true` additionally reveals selected code/dependency names and aggregate statistics, so review it before sharing.
 
-The configurable multi-system design for repositories with many first-class applications or components is documented in [`docs/MONOREPO_BOUNDARIES.md`](docs/MONOREPO_BOUNDARIES.md). Reference-route experiments are paused and preserved in [`docs/REFERENCE_ROUTES_FUTURE.md`](docs/REFERENCE_ROUTES_FUTURE.md).
-
 The accepted deterministic morphology design and its self-contained visual prototype are preserved in [`docs/specs/2026-07-14-galaxy-morphology-design.md`](docs/specs/2026-07-14-galaxy-morphology-design.md).
 
 ## Development
@@ -85,5 +83,3 @@ bundle install
 bundle exec rake test
 gem build rubylens.gemspec
 ```
-
-The TypeScript/Three.js visual study remains under `prototype/codebase-cosmos`. It is a design lab rather than a runtime dependency of the gem.

@@ -16,6 +16,16 @@ Both outputs are single offline HTML files, written privately by default. Report
 - Classes, modules, methods, and constants are Ruby construct counts for the named category or aggregate system. Visual signal metrics guide exploration; they are not type-checking or correctness claims.
 - Large reports must remain bounded. Rendering, search results, warning details, and dependency detail use deterministic limits, and interaction-only work must not become per-frame work.
 
+## Privacy
+
+- Index and render locally by default; never upload source, index data, or report contents without an explicit future opt-in flow.
+- Generated reports ship every script, style, and font locally and must not call CDNs, analytics, telemetry, or remote APIs.
+- Derived names, paths, relationships, and dependency lists are sensitive even when no source text is included.
+- Source snippets and file contents stay out of the model. Any future excerpt feature requires an explicit option with clear sharing warnings.
+- Default outputs are written owner-only to a Git-excluded path, with a warning that sharing the HTML can disclose codebase structure.
+- Indexing passes an explicit Git-selected manifest to Rubydex's `Graph#index_all`. The bare `index_workspace` mode and upstream MCP indexer can read ignored or untracked Ruby files and are not product paths.
+- If hosting is explored later, redaction, retention, access control, deletion, and cost limits come before accepting private data.
+
 ## Non-goals
 
 RubyLens is not a Ruby type checker, a whole-program call graph, a source browser, a route explorer, or a per-dependency-star inspector. Hosting, uploads, and collaborative sharing are outside the current local-first product.

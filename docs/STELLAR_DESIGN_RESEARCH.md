@@ -65,4 +65,4 @@ Three.js provides the relevant [InstancedMesh](https://threejs.org/docs/pages/In
 5. Add a density-derived absorptive veil.
 6. Add deterministic field-level detail tiers and mobile quality settings.
 
-The first Ruby gem report already applies the macro rules—concentrated core, mixed interarm/arm test disc, sparse package systems, deterministic structured randomness, faint-majority light, and separate RubyDex attribute weights. The Three.js prototype remains the place to implement the full HDR and volumetric treatment before those compiled assets replace the lightweight report renderer.
+The first Ruby gem report already applies the macro rules—concentrated core, mixed interarm/arm test disc, sparse package systems, deterministic structured randomness, faint-majority light, and separate RubyDex attribute weights. The full HDR and volumetric treatment remains future GPU work; the Three.js design lab that explored it was retired and lives in Git history.
