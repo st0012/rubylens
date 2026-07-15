@@ -4,8 +4,8 @@
 //   node benchmark/explorer_frame.mjs [output.html]
 //
 // The synthetic model matches rubylens.art.v9 as consumed by the runtime:
-// NAMESPACES class/module rows (TEST_RATIO of them tests), DEPENDENCY_STARS
-// sampled dependency rows across PACKAGES gems, exact aggregate totals, and
+// NAMESPACES class/module rows (TEST_RATIO of them tests), DEPENDENCY_DECLARATIONS
+// embedded dependency declaration rows across PACKAGES gems, exact aggregate totals, and
 // signal domains derived from the generated rows. Defaults model a codebase
 // with 100,000 classes/modules and over one million total declarations.
 //
@@ -24,7 +24,7 @@ import { join } from "node:path";
 const NAMESPACES = Number(process.env.NAMESPACES || 100_000);
 const TEST_RATIO = Number(process.env.TEST_RATIO || 0.15);
 const PACKAGES = Number(process.env.PACKAGES || 400);
-const DEPENDENCY_STARS = Number(process.env.DEPENDENCY_STARS || 18_000);
+const DEPENDENCY_DECLARATIONS = Number(process.env.DEPENDENCY_DECLARATIONS || process.env.DEPENDENCY_STARS || 18_000);
 // Multi-gem Git dependency systems (rubylens.art.v9): each groups three
 // consecutive packages. Default 0 keeps published benchmark numbers stable.
 const DEPENDENCY_SYSTEMS = Number(process.env.DEPENDENCY_SYSTEMS || 0);
@@ -104,13 +104,13 @@ function buildModel() {
   const totalWeight = packageWeights.reduce((sum, weight) => sum + weight, 0);
   let indexedDependencyCount = 0;
   packageWeights.forEach((weight, index) => {
-    const declared = Math.max(1, Math.round((weight / totalWeight) * DEPENDENCY_STARS * 9));
+    const declared = Math.max(1, Math.round((weight / totalWeight) * DEPENDENCY_DECLARATIONS * 9));
     packages[index][3] = declared;
     indexedDependencyCount += declared;
   });
 
   const dependencyStars = [];
-  for (let index = 0; index < DEPENDENCY_STARS; index += 1) {
+  for (let index = 0; index < DEPENDENCY_DECLARATIONS; index += 1) {
     let pick = random() * totalWeight;
     let packageIndex = 0;
     while (packageIndex < PACKAGES - 1 && pick > packageWeights[packageIndex]) {
@@ -300,6 +300,6 @@ const totalDeclarations = model.totals.namespaces
   + model.categoryStats.tests[2] + model.categoryStats.tests[3]
   + model.totals.dependencyStars;
 console.log(`wrote ${OUTPUT} (${(html.length / 1024 / 1024).toFixed(1)} MiB)`);
-console.log(`namespaces ${model.totals.namespaces.toLocaleString()} · packages ${model.totals.packages.toLocaleString()} · rendered dependency stars ${model.totals.renderedDependencyStars.toLocaleString()}`);
-console.log(`points rendered ${(model.totals.namespaces + model.totals.renderedDependencyStars + model.totals.packages).toLocaleString()} · declarations represented ${totalDeclarations.toLocaleString()}`);
+console.log(`namespaces ${model.totals.namespaces.toLocaleString()} · packages ${model.totals.packages.toLocaleString()} · embedded dependency declarations ${model.totals.renderedDependencyStars.toLocaleString()}`);
+console.log(`scene points embedded ${(model.totals.namespaces + model.totals.renderedDependencyStars + model.totals.packages + model.dependencySystems.length).toLocaleString()} · exact declarations represented ${totalDeclarations.toLocaleString()}`);
 console.log(`open the file in a browser; results appear in the overlay, title, and window.__RUBYLENS_BENCH__ (${WARMUP_FRAMES}+${MEASURE_FRAMES} driven frames, then ${MEASURE_MS / 1000}s of rAF sampling when visible)`);

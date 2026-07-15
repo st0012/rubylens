@@ -39,19 +39,11 @@ module RubyLens
       indexed_dependency_count = snapshot.fetch("packages").sum do |package|
         package.fetch("declaration_count") { package.fetch("declarations").length }
       end
-      render_target = [18_000, indexed_dependency_count].min
       dependencies = []
       package_order.each do |old_index|
         package = snapshot.fetch("packages").fetch(old_index)
-        declarations = package.fetch("declarations").shuffle(random: random)
-        quota = if package.key?("declaration_count")
-          declarations.length
-        elsif declarations.empty?
-          0
-        else
-          [declarations.length, [1, declarations.length * render_target / [indexed_dependency_count, 1].max].max].min
-        end
-        declarations.first(quota).each do |declaration|
+        declarations = package.fetch("declarations").sort.shuffle(random: random)
+        declarations.each do |declaration|
           dependencies << [
             random.rand(0..0xffff_ffff),
             package_index.fetch(old_index),

@@ -84,7 +84,7 @@ class ExplorerRuntimeTest < Minitest::Test
     assert_includes(RUNTIME, 'target.closest("input, textarea, select, button, summary, a[href], [contenteditable], [role=\'button\']")')
     assert_includes(RUNTIME, "if (reducedMotionQuery.matches || isNativeSpaceTarget(event.target)) return false")
     assert_match(/function toggleDriftWithSpace\(event\).*?event\.preventDefault\(\).*?setDrifting\(!driftRequested\)/m, RUNTIME)
-    assert_match(/window\.addEventListener\("keydown", event => \{\s+if \(event\.defaultPrevented\) return;\s+if \(!helpOverlay\.hidden\) \{.*?\}\s+if \(toggleDriftWithSpace\(event\)\) return;/m, RUNTIME)
+    assert_match(/window\.addEventListener\("keydown", event => \{\s+if \(event\.defaultPrevented\) return;\s+if \(!helpOverlay\.hidden\) \{.*?\}\s+if \(!explorerRenderer\) return;\s+if \(toggleDriftWithSpace\(event\)\) return;/m, RUNTIME)
     assert_includes(RUNTIME, 'motion.setAttribute("aria-label", label)')
     assert_includes(RUNTIME, 'motion.setAttribute("aria-pressed", String(!drifting))')
     assert_includes(RUNTIME, 'motion.textContent = "Drift off"')
@@ -195,7 +195,9 @@ class ExplorerRuntimeTest < Minitest::Test
 
   def test_expanded_dependency_system_retains_detailed_galaxy_context
     assert_includes(RUNTIME, "const contextVisibility = { selection: .75, category: .16, package: .75 }")
-    assert_includes(RUNTIME, "const detailedPoint = emphasis >= .1")
+    renderer = runtime_function("createExplorerRenderer")
+    assert_includes(renderer, "const categoryEmphasisVector = () =>")
+    assert_includes(renderer, "return [contextVisibility.package, contextVisibility.package, contextVisibility.package]")
     refute_includes(RUNTIME, "expandedPackageIndex !== null ? focusedPackagePoint : emphasis >= .1")
   end
 
@@ -215,9 +217,10 @@ class ExplorerRuntimeTest < Minitest::Test
   end
 
   def test_explorer_exposure_does_not_change_showcase_rendering
-    explorer_render = RUNTIME.match(/function render\(timestamp\) \{(?<body>.*?)^    \}/m)[:body]
-    assert_includes(explorer_render, "const exposure = explorerExposureForZoom(zoom)")
-    assert_includes(explorer_render, ") * exposure")
+    explorer_renderer = runtime_function("createExplorerRenderer")
+    assert_includes(explorer_renderer, "uniform float u_exposure")
+    assert_includes(explorer_renderer, "a_alpha * emphasis) * u_exposure")
+    assert_includes(explorer_renderer, "gl.uniform1f(pointUniforms.exposure, explorerExposureForZoom(zoom))")
 
     showcase_fallback = RUNTIME.match(/function renderShowcaseFallback\(\) \{(?<body>.*?)^    \}/m)[:body]
     refute_includes(showcase_fallback, "explorerExposureForZoom")
@@ -272,6 +275,108 @@ class ExplorerRuntimeTest < Minitest::Test
     assert_includes(RUNTIME, "hub: true, packageHub: true")
     refute_includes(runtime_function("render"), "systemMembers")
     refute_includes(runtime_function("project"), ".find(")
+  end
+
+  def test_explorer_requires_webgl2_across_every_unavailable_path
+    assert_includes(SHELL, '<p class="coverage" id="coverage" aria-live="polite"></p>')
+    renderer = runtime_function("createExplorerRenderer")
+    assert_includes(renderer, 'document.documentElement.dataset.explorerUnavailableReason = "webgl2-unavailable"')
+    assert_includes(renderer, 'document.documentElement.dataset.explorerUnavailableReason = "webgl2-point-size-range"')
+    assert_includes(RUNTIME, 'document.documentElement.dataset.explorerUnavailableReason = "webgl2-initialization-error"')
+
+    context_loss = renderer.match(
+      /liveCanvas\.addEventListener\("webglcontextlost".*?\n      \}\);/m,
+    ).to_s
+    assert_includes(context_loss, 'markExplorerUnavailable("webgl2-context-lost")')
+
+    unavailable = runtime_function("markExplorerUnavailable")
+    assert_includes(unavailable, 'document.documentElement.dataset.explorerRenderer = "unavailable"')
+    assert_includes(unavailable, 'document.documentElement.dataset.plottedDependencyDeclarations = String(plottedDependencyDeclarations)')
+    assert_includes(unavailable, 'document.documentElement.dataset.plottedScenePoints = "0"')
+    assert_includes(unavailable, 'canvas.setAttribute("aria-label", "Interactive artwork unavailable because WebGL2 is required.")')
+    assert_includes(unavailable, "pointers.clear()")
+    assert_includes(unavailable, "if (!helpOverlay.hidden) closeHelp()")
+    assert_includes(unavailable, 'document.getElementById("warning-summary").focus({ preventScroll: true })')
+    disabled_controls = runtime_function("disableExplorerControls")
+    assert_includes(disabled_controls, 'document.querySelectorAll("#controls input")')
+    assert_includes(disabled_controls, 'document.querySelector(".toolbar").hidden = true')
+    assert_includes(STYLES, "button:disabled { opacity: .45; cursor: not-allowed; }")
+    assert_includes(STYLES, ".explorer-search[hidden] { display: none; }")
+    assert_includes(STYLES, ".toolbar[hidden] { display: none; }")
+
+    render = runtime_function("render")
+    assert_operator(render.index("if (!explorerRenderer) return"), :<, render.index("advanceExplorerDrift(timestamp)"))
+    assert_includes(runtime_function("hitTest"), "return explorerRenderer ? hitTestProjected(x, y) : null")
+    assert_includes(runtime_function("dependencyPackageAt"), "if (!explorerRenderer) return null")
+
+    refute_includes(RUNTIME, "CANVAS_DEPENDENCY_ROW_LIMIT")
+    refute_includes(RUNTIME, "canvasDependencyPointSample")
+    refute_includes(RUNTIME, "activateCanvasFallback")
+    assert_includes(RUNTIME, 'document.documentElement.dataset.showcaseRenderer = "canvas2d-fallback"')
+    assert_operator(RUNTIME.index("const dependencyRubyCounts"), :<, RUNTIME.index("model.dependencyStars = []"))
+  end
+
+  def test_dependency_coverage_copy_distinguishes_complete_sampled_and_unavailable_rows
+    function = runtime_function("dependencyCoverageText")
+    script = <<~JAVASCRIPT
+      #{function}
+      process.stdout.write(JSON.stringify([
+        dependencyCoverageText(164037, 164037, 164037, 301),
+        dependencyCoverageText(18000, 18000, 164037, 301),
+        dependencyCoverageText(1, 1, 1, 1),
+        dependencyCoverageText(0, 164037, 164037, 301, true),
+        dependencyCoverageText(0, 18000, 42592, 35, true),
+      ]));
+    JAVASCRIPT
+    output, error, status = Open3.capture3("node", "-e", script)
+    assert(status.success?, error)
+
+    assert_equal(
+      [
+        "164,037 dependency declarations plotted across 301 gems",
+        "18,000 sampled dependency declarations plotted (of 164,037 across 301 gems)",
+        "1 dependency declaration plotted across 1 gem",
+        "WebGL2 is required to plot 164,037 dependency declarations across 301 gems",
+        "WebGL2 is required to plot this report's 18,000 sampled dependency declarations (of 42,592 across 35 gems)",
+      ],
+      JSON.parse(output),
+    )
+    refute_includes(RUNTIME, "dependency stars shown")
+  end
+
+  def test_dependency_sampling_state_only_reports_bounded_embedded_data
+    function = runtime_function("dependencySamplingState")
+    script = <<~JAVASCRIPT
+      #{function}
+      process.stdout.write(JSON.stringify({
+        full: dependencySamplingState(100, 100, 3),
+        bounded: dependencySamplingState(100, 30, 3),
+      }));
+    JAVASCRIPT
+    output, error, status = Open3.capture3("node", "-e", script)
+    assert(status.success?, error)
+    states = JSON.parse(output)
+
+    assert_nil(states.fetch("full"))
+    assert_equal("Dependency sampling", states.dig("bounded", "summary"))
+    assert_equal("30 embedded", states.dig("bounded", "countLabel"))
+    assert_includes(states.dig("bounded", "note"), "embeds 30 sampled dependency declarations of 100")
+    assert_includes(states.dig("bounded", "note"), "Exact totals across 3 gems remain complete")
+  end
+
+  def test_unavailable_renderer_and_embedded_sampling_use_the_standard_warning_disclosure
+    disclosure = runtime_function("populateWarningDisclosure")
+
+    assert_includes(disclosure, "dependencySamplingState(")
+    assert_includes(disclosure, 'document.documentElement.dataset.explorerRenderer === "unavailable"')
+    assert_includes(disclosure, 'statusSummaries.push("WebGL2 required")')
+    assert_includes(disclosure, 'details.open = true')
+    assert_includes(disclosure, '"Interactive rendering"')
+    assert_includes(disclosure, '"Unavailable"')
+    assert_includes(disclosure, "sampling.summary")
+    assert_includes(disclosure, "sampling.note")
+    assert_includes(disclosure, 'appendWarningGroup(container, "Ruby index", counts.index')
+    assert_includes(disclosure, 'appendWarningGroup(container, "Integrity checks", counts.integrity')
   end
 
   private

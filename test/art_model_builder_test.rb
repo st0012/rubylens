@@ -126,7 +126,7 @@ class ArtModelBuilderTest < Minitest::Test
     assert_equal([0, 1, 2, 4, 5, 6, 7, -1], model.fetch("packages").first.drop(1))
   end
 
-  def test_caps_dependency_star_sampling
+  def test_renders_every_dependency_declaration_from_a_complete_snapshot
     declarations = 18_020.times.map { [2, 0, 1, 0, 0, 0, 0] }
     snapshot = {
       "project_name" => "Large Demo",
@@ -141,10 +141,39 @@ class ArtModelBuilderTest < Minitest::Test
     model = RubyLens::ArtModelBuilder.new(seed: 12).build(snapshot)
 
     assert_equal(18_020, model.dig("totals", "dependencyStars"))
-    assert_equal(18_000, model.dig("totals", "renderedDependencyStars"))
+    assert_equal(18_020, model.dig("totals", "renderedDependencyStars"))
     assert_equal(9, model.fetch("packages").first.length)
     assert_equal([1, 1, 18_020, 1, 1, 18_020, 100, -1], model.fetch("packages").first.drop(1))
     refute(model.key?("dependencyDeclarationNames"))
+  end
+
+  def test_dependency_rows_are_deterministic_across_snapshot_traversal_order
+    snapshot = {
+      "project_name" => "Stable Demo",
+      "components" => [],
+      "namespace_names" => [],
+      "namespaces" => [],
+      "category_stats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
+      "packages" => [{
+        "name" => "stable-gem",
+        "role" => 1,
+        "location" => 1,
+        "ruby_counts" => [1, 1, 2, 0],
+        "declarations" => [[1, 5, 1, 0, 0, 8, 3], [0, 1, 1, 0, 0, 2, 4], [0, 1, 1, 0, 0, 2, 4]],
+      }],
+      "warning_counts" => { "manifest" => 0, "index" => 0, "integrity" => 0 },
+    }
+    snapshot.fetch("packages").first.fetch("declarations").each(&:freeze)
+    snapshot.fetch("packages").first.fetch("declarations").freeze
+    original = Marshal.load(Marshal.dump(snapshot))
+    reversed = Marshal.load(Marshal.dump(snapshot))
+    reversed.fetch("packages").first.fetch("declarations").reverse!
+
+    assert_equal(
+      RubyLens::ArtModelBuilder.new(seed: 12).build(snapshot),
+      RubyLens::ArtModelBuilder.new(seed: 12).build(reversed),
+    )
+    assert_equal(original, snapshot)
   end
 
   def test_uses_exact_dependency_totals_and_domains_with_bounded_snapshot_rows

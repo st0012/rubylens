@@ -8,6 +8,67 @@ class DependencyAggregationTest < Minitest::Test
     assert_raises(ArgumentError) { RubyLens::Model::DependencyAggregation.new(package_count: 1, row_limit: -1) }
   end
 
+  def test_unlimited_mode_retains_every_row_in_per_package_input_order
+    assert_equal(18_000, RubyLens::Model::DependencyAggregation::DEFAULT_ROW_LIMIT)
+    aggregation = RubyLens::Model::DependencyAggregation.new(package_count: 2, row_limit: nil)
+    rows = [
+      [0, [0, 1, 2, 3, 4, 5, 6], 0, "Alpha"],
+      [1, [1, 2, 3, 4, 5, 6, 7], 1, "Beta"],
+      [0, [2, 3, 4, 5, 6, 7, 8], 2, "Gamma"],
+    ]
+    add_rows(aggregation, rows)
+
+    packages = aggregation.packages
+    assert_equal([2, 1], packages.map { |package| package.fetch(:declaration_count) })
+    assert_equal([rows[0][1], rows[2][1]], packages[0].fetch(:declarations))
+    assert_equal([rows[1][1]], packages[1].fetch(:declarations))
+    assert_equal([1, 0, 1, 0], packages[0].fetch(:ruby_counts))
+    assert_equal([0, 1, 0, 0], packages[1].fetch(:ruby_counts))
+    assert_equal([3, 4, 5, 6, 7, 8], aggregation.signal_maxima)
+    rows[0][1][1] = 99
+    assert_equal([0, 1, 2, 3, 4, 5, 6], packages[0].fetch(:declarations).first)
+    assert_predicate(packages, :frozen?)
+    assert(packages.all?(&:frozen?))
+    assert(packages.all? { |package| package.fetch(:ruby_counts).frozen? })
+    assert(packages.all? { |package| package.fetch(:declarations).frozen? })
+    assert(packages.flat_map { |package| package.fetch(:declarations) }.all?(&:frozen?))
+
+    aggregation.add(
+      package_index: 0,
+      row: [3, 4, 5, 6, 7, 8, 9],
+      construct_index: 3,
+      sample_key: "Delta",
+    )
+    assert_equal([2, 1], packages.map { |package| package.fetch(:declaration_count) })
+    assert_equal([3, 1], aggregation.packages.map { |package| package.fetch(:declaration_count) })
+  end
+
+  def test_bounded_and_unlimited_modes_preserve_the_same_exact_aggregates
+    bounded = RubyLens::Model::DependencyAggregation.new(package_count: 2, row_limit: 3, seed: 12)
+    unlimited = RubyLens::Model::DependencyAggregation.new(package_count: 2, row_limit: nil, seed: 12)
+    rows = 12.times.map do |index|
+      [
+        index % 2,
+        [index % 2, index, index % 3, index % 4, index % 5, index % 6, index % 7],
+        index % 4,
+        "Declaration#{index}",
+      ]
+    end
+    [bounded, unlimited].each do |aggregation|
+      add_rows(aggregation, rows)
+    end
+
+    assert_equal(
+      unlimited.packages.map { |package| package.fetch(:declaration_count) },
+      bounded.packages.map { |package| package.fetch(:declaration_count) },
+    )
+    assert_equal(
+      unlimited.packages.map { |package| package.fetch(:ruby_counts) },
+      bounded.packages.map { |package| package.fetch(:ruby_counts) },
+    )
+    assert_equal(unlimited.signal_maxima, bounded.signal_maxima)
+  end
+
   def test_retains_all_rows_below_the_limit_independent_of_input_order
     rows = [
       [0, [0, 1, 2, 3, 4, 5, 6], 0, "Alpha"],

@@ -27,7 +27,7 @@ module RubyLens
 
     def initialize(
       manifest_builder: Index::Manifest,
-      adapter: Index::RubydexAdapter.new,
+      adapter: Index::RubydexAdapter.new(dependency_row_limit: nil),
       model_builder: ArtModelBuilder.new,
       report_writer: ReportWriter.new,
       pipeline: nil

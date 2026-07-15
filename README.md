@@ -45,6 +45,8 @@ Passing `output:` selects a custom path. Custom paths are written exactly where 
 
 The report is fully local: it makes no network requests and needs neither Node nor a server to open. Drag to orbit, zoom toward the cursor, Shift-drag or use Pan mode to traverse dense clouds, or use the arrow keys to move the view. Show or focus core code, tests, and gems independently; selecting a Ruby node or dependency system flies to a top-down relationship view that keeps both the target and Core visible. Drift continues through exploration unless you pause it with the toolbar control or Space. Reset returns to the default camera without changing that explicit drift choice. Double-clicking a gem cloud expands that one existing system for a sharper, more separated view without loading another model.
 
+Explorer reports embed every model-eligible dependency declaration and require WebGL2 to plot the complete dependency scene. If WebGL2 is unavailable or its context is lost, the report stops interactive rendering, disables scene controls, and opens the standard warning instead of presenting a sampled scene. The masthead explains that WebGL2 is required; exact dependency totals and gem aggregates remain complete in the report.
+
 RubyDex-indexed Ruby documents under `spec/` or `specs/` contribute non-interactive class-like stars for `describe` and `context` calls. `it` and `specify` calls contribute only to the aggregate Tests method count; RubyLens does not execute specs or infer nesting.
 
 ## Generate a Showcase
@@ -57,7 +59,7 @@ bundle exec rubylens showcase
 
 The default output is `rubylens-showcase.html` in the project root. It is self-contained, offline, atomically written with mode `0600`, and locally excludes only that exact default path and its atomic temporary-file pattern. Explicit custom outputs remain unmanaged. RubyLens refuses to replace a tracked default or an unrelated existing file.
 
-The default Minimal Showcase intentionally includes only the project name and numeric visual structure. It omits aggregate statistics and does not serialize declaration names, gem names, source text, comments, or paths. Pass `--details` to add the aggregate Ruby statistics and one-at-a-time cinematic labels for a deterministic, capped selection of Core/Test declarations and dependency systems. Individual dependency stars remain anonymous. Its deterministic renderer bounds large scenes to 50,000 plotted points, preserving selected annotation anchors, gem hubs, and the bounded dependency-star budget before sampling Core/Test namespace points. `prefers-reduced-motion` produces one stable frame instead of a continuous orbit and hides cinematic labels.
+The default Minimal Showcase intentionally includes only the project name and numeric visual structure. It omits aggregate statistics and does not serialize declaration names, gem names, source text, comments, or paths. Pass `--details` to add the aggregate Ruby statistics and one-at-a-time cinematic labels for a deterministic, capped selection of Core/Test declarations and dependency systems. Individual dependency stars remain anonymous. Its deterministic renderer bounds large scenes to 50,000 plotted points, preserving selected annotation anchors, gem hubs, and the 18,000-row dependency-declaration budget before sampling Core/Test namespace points. `prefers-reduced-motion` produces one stable frame instead of a continuous orbit and hides cinematic labels.
 
 Ruby API:
 
