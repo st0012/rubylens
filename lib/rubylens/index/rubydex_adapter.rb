@@ -172,7 +172,12 @@ module RubyLens
           safe_length(declaration, :references),
           namespace?(declaration) ? safe_length(declaration, :members) : 0,
         ]
-        aggregation.add(package_index:, row:, construct_index: ruby_construct_index(declaration))
+        aggregation.add(
+          package_index:,
+          row:,
+          construct_index: ruby_construct_index(declaration),
+          sample_key: declaration.name,
+        )
       end
 
       def inbound_workspace_references(graph, manifest, ordinal_by_name)

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
+
 module RubyLens
   module Model
     class DependencyAggregation
@@ -11,43 +13,41 @@ module RubyLens
         raise ArgumentError, "row_limit must be nonnegative" if row_limit.negative?
 
         @row_limit = row_limit
-        @random = Random.new(seed)
-        @ordinal = 0
-        @seen_nonrepresentative = 0
+        @seed = seed
         @counts = Array.new(package_count, 0)
         @ruby_counts = Array.new(package_count) { Array.new(4, 0) }
         @signal_maxima = Array.new(6, 0)
         @representatives = Array.new(package_count)
-        @represented_packages = []
-        @representative_count = 0
         @nonempty_package_count = 0
-        @reservoir = []
+        @sample = []
       end
 
-      def add(package_index:, row:, construct_index:)
+      def add(package_index:, row:, construct_index:, sample_key:)
         @counts[package_index] += 1
         @ruby_counts[package_index][construct_index] += 1 if construct_index
         SIGNAL_COLUMNS.each_with_index do |column, index|
           @signal_maxima[index] = [@signal_maxima[index], row[column]].max
         end
 
-        entry = [package_index, @ordinal, row.dup.freeze]
-        @ordinal += 1
-        if @counts[package_index] == 1
-          add_first_package_entry(package_index, entry)
-        elsif @representatives[package_index] && @random.rand(@counts[package_index]).zero?
-          displaced = @representatives[package_index]
-          @representatives[package_index] = entry
-          add_to_reservoir(displaced)
-        else
-          add_to_reservoir(entry)
-        end
+        entry = [sample_rank(package_index, sample_key), package_index, row.dup.freeze]
+        representative = @representatives[package_index]
+        @nonempty_package_count += 1 unless representative
+        @representatives[package_index] = entry if !representative || compare_entries(entry, representative).negative?
+        push_bounded(@sample, entry, @row_limit)
       end
 
       def packages
         sampled_rows = Array.new(@counts.length) { [] }
-        (@representatives.compact + @reservoir).sort_by { |_package_index, ordinal, _row| ordinal }
-          .each { |package_index, _ordinal, row| sampled_rows[package_index] << row }
+        selected = selected_representatives
+        selected_ids = selected.each_with_object({}) { |entry, ids| ids[entry.object_id] = true }
+        remaining = @row_limit - selected.length
+        if remaining.positive?
+          selected.concat(@sample.reject { |entry| selected_ids.key?(entry.object_id) }
+            .sort { |left, right| compare_entries(left, right) }
+            .first(remaining))
+        end
+        selected.sort { |left, right| compare_entries(left, right) }
+          .each { |_rank, package_index, row| sampled_rows[package_index] << row }
         @counts.each_index.map do |index|
           {
             declaration_count: @counts[index],
@@ -63,42 +63,65 @@ module RubyLens
 
       private
 
-      def add_first_package_entry(package_index, entry)
-        @nonempty_package_count += 1
-        if @representative_count < @row_limit
-          @representatives[package_index] = entry
-          @represented_packages << package_index
-          @representative_count += 1
-          trim_reservoir
-        elsif @row_limit.positive? && @random.rand(@nonempty_package_count) < @row_limit
-          slot = @random.rand(@represented_packages.length)
-          displaced_package = @represented_packages[slot]
-          add_to_reservoir(@representatives[displaced_package])
-          @representatives[displaced_package] = nil
-          @representatives[package_index] = entry
-          @represented_packages[slot] = package_index
-        else
-          add_to_reservoir(entry)
+      def selected_representatives
+        return [] if @row_limit.zero?
+        return @representatives.compact if @nonempty_package_count <= @row_limit
+
+        packages = []
+        @representatives.each_with_index do |representative, package_index|
+          next unless representative
+
+          push_bounded(packages, [package_rank(package_index), package_index, representative], @row_limit)
+        end
+        packages.map(&:last)
+      end
+
+      def sample_rank(package_index, sample_key)
+        Digest::SHA256.digest("rubylens-dependency-row-v1\0#{@seed}\0#{package_index}\0".b + sample_key.to_s.b)
+      end
+
+      def package_rank(package_index)
+        Digest::SHA256.digest("rubylens-dependency-package-v1\0#{@seed}\0#{package_index}".b)
+      end
+
+      def compare_entries(left, right)
+        (left[0] <=> right[0]).nonzero? || (left[1] <=> right[1]).nonzero? || (left[2] <=> right[2])
+      end
+
+      def push_bounded(heap, entry, limit)
+        return if limit.zero?
+
+        if heap.length < limit
+          heap << entry
+          sift_up(heap, heap.length - 1)
+        elsif compare_entries(entry, heap[0]).negative?
+          heap[0] = entry
+          sift_down(heap, 0)
         end
       end
 
-      def add_to_reservoir(entry)
-        capacity = reservoir_capacity
-        replacement = @random.rand(@seen_nonrepresentative + 1)
-        if @reservoir.length < capacity
-          @reservoir << entry
-        elsif replacement < capacity
-          @reservoir[replacement] = entry
+      def sift_up(heap, index)
+        while index.positive?
+          parent = (index - 1) / 2
+          break unless compare_entries(heap[index], heap[parent]).positive?
+
+          heap[index], heap[parent] = heap[parent], heap[index]
+          index = parent
         end
-        @seen_nonrepresentative += 1
       end
 
-      def trim_reservoir
-        @reservoir.delete_at(@random.rand(@reservoir.length)) while @reservoir.length > reservoir_capacity
-      end
+      def sift_down(heap, index)
+        loop do
+          left = (index * 2) + 1
+          break if left >= heap.length
 
-      def reservoir_capacity
-        @row_limit - @representative_count
+          right = left + 1
+          child = right < heap.length && compare_entries(heap[right], heap[left]).positive? ? right : left
+          break unless compare_entries(heap[child], heap[index]).positive?
+
+          heap[index], heap[child] = heap[child], heap[index]
+          index = child
+        end
       end
     end
   end

@@ -15,7 +15,7 @@ started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 declaration_count.times do |index|
   package_index = index % package_count
   row = [index % 3, index % 128, 1 + index % 4, index % 4, index % 256, index % 512, index % 1024]
-  aggregation.add(package_index:, row:, construct_index: index % 4)
+  aggregation.add(package_index:, row:, construct_index: index % 4, sample_key: "Declaration#{index}")
 end
 elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at
 GC.start
