@@ -108,20 +108,23 @@ class ExplorerRuntimeTest < Minitest::Test
   def test_dependency_double_click_survives_the_first_tap_selection_flight
     assert_includes(RUNTIME, "let doubleClickTarget = null")
     assert_includes(RUNTIME, 'doubleClickTarget = { point, x: event.clientX, y: event.clientY, at: event.timeStamp }')
-    assert_includes(RUNTIME, "event.timeStamp - doubleClickTarget.at > 1000")
+    assert_includes(RUNTIME, "const rememberedTapIsFresh = doubleClickTarget &&")
+    assert_includes(RUNTIME, "event.timeStamp - doubleClickTarget.at <= 1000 &&")
+    assert_includes(RUNTIME, "if (!rememberedTapIsFresh) doubleClickTarget = { point")
     assert_includes(RUNTIME, "const remembered = doubleClickTarget")
     assert_includes(RUNTIME, "Math.hypot(event.clientX - remembered.x, event.clientY - remembered.y) <= 12")
-    assert_includes(RUNTIME, "const dependency = dependencyPackageAt(event.clientX, event.clientY, exact) || rememberedPoint")
+    assert_includes(RUNTIME, "const target = rememberedPoint || dependencyPackageAt(event.clientX, event.clientY, exact)")
   end
 
   def test_double_click_on_a_ruby_star_defers_to_its_selection_flight
     dblclick = RUNTIME.match(/canvas\.addEventListener\("dblclick", event => \{(?<body>.*?)^    \}\);/m)[:body]
     assert_includes(dblclick, "const exact = hitTest(event.clientX, event.clientY)")
-    assert_includes(dblclick, "if (exact && !exact.hub) return;")
-    assert_includes(dblclick, 'if (dependency?.category === "dependencies") {')
-    assert_match(/if \(dependency\) \{\s+navigateToSelection\(dependency\);\s+return;\s+\}/m, dblclick)
+    assert_includes(dblclick, 'if (target?.category === "dependencies") {')
+    assert_match(/if \(target\) \{\s+navigateToSelection\(target\);\s+return;\s+\}/m, dblclick)
+    assert_includes(dblclick, "if (exact) return;")
     assert_includes(dblclick, "zoomBetween(event.shiftKey ? zoom / 2 : zoom * 2, event.clientX, event.clientY)")
-    assert_operator(dblclick.index("if (exact && !exact.hub) return;"), :<, dblclick.index("const dependency ="))
+    assert_operator(dblclick.index("if (exact) return;"), :<, dblclick.index("cancelCameraFlight()"))
+    assert_operator(dblclick.index("const target = rememberedPoint ||"), :<, dblclick.index("if (target?.category"))
   end
 
   def test_view_shortcuts_work_regardless_of_focus_with_editable_guards

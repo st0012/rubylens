@@ -2470,12 +2470,12 @@
       canvas.classList.remove("is-dragging-pan");
       if (wasTap) {
         const point = hoverTargetAt(event.clientX, event.clientY);
+        const rememberedTapIsFresh = doubleClickTarget &&
+          event.timeStamp - doubleClickTarget.at <= 1000 &&
+          Math.hypot(event.clientX - doubleClickTarget.x, event.clientY - doubleClickTarget.y) <= 12;
         if (point) {
-          doubleClickTarget = { point, x: event.clientX, y: event.clientY, at: event.timeStamp };
-        } else if (doubleClickTarget && (
-          event.timeStamp - doubleClickTarget.at > 1000 ||
-          Math.hypot(event.clientX - doubleClickTarget.x, event.clientY - doubleClickTarget.y) > 12
-        )) {
+          if (!rememberedTapIsFresh) doubleClickTarget = { point, x: event.clientX, y: event.clientY, at: event.timeStamp };
+        } else if (!rememberedTapIsFresh) {
           doubleClickTarget = null;
         }
         clearActiveFact();
@@ -2516,17 +2516,17 @@
         ? remembered.point
         : null;
       const exact = hitTest(event.clientX, event.clientY);
-      if (exact && !exact.hub) return;
-      const dependency = dependencyPackageAt(event.clientX, event.clientY, exact) || rememberedPoint;
-      if (dependency?.category === "dependencies") {
-        if (dependency.systemHub && !dependency.packageHub) focusDependencySystem(dependency.systemIndex);
-        else focusDependencyPackage(dependency.packageIndex);
+      const target = rememberedPoint || dependencyPackageAt(event.clientX, event.clientY, exact);
+      if (target?.category === "dependencies") {
+        if (target.systemHub && !target.packageHub) focusDependencySystem(target.systemIndex);
+        else focusDependencyPackage(target.packageIndex);
         return;
       }
-      if (dependency) {
-        navigateToSelection(dependency);
+      if (target) {
+        navigateToSelection(target);
         return;
       }
+      if (exact) return;
       cancelCameraFlight();
       zoomBetween(event.shiftKey ? zoom / 2 : zoom * 2, event.clientX, event.clientY);
       requestRender();
