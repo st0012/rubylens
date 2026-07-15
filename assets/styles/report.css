@@ -5,6 +5,7 @@
     canvas { position: fixed; inset: 0; width: 100%; height: 100%; cursor: grab; touch-action: none; }
     canvas:active { cursor: grabbing; }
     canvas.is-pan, canvas.is-dragging-pan { cursor: move; }
+    canvas.is-star:not(.is-pan):not(.is-dragging-pan):not(:active) { cursor: pointer; }
     canvas.is-pan:active, canvas.is-dragging-pan:active { cursor: grabbing; }
     canvas:focus-visible { outline: 2px solid rgba(216, 200, 255, .85); outline-offset: -4px; }
     .masthead { position: fixed; top: 28px; left: 32px; z-index: 2; pointer-events: none; max-width: 760px; }
@@ -85,6 +86,7 @@
     #pan-mode[aria-pressed="true"] { border-color: rgba(216,200,255,.36); background: rgba(216,200,255,.14); color: #fff; }
     .zoom-level { min-width: 43px; align-content: center; color: #9f98a8; font-size: 10px; font-variant-numeric: tabular-nums; text-align: center; }
     .hint { position: fixed; right: 28px; bottom: 24px; z-index: 2; color: #777181; font-size: 10px; pointer-events: none; }
+    .panel:not(.is-collapsed) ~ .hint { right: 380px; }
     .tooltip { position: fixed; z-index: 5; width: min(300px, calc(100vw - 24px)); border: 1px solid rgba(255,255,255,.13); border-radius: 13px; padding: 13px 14px; background: rgba(8, 8, 16, .95); box-shadow: 0 18px 55px rgba(0,0,0,.55); pointer-events: none; }
     .tooltip[hidden] { display: none; }
     .tooltip-category { margin: 0 0 4px; color: #9f96ab; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
@@ -93,6 +95,17 @@
     .tooltip-metrics { display: grid; grid-template-columns: 1fr auto; gap: 5px 16px; margin: 11px 0 0; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.08); color: #a9a2b1; font-size: 10px; }
     .tooltip-metrics dt, .tooltip-metrics dd { margin: 0; }
     .tooltip-metrics dd { color: #f3edf9; font-variant-numeric: tabular-nums; text-align: right; }
+    .help-overlay { position: fixed; inset: 0; z-index: 6; display: grid; place-items: center; padding: 20px; background: rgba(2, 3, 8, .58); backdrop-filter: blur(3px); }
+    .help-overlay[hidden] { display: none; }
+    .help-card { width: min(620px, 100%); max-height: calc(100vh - 48px); overflow: auto; border: 1px solid rgba(255,255,255,.12); border-radius: 18px; padding: 20px 22px 22px; background: rgba(9, 9, 18, .96); box-shadow: 0 24px 80px rgba(0,0,0,.5); }
+    .help-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 14px; }
+    .help-header h2 { margin: 0; font-size: 15px; letter-spacing: -.01em; }
+    .help-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px 26px; }
+    .help-columns h3 { margin: 0 0 9px; color: #b6a9c9; font-size: 10px; font-weight: 750; letter-spacing: .14em; text-transform: uppercase; }
+    .help-list { display: grid; gap: 7px; margin: 0; }
+    .help-list div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: baseline; }
+    .help-list dt { color: #ece6f2; font-size: 11px; font-weight: 650; }
+    .help-list dd { margin: 0; color: #9f98a8; font-size: 11px; text-align: right; }
     @media (max-width: 1080px) and (min-width: 761px) {
       .masthead { max-width: calc(100vw - 420px); }
       h1 { font-size: clamp(28px, 4vw, 42px); }

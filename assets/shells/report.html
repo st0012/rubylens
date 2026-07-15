@@ -35,9 +35,41 @@
       <div id="controls"></div>
     <div class="foot">Double-click a dependency system or gem subcloud, press Enter or F on its selected marker, or tap that marker again to spread its stars. Escape exits spatial focus; Reset restores the default view. This owner-only report embeds class, module, and gem names for hover details; dependency stars remain anonymous. Source, comments, and paths are excluded. Do not share the HTML unless you intend to disclose codebase structure.</div></div>
   </aside>
-  <div class="toolbar"><button type="button" id="motion" aria-label="Pause drift" aria-keyshortcuts="Space" aria-pressed="false">Pause drift</button><button type="button" id="reset-view" aria-label="Reset to default view" aria-keyshortcuts="0">Reset</button><button type="button" id="pan-mode" aria-label="Pan mode" aria-keyshortcuts="P" aria-pressed="false">Pan</button><button type="button" id="zoom-out" aria-label="Zoom out">−</button><output class="zoom-level" id="zoom-level" aria-label="Zoom level">200%</output><button type="button" id="zoom-in" aria-label="Zoom in">+</button></div>
-  <div class="hint">Space toggles drift · Reset restores view · drag to orbit · Shift-drag/Pan to move · arrows move · scroll to zoom</div>
+  <div class="toolbar"><button type="button" id="motion" aria-label="Pause drift" aria-keyshortcuts="Space" aria-pressed="false" title="Pause drift (Space)">Pause drift</button><button type="button" id="reset-view" aria-label="Reset to default view" aria-keyshortcuts="0" title="Reset view (0)">Reset</button><button type="button" id="pan-mode" aria-label="Pan mode" aria-keyshortcuts="P" aria-pressed="false" title="Pan mode (P)">Pan</button><button type="button" id="zoom-out" aria-label="Zoom out" aria-keyshortcuts="-" title="Zoom out (−)">−</button><output class="zoom-level" id="zoom-level" aria-label="Zoom level">200%</output><button type="button" id="zoom-in" aria-label="Zoom in" aria-keyshortcuts="+" title="Zoom in (+)">+</button><button type="button" id="help-open" aria-label="Keyboard shortcuts" aria-keyshortcuts="?" aria-haspopup="dialog" title="Keyboard shortcuts (?)">?</button></div>
+  <div class="hint">Drag to orbit · scroll to zoom · press ? for all shortcuts</div>
   <aside class="tooltip" id="tooltip" role="status" hidden><p class="tooltip-category" id="tooltip-category"></p><p class="tooltip-name" id="tooltip-name"></p><p class="tooltip-context" id="tooltip-context"></p><dl class="tooltip-metrics" id="tooltip-metrics"></dl></aside>
+  <div class="help-overlay" id="shortcuts-help" role="dialog" aria-modal="true" aria-label="Shortcuts and controls" hidden>
+    <div class="help-card">
+      <div class="help-header"><h2>Shortcuts &amp; controls</h2><button type="button" id="help-close" aria-label="Close shortcuts">Close</button></div>
+      <div class="help-columns">
+        <section>
+          <h3>Mouse &amp; trackpad</h3>
+          <dl class="help-list">
+            <div><dt>Drag</dt><dd>Orbit</dd></div>
+            <div><dt>Shift-drag or right-drag</dt><dd>Move the view</dd></div>
+            <div><dt>Scroll or pinch</dt><dd>Zoom at the cursor</dd></div>
+            <div><dt>Click a star</dt><dd>Select and fly to it</dd></div>
+            <div><dt>Double-click a gem cloud</dt><dd>Spread its stars</dd></div>
+            <div><dt>Double-click empty space</dt><dd>Zoom in · Shift zooms out</dd></div>
+          </dl>
+        </section>
+        <section>
+          <h3>Keyboard</h3>
+          <dl class="help-list">
+            <div><dt>Arrow keys</dt><dd>Move the view · Shift is faster</dd></div>
+            <div><dt>+ / −</dt><dd>Zoom</dd></div>
+            <div><dt>0</dt><dd>Reset the view</dd></div>
+            <div><dt>P</dt><dd>Toggle pan mode</dd></div>
+            <div><dt>Space</dt><dd>Pause or resume drift</dd></div>
+            <div><dt>Enter / F</dt><dd>Spread the selected gem cloud</dd></div>
+            <div><dt>/</dt><dd>Search</dd></div>
+            <div><dt>Esc</dt><dd>Exit focus and fly back</dd></div>
+            <div><dt>?</dt><dd>Show or hide this list</dd></div>
+          </dl>
+        </section>
+      </div>
+    </div>
+  </div>
   <script>
 {{REPORT_RUNTIME}}  </script>
 </body>
