@@ -15,6 +15,9 @@
     const searchInput = document.getElementById("explorer-search");
     const searchStatus = document.getElementById("search-status");
     const searchResults = document.getElementById("search-results");
+    const helpOverlay = document.getElementById("shortcuts-help");
+    const helpClose = document.getElementById("help-close");
+    let helpReturnFocus = null;
     const tooltip = document.getElementById("tooltip");
     const tooltipCategory = document.getElementById("tooltip-category");
     const tooltipName = document.getElementById("tooltip-name");
@@ -40,7 +43,7 @@
     const SEARCH_BATCH_SIZE = 8;
     const WARNING_ROW_LIMIT = 24;
     let lastDriftTimestamp = null;
-    let dependencyDoubleClickTarget = null;
+    let doubleClickTarget = null;
     let searchIndex = null;
     let searchTimer = 0;
     let searchMatches = [];
@@ -958,8 +961,9 @@
       const [x, y, z] = point.position;
       const radialDistance = Math.hypot(x, z);
       const targetYaw = radialDistance > 1 ? Math.PI - Math.atan2(z, x) : yaw;
+      const targetPitch = pitch >= 0 ? TOP_DOWN_PITCH : -TOP_DOWN_PITCH;
       const cy = Math.cos(targetYaw), sy = Math.sin(targetYaw);
-      const cp = Math.cos(TOP_DOWN_PITCH), sp = Math.sin(TOP_DOWN_PITCH);
+      const cp = Math.cos(targetPitch), sp = Math.sin(targetPitch);
       const x1 = x * cy - z * sy;
       const z1 = x * sy + z * cy;
       const y2 = y * cp - z1 * sp;
@@ -973,7 +977,7 @@
       const actualSeparation = Math.abs(x1) * cameraFocalLength / Math.max(35, cameraDistance - z2) * targetZoom;
       return {
         yaw: targetYaw,
-        pitch: TOP_DOWN_PITCH,
+        pitch: targetPitch,
         zoom: targetZoom,
         panX: sceneRight * .5 + actualSeparation * .5 - sceneCenterX,
         panY: sceneBottom * CONTEXT_CENTER_Y - sceneCenterY - y2 * cameraFocalLength / Math.max(35, cameraDistance - z2) * targetZoom * .5,
@@ -983,7 +987,7 @@
     function contextualCategoryCameraTarget(category) {
       return {
         yaw,
-        pitch: TOP_DOWN_PITCH,
+        pitch: pitch >= 0 ? TOP_DOWN_PITCH : -TOP_DOWN_PITCH,
         zoom: categoryMeta[category].focusZoom,
         panX: 0,
         panY: sceneBottom * CONTEXT_CENTER_Y - sceneCenterY,
@@ -1116,14 +1120,14 @@
       tooltipCategory.textContent = parentSystem ? "Dependency system" : point.hub ? "Gem" : point.category === "tests" ? "Tests" : "Core code";
       tooltipName.textContent = point.name || "Unnamed Ruby item";
       if (parentSystem) {
-        const expanded = expandedSystemIndex === point.systemIndex && expandedPackageIndex === null ? " · Expanded system · Escape to exit" : "";
+        const expanded = expandedSystemIndex === point.systemIndex && expandedPackageIndex === null ? " · Expanded system · Escape to exit" : " · Double-click or F to expand";
         const direct = point.directMemberCount === 1 ? "1 direct package" : `${point.directMemberCount.toLocaleString()} direct packages`;
         tooltipContext.textContent = `${point.memberCount.toLocaleString()} package subclouds · ${direct}${expanded}`;
         addRubyMetrics(point.rubyCounts, allRubyMetricIndexes);
         return;
       }
       if (point.packageHub) {
-        const expanded = expandedPackageIndex === point.packageIndex ? " · Expanded gem cloud · Escape to exit" : "";
+        const expanded = expandedPackageIndex === point.packageIndex ? " · Expanded gem cloud · Escape to exit" : " · Double-click or F to expand";
         const membership = point.groupedMemberCount > 1 ? ` · Member of ${point.groupedMemberCount.toLocaleString()}-package system` : "";
         tooltipContext.textContent = `${point.packageRole} · ${point.packageLocation}${membership}${expanded}`;
         addRubyMetrics(point.rubyCounts, allRubyMetricIndexes);
@@ -1317,7 +1321,7 @@
     }
 
     function queueHover(x, y) {
-      if (cameraFlight || selectionLocked || dragging || pointers.size > 0) return;
+      if (cameraFlight || dragging || pointers.size > 0) return;
       pendingHover = [x, y];
       if (hoverFrame) return;
       hoverFrame = requestAnimationFrame(() => {
@@ -1325,7 +1329,8 @@
         if (!pendingHover) return;
         const point = hoverTargetAt(pendingHover[0], pendingHover[1]);
         pendingHover = null;
-        if (point !== selectedPoint) selectPoint(point);
+        canvas.classList.toggle("is-star", Boolean(point));
+        if (!selectionLocked && point !== selectedPoint) selectPoint(point);
       });
     }
 
@@ -1421,6 +1426,36 @@
       clearCategoryFocus();
       clearExpandedPackage();
       selectPoint(null);
+    }
+
+    function exitExplorationFocus() {
+      const hadSpatialFocus = expandedSystemIndex !== null || expandedPackageIndex !== null || focusedCategory !== null || selectionLocked;
+      clearExplorationFocus();
+      if (hadSpatialFocus) flyCamera(DEFAULT_CAMERA, { followDrift: true });
+    }
+
+    function focusSearch() {
+      if (panel.classList.contains("is-collapsed")) setPanelCollapsed(false);
+      searchInput.focus();
+      searchInput.select();
+    }
+
+    function toggleHelp() {
+      if (helpOverlay.hidden) openHelp();
+      else closeHelp();
+    }
+
+    function openHelp() {
+      helpReturnFocus = document.activeElement;
+      helpOverlay.hidden = false;
+      helpClose.focus();
+    }
+
+    function closeHelp() {
+      helpOverlay.hidden = true;
+      if (helpReturnFocus instanceof HTMLElement && helpReturnFocus.isConnected && helpReturnFocus !== document.body) helpReturnFocus.focus();
+      else canvas.focus({ preventScroll: true });
+      helpReturnFocus = null;
     }
 
     function setCategoryVisible(category, visible) {
@@ -1661,6 +1696,12 @@
       if (focus) searchInput.focus();
     }
 
+    function flushPendingSearch() {
+      if (!searchTimer) return;
+      window.clearTimeout(searchTimer);
+      runSearch();
+    }
+
     function runSearch() {
       searchTimer = 0;
       const query = searchInput.value.trim().toLowerCase();
@@ -1688,10 +1729,35 @@
         searchTimer = window.setTimeout(runSearch, SEARCH_DEBOUNCE_MS);
       });
       searchRegion.addEventListener("keydown", event => {
-        if (event.key !== "Escape" || (!searchInput.value && searchResults.hidden)) return;
+        if (event.key === "Escape") {
+          if (!searchInput.value && searchResults.hidden) return;
+          event.preventDefault();
+          event.stopPropagation();
+          clearSearch({ focus: true });
+          return;
+        }
+        if (event.key === "Enter" && event.target === searchInput) {
+          if (!searchInput.value.trim()) return;
+          event.preventDefault();
+          flushPendingSearch();
+          if (searchMatches.length) activateSearchResult(interactivePoints[searchMatches[0]]);
+          return;
+        }
+        if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+        if (event.target === searchInput) flushPendingSearch();
+        const focusables = [...searchResults.querySelectorAll(".search-result")];
+        if (!focusables.length) return;
         event.preventDefault();
-        event.stopPropagation();
-        clearSearch({ focus: true });
+        if (event.target === searchInput) {
+          if (event.key === "ArrowDown") focusables[0].focus();
+          else focusables[focusables.length - 1].focus();
+          return;
+        }
+        const index = focusables.indexOf(event.target);
+        if (index < 0) return;
+        if (event.key === "ArrowDown") { if (index < focusables.length - 1) focusables[index + 1].focus(); }
+        else if (index === 0) searchInput.focus();
+        else focusables[index - 1].focus();
       });
     }
 
@@ -1902,9 +1968,35 @@
       return true;
     }
 
+    function isPanelOrDialogTarget(target) {
+      if (!(target instanceof Element)) return false;
+      return Boolean(target.closest(".panel, .help-overlay"));
+    }
+
+    function handleViewShortcut(event) {
+      if (pointers.size > 0) return false;
+      if (event.metaKey || event.ctrlKey || event.altKey) return false;
+      if (isEditableTarget(event.target)) return false;
+      if (event.key === "+" || event.key === "=") { cancelCameraFlight(); zoomBetween(zoom * ZOOM_STEP, sceneCenterX, sceneCenterY); }
+      else if (event.key === "-") { cancelCameraFlight(); zoomBetween(zoom / ZOOM_STEP, sceneCenterX, sceneCenterY); }
+      else if (event.key === "0") resetView();
+      else if (event.key.toLowerCase() === "p") { cancelCameraFlight(); setNavigationMode(navigationMode === "pan" ? "orbit" : "pan"); }
+      else if (event.key === "/") focusSearch();
+      else if (event.key === "?") { if (!event.repeat) toggleHelp(); }
+      else if ((event.key === "Enter" || event.key.toLowerCase() === "f") && selectedPoint?.category === "dependencies") {
+        if (event.key === "Enter" && event.target !== canvas && event.target !== document.body) return false;
+        if (selectedPoint.systemHub && !selectedPoint.packageHub) focusDependencySystem(selectedPoint.systemIndex);
+        else focusDependencyPackage(selectedPoint.packageIndex);
+      }
+      else return false;
+      event.preventDefault();
+      requestRender();
+      return true;
+    }
+
     function moveViewWithArrow(event) {
       if (!event.key.startsWith("Arrow") || pointers.size > 0) return false;
-      if (event.metaKey || event.ctrlKey || event.altKey || isEditableTarget(event.target)) return false;
+      if (event.metaKey || event.ctrlKey || event.altKey || isEditableTarget(event.target) || isPanelOrDialogTarget(event.target)) return false;
       cancelCameraFlight();
       const distance = event.shiftKey ? 96 : 32;
       if (event.key === "ArrowLeft") panBy(distance, 0);
@@ -2287,11 +2379,13 @@
         motion.textContent = "Drift off";
         motion.setAttribute("aria-label", "Drift disabled by reduced motion preference");
         motion.setAttribute("aria-pressed", "true");
+        motion.title = "Drift disabled by reduced motion preference";
       } else {
         const label = drifting ? "Pause drift" : "Resume drift";
         motion.textContent = label;
         motion.setAttribute("aria-label", label);
         motion.setAttribute("aria-pressed", String(!drifting));
+        motion.title = `${label} (Space)`;
       }
       requestRender();
     }
@@ -2316,6 +2410,7 @@
       pinchState = null;
       dragging = false;
       canvas.classList.remove("is-dragging-pan");
+      canvas.classList.remove("is-star");
       requestRender();
     };
     if (interactiveMode) {
@@ -2375,13 +2470,13 @@
       canvas.classList.remove("is-dragging-pan");
       if (wasTap) {
         const point = hoverTargetAt(event.clientX, event.clientY);
-        if (point?.category === "dependencies") {
-          dependencyDoubleClickTarget = { point, x: event.clientX, y: event.clientY, at: event.timeStamp };
-        } else if (dependencyDoubleClickTarget && (
-          event.timeStamp - dependencyDoubleClickTarget.at > 1000 ||
-          Math.hypot(event.clientX - dependencyDoubleClickTarget.x, event.clientY - dependencyDoubleClickTarget.y) > 12
-        )) {
-          dependencyDoubleClickTarget = null;
+        const rememberedTapIsFresh = doubleClickTarget &&
+          event.timeStamp - doubleClickTarget.at <= 1000 &&
+          Math.hypot(event.clientX - doubleClickTarget.x, event.clientY - doubleClickTarget.y) <= 12;
+        if (point) {
+          if (!rememberedTapIsFresh) doubleClickTarget = { point, x: event.clientX, y: event.clientY, at: event.timeStamp };
+        } else if (!rememberedTapIsFresh) {
+          doubleClickTarget = null;
         }
         clearActiveFact();
         clearCategoryFocus();
@@ -2397,7 +2492,10 @@
     canvas.addEventListener("pointerup", event => finishPointer(event));
     canvas.addEventListener("pointercancel", event => finishPointer(event, true));
     canvas.addEventListener("lostpointercapture", event => { if (pointers.has(event.pointerId)) finishPointer(event, true); });
-    canvas.addEventListener("pointerleave", () => { if (!selectionLocked && pointers.size === 0) selectPoint(null); });
+    canvas.addEventListener("pointerleave", () => {
+      canvas.classList.remove("is-star");
+      if (!selectionLocked && pointers.size === 0) selectPoint(null);
+    });
     canvas.addEventListener("contextmenu", event => event.preventDefault());
     window.addEventListener("blur", clearGestureState);
     canvas.addEventListener("wheel", event => {
@@ -2410,48 +2508,48 @@
     }, { passive: false });
     canvas.addEventListener("dblclick", event => {
       if (pointers.size > 0) return;
-      const remembered = dependencyDoubleClickTarget;
-      dependencyDoubleClickTarget = null;
-      const rememberedDependency = remembered &&
+      const remembered = doubleClickTarget;
+      doubleClickTarget = null;
+      const rememberedPoint = remembered &&
         event.timeStamp - remembered.at <= 1000 &&
         Math.hypot(event.clientX - remembered.x, event.clientY - remembered.y) <= 12
         ? remembered.point
         : null;
-      const dependency = dependencyPackageAt(event.clientX, event.clientY) || rememberedDependency;
-      if (dependency) {
-        if (dependency.systemHub && !dependency.packageHub) focusDependencySystem(dependency.systemIndex);
-        else focusDependencyPackage(dependency.packageIndex);
+      const exact = hitTest(event.clientX, event.clientY);
+      const target = rememberedPoint || dependencyPackageAt(event.clientX, event.clientY, exact);
+      if (target?.category === "dependencies") {
+        if (target.systemHub && !target.packageHub) focusDependencySystem(target.systemIndex);
+        else focusDependencyPackage(target.packageIndex);
         return;
       }
-      cancelCameraFlight();
-      zoomBetween(zoom * 2, event.clientX, event.clientY);
-      requestRender();
-    });
-    canvas.addEventListener("keydown", event => {
-      if (pointers.size > 0) return;
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      if (event.key === "+" || event.key === "=") { cancelCameraFlight(); zoomBetween(zoom * ZOOM_STEP, sceneCenterX, sceneCenterY); }
-      else if (event.key === "-") { cancelCameraFlight(); zoomBetween(zoom / ZOOM_STEP, sceneCenterX, sceneCenterY); }
-      else if (event.key === "0") resetView();
-      else if (event.key.toLowerCase() === "p") { cancelCameraFlight(); setNavigationMode(navigationMode === "pan" ? "orbit" : "pan"); }
-      else if ((event.key === "Enter" || event.key.toLowerCase() === "f") && selectedPoint?.category === "dependencies") {
-        if (selectedPoint.systemHub && !selectedPoint.packageHub) focusDependencySystem(selectedPoint.systemIndex);
-        else focusDependencyPackage(selectedPoint.packageIndex);
+      if (target) {
+        navigateToSelection(target);
+        return;
       }
-      else return;
-      event.preventDefault();
+      if (exact) return;
+      cancelCameraFlight();
+      zoomBetween(event.shiftKey ? zoom / 2 : zoom * 2, event.clientX, event.clientY);
       requestRender();
     });
     window.addEventListener("keydown", event => {
+      if (event.defaultPrevented) return;
+      if (!helpOverlay.hidden) {
+        if (event.key === "Escape" || (event.key === "?" && !event.repeat)) { event.preventDefault(); closeHelp(); }
+        else if (event.key === "Tab") { event.preventDefault(); helpClose.focus(); }
+        return;
+      }
       if (toggleDriftWithSpace(event)) return;
-      if (event.key === "Escape") clearExplorationFocus();
-      else moveViewWithArrow(event);
+      if (event.key === "Escape") exitExplorationFocus();
+      else if (!handleViewShortcut(event)) moveViewWithArrow(event);
     });
     document.getElementById("motion").addEventListener("click", () => setDrifting(!driftRequested));
     document.getElementById("pan-mode").addEventListener("click", () => { cancelCameraFlight(); setNavigationMode(navigationMode === "pan" ? "orbit" : "pan"); });
     document.getElementById("zoom-in").addEventListener("click", () => { if (pointers.size === 0) { cancelCameraFlight(); zoomBetween(zoom * ZOOM_STEP, sceneCenterX, sceneCenterY); } requestRender(); });
     document.getElementById("zoom-out").addEventListener("click", () => { if (pointers.size === 0) { cancelCameraFlight(); zoomBetween(zoom / ZOOM_STEP, sceneCenterX, sceneCenterY); } requestRender(); });
     document.getElementById("reset-view").addEventListener("click", resetView);
+    document.getElementById("help-open").addEventListener("click", toggleHelp);
+    helpClose.addEventListener("click", closeHelp);
+    helpOverlay.addEventListener("click", event => { if (event.target === helpOverlay) closeHelp(); });
     panelToggle.addEventListener("click", () => setPanelCollapsed(panelToggle.getAttribute("aria-expanded") === "true"));
     panel.addEventListener("transitionend", event => { if (event.propertyName === "width") { updateSceneViewport(); requestRender(); } });
     reducedMotionQuery.addEventListener("change", event => {
@@ -2473,7 +2571,7 @@
       startShowcase();
     } else {
       document.title = `RubyLens · ${model.projectName}`;
-      canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class and module stars for Ruby code details, dependency systems, or gem package subclouds. Selections open a top-down view that keeps the selected target and Core visible. Double-click a dependency system or gem subcloud, press Enter or F on its selected marker, or tap that marker again to expand its stars. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, use arrow keys to move the view, Space to pause or resume drift, and 0 to reset.`);
+      canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class and module stars for Ruby code details, dependency systems, or gem package subclouds. Selections open a top-down view that keeps the selected target and Core visible. Double-click a dependency system or gem subcloud, press Enter or F on its selected marker, or tap that marker again to expand its stars. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, use arrow keys to move the view, Space to pause or resume drift, 0 to reset, slash to search, and question mark for the full shortcut list.`);
       document.getElementById("coverage").textContent = `${renderedDependencyStars.toLocaleString()} dependency stars shown`;
       populateWarningDisclosure();
       applyCameraTarget(DEFAULT_CAMERA);

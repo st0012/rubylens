@@ -30,7 +30,7 @@ class ExplorerRuntimeTest < Minitest::Test
   end
 
   def test_explorer_initial_and_reset_camera_use_200_percent_without_changing_drift
-    assert_includes(SHELL, 'id="reset-view" aria-label="Reset to default view" aria-keyshortcuts="0">Reset</button>')
+    assert_includes(SHELL, 'id="reset-view" aria-label="Reset to default view" aria-keyshortcuts="0" title="Reset view (0)">Reset</button>')
     assert_includes(SHELL, '<output class="zoom-level" id="zoom-level" aria-label="Zoom level">200%</output>')
     assert_includes(RUNTIME, "const DEFAULT_CAMERA = Object.freeze({ yaw: -.36, pitch: .34, zoom: 2, panX: 0, panY: 0 })")
     assert_match(/populateWarningDisclosure\(\).*?applyCameraTarget\(DEFAULT_CAMERA\).*?createExplorer\(\).*?resize\(\)/m, RUNTIME)
@@ -79,7 +79,7 @@ class ExplorerRuntimeTest < Minitest::Test
     assert_includes(RUNTIME, 'target.closest("input, textarea, select, button, summary, a[href], [contenteditable], [role=\'button\']")')
     assert_includes(RUNTIME, "if (reducedMotionQuery.matches || isNativeSpaceTarget(event.target)) return false")
     assert_match(/function toggleDriftWithSpace\(event\).*?event\.preventDefault\(\).*?setDrifting\(!driftRequested\)/m, RUNTIME)
-    assert_match(/window\.addEventListener\("keydown", event => \{\s+if \(toggleDriftWithSpace\(event\)\) return;/m, RUNTIME)
+    assert_match(/window\.addEventListener\("keydown", event => \{\s+if \(event\.defaultPrevented\) return;\s+if \(!helpOverlay\.hidden\) \{.*?\}\s+if \(toggleDriftWithSpace\(event\)\) return;/m, RUNTIME)
     assert_includes(RUNTIME, 'motion.setAttribute("aria-label", label)')
     assert_includes(RUNTIME, 'motion.setAttribute("aria-pressed", String(!drifting))')
     assert_includes(RUNTIME, 'motion.textContent = "Drift off"')
@@ -93,7 +93,9 @@ class ExplorerRuntimeTest < Minitest::Test
     assert_includes(RUNTIME, "const desiredSeparation = sceneRight * (CONTEXT_CORE_X - CONTEXT_TARGET_X)")
     assert_includes(RUNTIME, "const coreFitZoom = Math.min(sceneRight, sceneBottom) * .28")
     assert_includes(RUNTIME, "panX: sceneRight * .5 + actualSeparation * .5 - sceneCenterX")
-    assert_includes(RUNTIME, "pitch: TOP_DOWN_PITCH")
+    assert_includes(RUNTIME, "const targetPitch = pitch >= 0 ? TOP_DOWN_PITCH : -TOP_DOWN_PITCH")
+    assert_includes(RUNTIME, "pitch: targetPitch")
+    assert_includes(RUNTIME, "pitch: pitch >= 0 ? TOP_DOWN_PITCH : -TOP_DOWN_PITCH")
     assert_includes(RUNTIME, "function navigateToSelection(point")
     assert_includes(RUNTIME, "flyCamera(contextualSelectionCameraTarget(point), { followDrift: true })")
     assert_includes(runtime_function("focusPoint"), "navigateToSelection(point, { button })")
@@ -104,12 +106,86 @@ class ExplorerRuntimeTest < Minitest::Test
   end
 
   def test_dependency_double_click_survives_the_first_tap_selection_flight
-    assert_includes(RUNTIME, "let dependencyDoubleClickTarget = null")
-    assert_includes(RUNTIME, 'dependencyDoubleClickTarget = { point, x: event.clientX, y: event.clientY, at: event.timeStamp }')
-    assert_includes(RUNTIME, "event.timeStamp - dependencyDoubleClickTarget.at > 1000")
-    assert_includes(RUNTIME, "const remembered = dependencyDoubleClickTarget")
+    assert_includes(RUNTIME, "let doubleClickTarget = null")
+    assert_includes(RUNTIME, 'doubleClickTarget = { point, x: event.clientX, y: event.clientY, at: event.timeStamp }')
+    assert_includes(RUNTIME, "const rememberedTapIsFresh = doubleClickTarget &&")
+    assert_includes(RUNTIME, "event.timeStamp - doubleClickTarget.at <= 1000 &&")
+    assert_includes(RUNTIME, "if (!rememberedTapIsFresh) doubleClickTarget = { point")
+    assert_includes(RUNTIME, "const remembered = doubleClickTarget")
     assert_includes(RUNTIME, "Math.hypot(event.clientX - remembered.x, event.clientY - remembered.y) <= 12")
-    assert_includes(RUNTIME, "const dependency = dependencyPackageAt(event.clientX, event.clientY) || rememberedDependency")
+    assert_includes(RUNTIME, "const target = rememberedPoint || dependencyPackageAt(event.clientX, event.clientY, exact)")
+  end
+
+  def test_double_click_on_a_ruby_star_defers_to_its_selection_flight
+    dblclick = RUNTIME.match(/canvas\.addEventListener\("dblclick", event => \{(?<body>.*?)^    \}\);/m)[:body]
+    assert_includes(dblclick, "const exact = hitTest(event.clientX, event.clientY)")
+    assert_includes(dblclick, 'if (target?.category === "dependencies") {')
+    assert_match(/if \(target\) \{\s+navigateToSelection\(target\);\s+return;\s+\}/m, dblclick)
+    assert_includes(dblclick, "if (exact) return;")
+    assert_includes(dblclick, "zoomBetween(event.shiftKey ? zoom / 2 : zoom * 2, event.clientX, event.clientY)")
+    assert_operator(dblclick.index("if (exact) return;"), :<, dblclick.index("cancelCameraFlight()"))
+    assert_operator(dblclick.index("const target = rememberedPoint ||"), :<, dblclick.index("if (target?.category"))
+  end
+
+  def test_view_shortcuts_work_regardless_of_focus_with_editable_guards
+    assert_includes(RUNTIME, "function handleViewShortcut(event)")
+    handler = runtime_function("handleViewShortcut")
+    assert_includes(handler, "if (event.metaKey || event.ctrlKey || event.altKey) return false")
+    assert_includes(handler, "if (isEditableTarget(event.target)) return false")
+    assert_includes(handler, 'else if (event.key === "/") focusSearch()')
+    assert_includes(handler, 'else if (event.key === "?") { if (!event.repeat) toggleHelp(); }')
+    assert_includes(handler, 'if (event.key === "Enter" && event.target !== canvas && event.target !== document.body) return false')
+    assert_includes(RUNTIME, "else if (!handleViewShortcut(event)) moveViewWithArrow(event)")
+    refute_includes(RUNTIME, 'canvas.addEventListener("keydown"')
+    assert_includes(runtime_function("moveViewWithArrow"), "isPanelOrDialogTarget(event.target)")
+    assert_includes(runtime_function("isPanelOrDialogTarget"), 'target.closest(".panel, .help-overlay")')
+    assert_includes(runtime_function("focusSearch"), 'if (panel.classList.contains("is-collapsed")) setPanelCollapsed(false)')
+    assert_includes(SHELL, 'id="zoom-out" aria-label="Zoom out" aria-keyshortcuts="-" title="Zoom out (−)"')
+    assert_includes(SHELL, 'id="zoom-in" aria-label="Zoom in" aria-keyshortcuts="+" title="Zoom in (+)"')
+  end
+
+  def test_escape_exits_spatial_focus_and_returns_to_the_default_view
+    exit_body = runtime_function("exitExplorationFocus")
+    assert_includes(exit_body, "expandedSystemIndex !== null || expandedPackageIndex !== null || focusedCategory !== null || selectionLocked")
+    assert_includes(exit_body, "clearExplorationFocus()")
+    assert_includes(exit_body, "if (hadSpatialFocus) flyCamera(DEFAULT_CAMERA, { followDrift: true })")
+    assert_includes(RUNTIME, 'if (event.key === "Escape") exitExplorationFocus()')
+    refute_includes(runtime_function("clearExplorationFocus"), "flyCamera")
+  end
+
+  def test_shortcuts_overlay_is_a_gated_modal_dialog
+    assert_includes(SHELL, '<div class="help-overlay" id="shortcuts-help" role="dialog" aria-modal="true" aria-label="Shortcuts and controls" hidden>')
+    assert_includes(SHELL, 'id="help-open" aria-label="Keyboard shortcuts" aria-keyshortcuts="?" aria-haspopup="dialog" title="Keyboard shortcuts (?)">?</button>')
+    assert_includes(SHELL, '<button type="button" id="help-close" aria-label="Close shortcuts">Close</button>')
+    assert_match(/if \(!helpOverlay\.hidden\) \{\s+if \(event\.key === "Escape" \|\| \(event\.key === "\?" && !event\.repeat\)\) \{ event\.preventDefault\(\); closeHelp\(\); \}\s+else if \(event\.key === "Tab"\) \{ event\.preventDefault\(\); helpClose\.focus\(\); \}\s+return;/m, RUNTIME)
+    assert_includes(runtime_function("openHelp"), "helpReturnFocus = document.activeElement")
+    assert_includes(runtime_function("closeHelp"), 'canvas.focus({ preventScroll: true })')
+    assert_includes(RUNTIME, 'helpOverlay.addEventListener("click", event => { if (event.target === helpOverlay) closeHelp(); })')
+    assert_includes(STYLES, ".help-overlay[hidden] { display: none; }")
+  end
+
+  def test_search_supports_enter_activation_and_roving_arrow_focus
+    assert_includes(RUNTIME, 'if (event.key === "Enter" && event.target === searchInput)')
+    assert_match(/function flushPendingSearch\(\) \{\s+if \(!searchTimer\) return;\s+window\.clearTimeout\(searchTimer\);\s+runSearch\(\);\s+\}/m, RUNTIME)
+    assert_includes(RUNTIME, "if (searchMatches.length) activateSearchResult(interactivePoints[searchMatches[0]])")
+    assert_includes(RUNTIME, "if (event.target === searchInput) flushPendingSearch()")
+    assert_includes(RUNTIME, 'if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return')
+    assert_includes(RUNTIME, "const focusables = [...searchResults.querySelectorAll(\".search-result\")]")
+    assert_includes(RUNTIME, "else if (index === 0) searchInput.focus()")
+  end
+
+  def test_star_hover_and_hub_tooltips_advertise_their_interactions
+    hover = runtime_function("queueHover")
+    assert_includes(hover, 'canvas.classList.toggle("is-star", Boolean(point))')
+    assert_includes(hover, "if (!selectionLocked && point !== selectedPoint) selectPoint(point)")
+    assert_includes(STYLES, "canvas.is-star:not(.is-pan):not(.is-dragging-pan):not(:active) { cursor: pointer; }")
+    assert_includes(RUNTIME, '" · Double-click or F to expand"')
+    assert_includes(RUNTIME, 'motion.title = `${label} (Space)`')
+  end
+
+  def test_hint_stays_clear_of_the_expanded_panel
+    assert_includes(STYLES, ".panel:not(.is-collapsed) ~ .hint { right: 380px; }")
+    assert_includes(SHELL, '<div class="hint">Drag to orbit · scroll to zoom · press ? for all shortcuts</div>')
   end
 
   def test_expanded_dependency_system_retains_detailed_galaxy_context
