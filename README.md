@@ -4,6 +4,22 @@ RubyLens turns a Ruby codebase into self-contained stellar HTML. It uses Rubydex
 
 This is an early local prototype. RubyLens 0.1 supports Ruby 3.2 through 4.0 and pins Rubydex 0.2.9 while its API is pre-1.0.
 
+## Galaxy morphology
+
+RubyLens borrows the [Hubble sequence](https://science.nasa.gov/asset/hubble/the-hubble-tuning-fork-classification-of-galaxies/) as a visual vocabulary. E0–E7 move from nearly round to increasingly flattened elliptical silhouettes; S0 is a smooth lenticular disc without visible arms; Sa–Sc move from tighter arms and larger bulges to looser arms and smaller bulges; SBa–SBc follow the same progression with a central bar; and Irr uses asymmetric clumps.
+
+RubyLens chooses one of these silhouettes deterministically from existing aggregate project signals. The designation describes the rendered shape, not the codebase's architecture, purpose, or quality.
+
+[![Five synthetic RubyLens renders of elliptical, lenticular, spiral, barred spiral, and irregular galaxy shapes using identical data.](docs/images/galaxy-morphology-families.jpg)](docs/images/galaxy-morphology-families.jpg)
+
+*Five families rendered from the same synthetic points, seeds, colors, and camera; only morphology changes.*
+
+[![Paired synthetic RubyLens renders comparing E2 with E6, Sa with Sc, and SBa with SBc.](docs/images/galaxy-morphology-variations.jpg)](docs/images/galaxy-morphology-variations.jpg)
+
+*Representative endpoints inside the elliptical, spiral, and barred-spiral families.*
+
+For the astronomy behind the names, see [NASA's guide to galaxy types](https://science.nasa.gov/universe/galaxies/types/) and Wikipedia's [Hubble sequence overview](https://en.wikipedia.org/wiki/Hubble_sequence).
+
 ## Generate a report
 
 Add RubyLens to the bundle of the project you want to visualize, then run:
