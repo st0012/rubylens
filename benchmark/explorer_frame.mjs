@@ -3,7 +3,7 @@
 //
 //   node benchmark/explorer_frame.mjs [output.html]
 //
-// The synthetic model matches rubylens.art.v8 as consumed by the runtime:
+// The synthetic model matches rubylens.art.v9 as consumed by the runtime:
 // NAMESPACES class/module rows (TEST_RATIO of them tests), DEPENDENCY_STARS
 // sampled dependency rows across PACKAGES gems, exact aggregate totals, and
 // signal domains derived from the generated rows. Defaults model a codebase
@@ -25,7 +25,7 @@ const NAMESPACES = Number(process.env.NAMESPACES || 100_000);
 const TEST_RATIO = Number(process.env.TEST_RATIO || 0.15);
 const PACKAGES = Number(process.env.PACKAGES || 400);
 const DEPENDENCY_STARS = Number(process.env.DEPENDENCY_STARS || 18_000);
-// Multi-gem Git dependency systems (rubylens.art.v8): each groups three
+// Multi-gem Git dependency systems (rubylens.art.v9): each groups three
 // consecutive packages. Default 0 keeps published benchmark numbers stable.
 const DEPENDENCY_SYSTEMS = Number(process.env.DEPENDENCY_SYSTEMS || 0);
 const SYSTEM_SPAN = 3;
@@ -128,8 +128,13 @@ function buildModel() {
   }));
 
   return {
-    schema: "rubylens.art.v8",
+    schema: "rubylens.art.v9",
     projectName: "Synthetic Metropolis",
+    morphology: {
+      family: 2,
+      designation: "Sb",
+      knobs: [0, 210, 4, 100, 600, 0, 0, 0, 0x51a7e11a],
+    },
     totals: {
       namespaces: namespaces.length,
       packages: packages.length,

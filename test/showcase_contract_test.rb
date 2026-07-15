@@ -62,6 +62,16 @@ class ShowcaseContractTest < Minitest::Test
     assert_equal(APPROVED_PRESET, showcase_preset)
   end
 
+  def test_galaxy_summary_sits_with_the_title_in_both_showcase_modes
+    shell = File.read(File.expand_path("../assets/shells/showcase.html", __dir__))
+    styles = File.read(STYLES_PATH)
+
+    assert_match(%r{<h1>Ruby project</h1>\s*<p class="galaxy-summary" id="galaxy-summary"></p>}, shell)
+    assert_includes(styles, 'html[data-showcase-layout="widescreen"] .galaxy-summary')
+    assert_includes(styles, "@media (max-width: 600px)")
+    assert_includes(styles, ".galaxy-summary { font-size: 24px; }")
+  end
+
   def test_widescreen_layout_tightens_the_masthead_and_raises_the_scene
     assert_equal(
       APPROVED_WIDESCREEN_LAYOUT_PRESET,

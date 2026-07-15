@@ -14,14 +14,16 @@ module RubyLens
     RUBY_NAME_PATTERN = /\A\p{Lu}[\p{L}\p{N}_]*(?:::\p{Lu}[\p{L}\p{N}_]*)*\z/
     MAX_ANNOTATION_NAME_LENGTH = 160
     RSPEC_PROXY_PREFIX = "RSpec example group #"
+    LEGACY_MORPHOLOGY_ROW = [MorphologyClassifier::SPIRAL, *MorphologyClassifier::DEFAULT_KNOBS].freeze
 
     def call(model, details: false)
       details = details == true
       showcase = {
-        "schema" => "rubylens.showcase.v2",
+        "schema" => "rubylens.showcase.v3",
         "projectName" => model.fetch("projectName"),
         "details" => details,
         "domains" => project_hash(model.fetch("domains"), SIGNAL_FIELDS),
+        "morphology" => morphology_row(model),
         "namespaces" => model.fetch("namespaces").map { |row| numeric_row(row, 15) },
         "packages" => model.fetch("packages").map { |row| numeric_row(row, 9) },
         "dependencySystems" => model.fetch("dependencySystems", []).map { |row| numeric_row(row, 2) },
@@ -40,6 +42,18 @@ module RubyLens
     end
 
     private
+
+    def morphology_row(model)
+      morphology = model["morphology"]
+      return LEGACY_MORPHOLOGY_ROW.dup unless morphology.is_a?(Hash)
+
+      knobs = morphology["knobs"]
+      return LEGACY_MORPHOLOGY_ROW.dup unless knobs.is_a?(Array)
+
+      numeric_row([morphology.fetch("family"), *knobs], 10)
+    rescue KeyError, Error
+      LEGACY_MORPHOLOGY_ROW.dup
+    end
 
     def project_hash(source, fields)
       fields.to_h { |field| [field, Integer(source.fetch(field))] }

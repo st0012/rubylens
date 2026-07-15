@@ -4,6 +4,8 @@
 
 RubyLens should use an astrophysical **visual grammar**, not attempt a literal simulation. RubyDex and Bundler signals decide which marks exist and how strongly they matter; galaxy morphology decides how density, light, colour, clustering, and negative space make the whole codebase feel natural.
 
+The implemented per-project classifier, schema, family recipes, privacy boundary, and accepted comparison prototype are preserved in the [galaxy morphology design](specs/2026-07-14-galaxy-morphology-design.md).
+
 The strongest direction is one concentrated bulge, an extended irregular disc, and a sparse halo of compact dependency systems. It should never read as three exact rings, a uniform particle sphere, or an orbital diagram.
 
 ## Morphology rules

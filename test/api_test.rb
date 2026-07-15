@@ -12,6 +12,9 @@ class APITest < Minitest::Test
       assert(RubyLens::ReportWriter.new.rubylens_report?(report.output_path))
       assert(RubyLens::ReportWriter.new.rubylens_report?(legacy.output_path))
       assert_equal(report.counts, legacy.counts)
+      report_model = embedded_model(report.output_path)
+      assert_equal("rubylens.art.v9", report_model.fetch("schema"))
+      assert_equal(9, report_model.dig("morphology", "knobs").length)
     end
   end
 
@@ -25,6 +28,8 @@ class APITest < Minitest::Test
       assert(RubyLens::ShowcaseWriter.new.rubylens_showcase?(result.output_path))
       assert_operator(result.counts.fetch("namespaces"), :>, 0)
       model = embedded_model(result.output_path)
+      assert_equal("rubylens.showcase.v3", model.fetch("schema"))
+      assert_equal(10, model.fetch("morphology").length)
       assert_equal(false, model.fetch("details"))
       refute(model.key?("totals"))
       refute(model.key?("categoryStats"))

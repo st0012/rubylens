@@ -11,7 +11,8 @@
     .masthead { position: fixed; top: 28px; left: 32px; z-index: 2; pointer-events: none; max-width: 760px; }
     .eyebrow { margin: 0 0 10px; color: #b6a9c9; font-size: 11px; font-weight: 750; letter-spacing: .18em; text-transform: uppercase; }
     h1 { margin: 0; font: 500 clamp(28px, 4vw, 54px)/.95 ui-serif, Georgia, serif; letter-spacing: -.045em; }
-    .coverage { margin: 12px 0 0; color: #7f788b; font-size: 10px; }
+    .galaxy-summary { margin: 10px 0 0; color: #aaa0b8; font-size: 11px; font-weight: 650; letter-spacing: .025em; line-height: 1.35; }
+    .coverage { margin: 6px 0 0; color: #7f788b; font-size: 10px; }
     .warning-disclosure { position: relative; width: max-content; max-width: calc(100vw - 40px); margin: 10px 0 0; border: 0; pointer-events: auto; }
     .warning-disclosure[hidden] { display: none; }
     .warning-disclosure > summary { width: max-content; max-width: 100%; border: 1px solid rgba(255, 198, 105, .22); border-radius: 999px; padding: 5px 8px; background: rgba(255, 184, 77, .07); color: #c9a96f; font-size: 10px; }

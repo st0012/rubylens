@@ -10,6 +10,11 @@ class ExplorerRuntimeTest < Minitest::Test
   STYLES = File.read(File.join(ROOT, "assets/styles/report.css"))
   RUNTIME = File.read(File.join(ROOT, "assets/runtime/report.js"))
 
+  def test_galaxy_summary_sits_with_the_title
+    assert_match(%r{<h1>Ruby project</h1>\s*<p class="galaxy-summary" id="galaxy-summary"></p>}, SHELL)
+    assert_includes(STYLES, ".galaxy-summary")
+  end
+
   def test_partial_index_status_is_an_accessible_bounded_disclosure
     assert_includes(SHELL, '<details class="warning-disclosure" id="status" hidden>')
     assert_includes(SHELL, '<summary id="warning-summary"></summary>')

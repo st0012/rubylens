@@ -4,7 +4,9 @@ RubyLens first removes model-ineligible synthetic declarations: anonymous namesp
 
 This removes the previous second full materialization of `graph.declarations` and prevents raw dependency volume from becoming an equally large snapshot before the art-model rendering cap is applied. The Rubydex graph can contain additional synthetic declarations and remains outside this model and memory boundary.
 
-Because `packages[].declarations` is now bounded instead of complete, the internal handoff is `rubylens.snapshot.v6`. The model builder continues to accept the old v4 shape, where declaration arrays are complete and aggregate count/maxima fields are absent. The persisted public artifact is `rubylens.art.v8`: exact package populations, dependency totals, signal domains, and deterministic rendering retain their existing meanings.
+Because `packages[].declarations` is now bounded instead of complete, the internal handoff is `rubylens.snapshot.v6`. The model builder continues to accept the old v4 shape, where declaration arrays are complete and aggregate count/maxima fields are absent. The persisted public artifact is `rubylens.art.v9`: exact package populations, dependency totals, signal domains, deterministic rendering, and the integer morphology block retain their existing meanings.
+
+Morphology classification reads only the snapshot's existing namespace rows, namespace names, exact dependency declaration totals, and project name. It performs no indexing, file walking, or subprocess discovery. The renderer decodes morphology once, precomputes at most five irregular clump centres, then evaluates each Core/Test position in O(1); Showcase sampling and the WebGL2 100,000-point path remain unchanged.
 
 Run the synthetic benchmark with the project Ruby activated:
 

@@ -74,7 +74,7 @@ rubylens.snapshot.v7
   namespaces:
     [group_ordinal, kind, scope, ..., instance_variables, group_span]
 
-rubylens.art.v9
+rubylens.art.v10
   groupNames: [label, ...]
   groups:
     [seed, core_namespaces, test_namespaces, classes, modules,
@@ -127,7 +127,7 @@ The default share overlay should say `Core systems · N` alongside repository-wi
 ## Implementation batches
 
 1. Strict configuration loader, safe glob matcher, discovery/CLI plumbing, group ownership, and `snapshot.v7`.
-2. `art.v9` group metadata, deterministic anchors, overview level of detail, and smooth group focus.
+2. `art.v10` group metadata, deterministic anchors, overview level of detail, and smooth group focus.
 3. Workspace-star sampling, contiguous group ranges, explorer search/virtualization, and mobile group selection.
 4. Synthetic 100k-namespace/1k-group tests plus a real Shopify-scale benchmark and visual tuning.
 
