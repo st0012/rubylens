@@ -76,6 +76,20 @@ class MorphologyRuntimeTest < Minitest::Test
     assert_equal(4, stats.dig("morphology", "family"))
   end
 
+  def test_all_family_labels_share_the_actual_rendered_star_count
+    labels = RUNTIME.match(/^    const MORPHOLOGY_FAMILY_LABELS = Object\.freeze\((?<labels>\[.*\])\);$/)[:labels]
+
+    assert_equal(
+      ["Elliptical galaxy", "Lenticular galaxy", "Spiral galaxy", "Barred spiral galaxy", "Irregular galaxy"],
+      JSON.parse(labels),
+    )
+    assert_includes(RUNTIME, "const renderedStarCount = renderPoints.length;")
+    assert_includes(
+      RUNTIME,
+      '`${MORPHOLOGY_FAMILY_LABELS[morphology.family]} - ${renderedStarCount.toLocaleString("en-US")} ${renderedStarCount === 1 ? "star" : "stars"}`',
+    )
+  end
+
   private
 
   def runtime_stats(raw_morphology)

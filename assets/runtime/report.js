@@ -34,6 +34,7 @@
     const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35, SHOWCASE_POINT_LIMIT = 50_000;
     const CORE_SCALE_BASELINE = 3_000;
     const MORPHOLOGY_FAMILY = Object.freeze({ elliptical: 0, lenticular: 1, spiral: 2, barredSpiral: 3, irregular: 4 });
+    const MORPHOLOGY_FAMILY_LABELS = Object.freeze(["Elliptical galaxy", "Lenticular galaxy", "Spiral galaxy", "Barred spiral galaxy", "Irregular galaxy"]);
     const LEGACY_MORPHOLOGY = Object.freeze({
       legacy: true,
       family: MORPHOLOGY_FAMILY.spiral,
@@ -2739,6 +2740,8 @@
 
     window.addEventListener("resize", resize);
     document.querySelector("h1").textContent = model.projectName;
+    const renderedStarCount = renderPoints.length;
+    document.getElementById("galaxy-summary").textContent = `${MORPHOLOGY_FAMILY_LABELS[morphology.family]} - ${renderedStarCount.toLocaleString("en-US")} ${renderedStarCount === 1 ? "star" : "stars"}`;
     if (showcaseMode) {
       document.title = `${model.projectName} · RubyLens showcase`;
       const showcaseLabel = `Autonomous stellar artwork of ${model.projectName}, completing one slow rotation each minute.`;
