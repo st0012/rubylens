@@ -107,13 +107,24 @@ class ShowcaseModelTest < Minitest::Test
     assert_equal("showcase model rows must contain only numbers", error.message)
   end
 
-  def test_rejects_private_values_inside_morphology
+  def test_defaults_missing_morphology_to_the_legacy_row
     model = minimal_model
-    model.fetch("morphology").fetch("knobs")[4] = "secret"
+    model.delete("morphology")
 
-    error = assert_raises(RubyLens::Error) { RubyLens::ShowcaseModel.new.call(model) }
+    showcase = RubyLens::ShowcaseModel.new.call(model)
 
-    assert_equal("showcase model rows must contain only numbers", error.message)
+    assert_equal(RubyLens::ShowcaseModel::LEGACY_MORPHOLOGY_ROW, showcase.fetch("morphology"))
+  end
+
+  def test_defaults_unusable_morphology_without_serializing_private_values
+    private_value = "Secret::Namespace"
+    model = minimal_model
+    model.fetch("morphology").fetch("knobs")[4] = private_value
+
+    showcase = RubyLens::ShowcaseModel.new.call(model)
+
+    assert_equal(RubyLens::ShowcaseModel::LEGACY_MORPHOLOGY_ROW, showcase.fetch("morphology"))
+    refute_includes(JSON.generate(showcase), private_value)
   end
 
   private
