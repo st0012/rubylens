@@ -2,6 +2,7 @@
 
 require "json"
 require "optparse"
+require_relative "../rubylens"
 
 module RubyLens
   class CLI

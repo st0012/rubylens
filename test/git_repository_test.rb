@@ -3,6 +3,36 @@
 require_relative "test_helper"
 
 class GitRepositoryTest < Minitest::Test
+  include SnapshotHelpers
+
+  def test_selects_only_tracked_or_unignored_rubydex_file_types
+    repository = RubyLens::GitRepository.new(FIXTURE)
+    relative_paths = repository.selected_files.map { |path| Pathname(path).relative_path_from(FIXTURE).to_s }
+
+    assert_equal(
+      ["config.ru", "lib/domain.rb", "lib/reopen.rb", "sig/domain.rbs", "tasks/demo.rake", "test/order_test.rb"],
+      relative_paths,
+    )
+    refute_includes(relative_paths, "ignored.rb")
+  end
+
+  def test_rejects_ruby_symlinks_that_escape_the_target_root
+    Dir.mktmpdir("rubylens-git-") do |directory|
+      repository_root = File.join(directory, "repo")
+      external_root = File.join(directory, "external")
+      FileUtils.mkdir_p(repository_root)
+      FileUtils.mkdir_p(external_root)
+      system("git", "init", "-q", repository_root, exception: true)
+      external_file = File.join(external_root, "private.rb")
+      File.write(external_file, "PRIVATE_VALUE = 1\n")
+      File.symlink(external_file, File.join(repository_root, "leak.rb"))
+
+      selected = RubyLens::GitRepository.new(repository_root).selected_files
+
+      assert_empty(selected)
+    end
+  end
+
   def test_adds_default_report_to_local_git_excludes_once
     Dir.mktmpdir("rubylens-git-") do |directory|
       system("git", "-C", directory, "init", "--quiet", exception: true)
@@ -31,7 +61,7 @@ class GitRepositoryTest < Minitest::Test
       File.write(report, "tracked report")
       system("git", "-C", directory, "add", RubyLens::Generator::DEFAULT_REPORT_NAME, exception: true)
 
-      error = assert_raises(RubyLens::ExtractionError) do
+      error = assert_raises(RubyLens::GitError) do
         RubyLens::GitRepository.new(directory).exclude_local(report)
       end
 

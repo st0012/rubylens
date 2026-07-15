@@ -65,7 +65,7 @@ class ShowcaseGeneratorTest < Minitest::Test
       File.write(output, '<meta name="rubylens-artifact" content="showcase">')
       system("git", "-C", directory, "add", "rubylens-showcase.html", exception: true)
 
-      error = assert_raises(RubyLens::ExtractionError) { generator.call(path: directory) }
+      error = assert_raises(RubyLens::GitError) { generator.call(path: directory) }
 
       assert_equal("default showcase path is already tracked by Git", error.message)
       refute(@indexed)

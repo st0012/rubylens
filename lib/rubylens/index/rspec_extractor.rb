@@ -2,7 +2,7 @@
 
 require "pathname"
 require "set"
-require "uri"
+require_relative "source_path"
 
 module RubyLens
   module Index
@@ -38,7 +38,7 @@ module RubyLens
 
       def spec_documents(graph, manifest, package_document_paths)
         graph.documents.filter_map do |document|
-          path = document_path(document)
+          path = SourcePath.from_file_uri(document.uri)
           next unless path && manifest.workspace_path?(path)
 
           path = Pathname(path).realpath.to_s
@@ -69,25 +69,8 @@ module RubyLens
         ]
       end
 
-      def document_path(document)
-        uri = URI.parse(document.uri)
-        return unless uri.scheme == "file"
-        return if uri.host && !uri.host.empty? && uri.host != "localhost"
-        return unless uri.path
-
-        path = URI::RFC2396_PARSER.unescape(uri.path)
-        path = path.delete_prefix("/") if Gem.win_platform?
-        path
-      end
-
       def component_for(relative)
-        segments = relative.split(File::SEPARATOR)
-        first = segments.first || "root"
-        if %w[lib app test tests spec specs].include?(first)
-          "#{first}/#{segments[1] || "root"}"
-        else
-          first
-        end
+        SourcePath.component_for(relative)
       end
     end
   end

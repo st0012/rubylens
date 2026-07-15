@@ -1,5 +1,10 @@
 # frozen_string_literal: true
 
+module RubyLens
+  # File extensions RubyLens selects for indexing with Rubydex.
+  INDEXABLE_EXTENSIONS = %w[.rb .rake .rbs .ru].freeze
+end
+
 require_relative "rubylens/version"
 require_relative "rubylens/errors"
 require_relative "rubylens/paths"
@@ -31,5 +36,3 @@ module RubyLens
     generate_report(path: path, output: output, lockfile: lockfile)
   end
 end
-
-require_relative "rubylens/cli"

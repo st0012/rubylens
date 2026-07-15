@@ -437,7 +437,7 @@ module RubyLens
       end
 
       def indexable?(path)
-        GitRepository::INDEXABLE_EXTENSIONS.include?(path.extname)
+        INDEXABLE_EXTENSIONS.include?(path.extname)
       end
     end
   end

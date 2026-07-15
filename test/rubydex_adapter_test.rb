@@ -30,7 +30,7 @@ class RubydexAdapterTest < Minitest::Test
     refute_includes(serialized, FIXTURE.to_s)
     refute_includes(serialized, "domain.rb")
     refute_includes(serialized, "PRIVATE_VALUE")
-    assert_nil(adapter.instance_variable_get(:@location_path_cache))
+    assert_nil(adapter.instance_variable_get(:@source_path_cache))
     assert_nil(adapter.instance_variable_get(:@workspace_location_cache))
   end
 
@@ -142,7 +142,7 @@ class RubydexAdapterTest < Minitest::Test
     manifest = Struct.new(:root).new(Pathname("/tmp/example"))
 
     assert_raises(RuntimeError) { adapter.index(manifest) }
-    assert_nil(adapter.instance_variable_get(:@location_path_cache))
+    assert_nil(adapter.instance_variable_get(:@source_path_cache))
     assert_nil(adapter.instance_variable_get(:@workspace_location_cache))
     assert_nil(adapter.instance_variable_get(:@indexed_package_document_paths))
   end

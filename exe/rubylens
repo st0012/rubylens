@@ -2,5 +2,6 @@
 # frozen_string_literal: true
 
 require "rubylens"
+require "rubylens/cli"
 
 exit RubyLens::CLI.new.run(ARGV)
