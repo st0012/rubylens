@@ -1696,6 +1696,12 @@
       if (focus) searchInput.focus();
     }
 
+    function flushPendingSearch() {
+      if (!searchTimer) return;
+      window.clearTimeout(searchTimer);
+      runSearch();
+    }
+
     function runSearch() {
       searchTimer = 0;
       const query = searchInput.value.trim().toLowerCase();
@@ -1733,14 +1739,12 @@
         if (event.key === "Enter" && event.target === searchInput) {
           if (!searchInput.value.trim()) return;
           event.preventDefault();
-          if (searchTimer) {
-            window.clearTimeout(searchTimer);
-            runSearch();
-          }
+          flushPendingSearch();
           if (searchMatches.length) activateSearchResult(interactivePoints[searchMatches[0]]);
           return;
         }
         if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+        if (event.target === searchInput) flushPendingSearch();
         const focusables = [...searchResults.querySelectorAll("button")];
         if (!focusables.length) return;
         event.preventDefault();
@@ -2528,6 +2532,7 @@
       if (event.defaultPrevented) return;
       if (!helpOverlay.hidden) {
         if (event.key === "Escape" || (event.key === "?" && !event.repeat)) { event.preventDefault(); closeHelp(); }
+        else if (event.key === "Tab") { event.preventDefault(); helpClose.focus(); }
         return;
       }
       if (toggleDriftWithSpace(event)) return;

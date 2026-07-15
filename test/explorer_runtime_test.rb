@@ -154,7 +154,7 @@ class ExplorerRuntimeTest < Minitest::Test
     assert_includes(SHELL, '<div class="help-overlay" id="shortcuts-help" role="dialog" aria-modal="true" aria-label="Shortcuts and controls" hidden>')
     assert_includes(SHELL, 'id="help-open" aria-label="Keyboard shortcuts" aria-keyshortcuts="?" aria-haspopup="dialog" title="Keyboard shortcuts (?)">?</button>')
     assert_includes(SHELL, '<button type="button" id="help-close" aria-label="Close shortcuts">Close</button>')
-    assert_match(/if \(!helpOverlay\.hidden\) \{\s+if \(event\.key === "Escape" \|\| \(event\.key === "\?" && !event\.repeat\)\) \{ event\.preventDefault\(\); closeHelp\(\); \}\s+return;/m, RUNTIME)
+    assert_match(/if \(!helpOverlay\.hidden\) \{\s+if \(event\.key === "Escape" \|\| \(event\.key === "\?" && !event\.repeat\)\) \{ event\.preventDefault\(\); closeHelp\(\); \}\s+else if \(event\.key === "Tab"\) \{ event\.preventDefault\(\); helpClose\.focus\(\); \}\s+return;/m, RUNTIME)
     assert_includes(runtime_function("openHelp"), "helpReturnFocus = document.activeElement")
     assert_includes(runtime_function("closeHelp"), 'canvas.focus({ preventScroll: true })')
     assert_includes(RUNTIME, 'helpOverlay.addEventListener("click", event => { if (event.target === helpOverlay) closeHelp(); })')
@@ -163,8 +163,9 @@ class ExplorerRuntimeTest < Minitest::Test
 
   def test_search_supports_enter_activation_and_roving_arrow_focus
     assert_includes(RUNTIME, 'if (event.key === "Enter" && event.target === searchInput)')
-    assert_match(/if \(searchTimer\) \{\s+window\.clearTimeout\(searchTimer\);\s+runSearch\(\);\s+\}/m, RUNTIME)
+    assert_match(/function flushPendingSearch\(\) \{\s+if \(!searchTimer\) return;\s+window\.clearTimeout\(searchTimer\);\s+runSearch\(\);\s+\}/m, RUNTIME)
     assert_includes(RUNTIME, "if (searchMatches.length) activateSearchResult(interactivePoints[searchMatches[0]])")
+    assert_includes(RUNTIME, "if (event.target === searchInput) flushPendingSearch()")
     assert_includes(RUNTIME, 'if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return')
     assert_includes(RUNTIME, "const focusables = [...searchResults.querySelectorAll(\"button\")]")
     assert_includes(RUNTIME, "else if (index === 0) searchInput.focus()")
