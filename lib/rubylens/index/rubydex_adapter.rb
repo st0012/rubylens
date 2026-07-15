@@ -2,9 +2,9 @@
 
 require "rubydex"
 require "set"
-require "uri"
 require_relative "../model/dependency_aggregation"
 require_relative "rspec_extractor"
+require_relative "source_path"
 
 module RubyLens
   module Index
@@ -17,13 +17,13 @@ module RubyLens
       end
 
       def index(manifest)
-        @location_path_cache = {}
+        @source_path_cache = {}
         @workspace_location_cache = {}
         graph = @graph_factory.call(manifest.root)
-        index_errors = Array(graph.index_all(manifest.files))
+        index_errors = graph.index_all(manifest.files)
         @indexed_package_document_paths = indexed_package_document_paths(graph, manifest)
         graph.resolve
-        integrity_failures = Array(graph.check_integrity)
+        integrity_failures = graph.check_integrity
         collected = collect_declarations(graph.declarations, manifest)
         rspec = RSpecExtractor.new.call(
           graph: graph,
@@ -54,7 +54,7 @@ module RubyLens
           },
         }
       ensure
-        @location_path_cache = nil
+        @source_path_cache = nil
         @workspace_location_cache = nil
         @indexed_package_document_paths = nil
       end
@@ -186,7 +186,7 @@ module RubyLens
 
       def inbound_workspace_references(graph, manifest, ordinal_by_name)
         graph.constant_references.each_with_object(Hash.new(0)) do |reference, counts|
-          next unless reference.respond_to?(:declaration)
+          next unless reference.is_a?(Rubydex::ResolvedConstantReference)
 
           next unless workspace_location?(reference.location, manifest)
 
@@ -207,10 +207,8 @@ module RubyLens
       end
 
       def package_index_for_location(location, manifest)
-        uri_string = location.uri
-        return nil unless URI.parse(uri_string).scheme == "file"
-
-        path = location_path(location, uri_string)
+        path = source_path(location.uri)
+        return nil unless path
         return nil unless @indexed_package_document_paths&.include?(path)
 
         manifest.package_index_for(path)
@@ -219,13 +217,8 @@ module RubyLens
       def indexed_package_document_paths(graph, manifest)
         audited = manifest.packages.flat_map(&:files).to_set
         graph.documents.each_with_object(Set.new) do |document, paths|
-          uri = document.uri
-          next unless URI.parse(uri).scheme == "file"
-
-          path = location_path(document, uri)
-          paths << path if audited.include?(path)
-        rescue URI::InvalidURIError
-          next
+          path = source_path(document.uri)
+          paths << path if path && audited.include?(path)
         end
       end
 
@@ -289,7 +282,8 @@ module RubyLens
         @workspace_location_cache ||= {}
         return @workspace_location_cache[uri] if @workspace_location_cache.key?(uri)
 
-        @workspace_location_cache[uri] = manifest.workspace_path?(location_path(location, uri))
+        path = source_path(uri)
+        @workspace_location_cache[uri] = path ? manifest.workspace_path?(path) : false
       rescue StandardError
         false
       end
@@ -299,13 +293,7 @@ module RubyLens
           relative = manifest.relative_workspace_path(location_path(definition.location))
           next unless relative
 
-          segments = relative.split(File::SEPARATOR)
-          first = segments.first || "root"
-          if %w[lib app test tests spec specs].include?(first)
-            "#{first}/#{segments[1] || "root"}"
-          else
-            first
-          end
+          SourcePath.component_for(relative)
         end
         candidates.tally.max_by { |name, count| [count, name] }&.first || "root"
       end
@@ -321,7 +309,7 @@ module RubyLens
       end
 
       def site_key(location)
-        [location_path(location), location.start_line, location.start_column, location.end_line, location.end_column]
+        location.comparable_values
       end
 
       def namespace?(declaration)
@@ -361,15 +349,15 @@ module RubyLens
         end
       end
 
-      def location_path(location, uri_string = nil)
-        uri_string ||= location.uri
-        @location_path_cache ||= {}
-        return @location_path_cache[uri_string] if @location_path_cache.key?(uri_string)
+      def location_path(location)
+        source_path(location.uri) || raise(Error, "Rubydex returned a non-file location")
+      end
 
-        uri = URI.parse(uri_string)
-        raise Error, "Rubydex returned a non-file location" unless uri.scheme == "file"
+      def source_path(uri_string)
+        @source_path_cache ||= {}
+        return @source_path_cache[uri_string] if @source_path_cache.key?(uri_string)
 
-        @location_path_cache[uri_string] = URI::RFC2396_PARSER.unescape(uri.path)
+        @source_path_cache[uri_string] = SourcePath.from_file_uri(uri_string)
       end
 
       def safe_length(object, method)

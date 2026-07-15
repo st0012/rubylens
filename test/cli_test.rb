@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "test_helper"
+require_relative "../lib/rubylens/cli"
 
 class CLITest < Minitest::Test
   def test_report_defaults_to_current_directory_and_prints_machine_readable_result

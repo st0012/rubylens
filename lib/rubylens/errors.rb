@@ -2,5 +2,5 @@
 
 module RubyLens
   class Error < StandardError; end
-  class ExtractionError < Error; end
+  class GitError < Error; end
 end
