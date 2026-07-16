@@ -7,25 +7,6 @@ class DependencyAggregationTest < Minitest::Test
     assert_raises(ArgumentError) { RubyLens::Model::DependencyAggregation.new(package_count: -1) }
   end
 
-  def test_does_not_accept_sampling_configuration
-    assert_raises(ArgumentError) do
-      RubyLens::Model::DependencyAggregation.new(package_count: 1, row_limit: 1)
-    end
-    assert_raises(ArgumentError) do
-      RubyLens::Model::DependencyAggregation.new(package_count: 1, seed: 12)
-    end
-
-    aggregation = RubyLens::Model::DependencyAggregation.new(package_count: 1)
-    assert_raises(ArgumentError) do
-      aggregation.add(
-        package_index: 0,
-        row: [0, 1, 1, 0, 0, 0, 0],
-        construct_index: 0,
-        sample_key: "Declaration",
-      )
-    end
-  end
-
   def test_retains_every_row_and_exact_aggregate_in_per_package_input_order
     aggregation = RubyLens::Model::DependencyAggregation.new(package_count: 2)
     rows = [

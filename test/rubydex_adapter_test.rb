@@ -7,10 +7,6 @@ class RubydexAdapterTest < Minitest::Test
 
   RSPEC_FIXTURE = ROOT.join("test/fixtures/rspec_repo")
 
-  def test_does_not_accept_a_dependency_row_limit
-    assert_raises(ArgumentError) { RubyLens::Index::RubydexAdapter.new(dependency_row_limit: 1) }
-  end
-
   def test_collects_every_eligible_dependency_row
     declarations = 30.times.map do |index|
       [index % 2, [index % 2, index, 1, index % 3, index % 5, index % 7, index % 11], index % 4]

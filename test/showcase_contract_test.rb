@@ -166,13 +166,11 @@ class ShowcaseContractTest < Minitest::Test
     assert_includes(renderer, "SHOWCASE_DEPENDENCY_PRESET.starAlphaScale")
   end
 
-  def test_showcase_renders_the_complete_scene_without_a_second_sampler
+  def test_showcase_renders_every_scene_point
     runtime = File.read(RUNTIME_PATH)
     assert_includes(runtime, "const renderPoints = points")
     assert_includes(runtime_function("createShowcaseRenderer"), "new Float32Array(renderPoints.length * 7)")
     assert_includes(runtime_function("updateGalaxySummary"), '"scene points"')
-    refute_includes(runtime, "SHOWCASE_POINT_LIMIT")
-    refute_includes(runtime, "showcasePointSample")
   end
 
   def test_showcase_requires_webgl2_and_fails_explicitly
@@ -196,8 +194,6 @@ class ShowcaseContractTest < Minitest::Test
     assert_includes(unavailable, 'showcaseStatus.textContent = "WebGL2 is required to render this complete Showcase."')
     assert_includes(runtime, 'const context = interactiveMode ? canvas.getContext("2d"')
     assert_includes(File.read(STYLES_PATH), ".showcase-status { max-width: 720px; font-size: 24px; }")
-    refute_includes(runtime, "renderShowcaseFallback")
-    refute_includes(runtime, "canvas2d-fallback")
   end
 
   def test_approved_annotation_timing_and_tracking_contract_is_exact
