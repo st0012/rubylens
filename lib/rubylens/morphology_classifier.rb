@@ -67,11 +67,7 @@ module RubyLens
     def dependency_declaration_count(package)
       raise TypeError unless package.is_a?(Hash)
 
-      count = if package.key?("declaration_count")
-        package.fetch("declaration_count")
-      else
-        package.fetch("declarations").length
-      end
+      count = package.fetch("declaration_count")
       raise TypeError unless count.is_a?(Integer) && count >= 0
 
       count

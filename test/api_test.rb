@@ -4,14 +4,11 @@ require "base64"
 require_relative "test_helper"
 
 class APITest < Minitest::Test
-  def test_report_entry_point_and_compatibility_alias_generate_reports
+  def test_report_entry_point_generates_reports
     Dir.mktmpdir("rubylens-api-") do |directory|
       report = RubyLens.generate_report(path: SnapshotHelpers::FIXTURE, output: File.join(directory, "report.html"))
-      legacy = RubyLens.generate(path: SnapshotHelpers::FIXTURE, output: File.join(directory, "legacy.html"))
 
       assert(RubyLens::ReportWriter.new.rubylens_report?(report.output_path))
-      assert(RubyLens::ReportWriter.new.rubylens_report?(legacy.output_path))
-      assert_equal(report.counts, legacy.counts)
       report_model = embedded_model(report.output_path)
       assert_equal("rubylens.art.v9", report_model.fetch("schema"))
       assert_equal(9, report_model.dig("morphology", "knobs").length)
@@ -55,7 +52,7 @@ class APITest < Minitest::Test
   end
 
   def test_public_api_is_exactly_the_report_and_showcase_generators
-    assert_equal(%i[generate generate_report generate_showcase], RubyLens.singleton_methods(false).sort)
+    assert_equal(%i[generate_report generate_showcase], RubyLens.singleton_methods(false).sort)
   end
 
   private

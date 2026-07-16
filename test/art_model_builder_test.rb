@@ -14,11 +14,13 @@ class ArtModelBuilderTest < Minitest::Test
         [0, 1, 1, 1, 2, 1, 0, 3, 2, 0, 1, 1, 0, 0],
       ],
       "category_stats" => { "core" => [1, 1, 4, 2], "tests" => [0, 1, 1, 0] },
+      "dependency_signal_maxima" => [1, 0, 1, 3, 4, 0],
       "packages" => [
         {
           "name" => "example-gem",
           "role" => 0,
           "location" => 1,
+          "declaration_count" => 1,
           "ruby_counts" => [2, 1, 4, 3],
           "declarations" => [[0, 2, 1, 0, 1, 3, 4]],
         },
@@ -78,30 +80,6 @@ class ArtModelBuilderTest < Minitest::Test
     assert(first.fetch("dependencyStars").all? { |row| row.length == 8 && row.all?(Integer) })
   end
 
-  def test_keeps_snapshot_v4_compatibility_without_bounded_aggregate_fields
-    snapshot = {
-      "schema" => "rubylens.snapshot.v4",
-      "project_name" => "Legacy Demo",
-      "components" => [],
-      "namespace_names" => [],
-      "namespaces" => [],
-      "category_stats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
-      "packages" => [{
-        "name" => "legacy-gem", "role" => 1, "location" => 1, "ruby_counts" => [0, 0, 2, 0],
-        "declarations" => [[2, 1, 1, 0, 0, 3, 4], [2, 2, 1, 0, 0, 5, 6]],
-      }],
-      "warning_counts" => { "manifest" => 0, "index" => 0, "integrity" => 0 },
-    }
-
-    model = RubyLens::ArtModelBuilder.new(seed: 12).build(snapshot)
-
-    assert_equal("rubylens.art.v9", model.fetch("schema"))
-    assert_equal(2, model.dig("totals", "dependencyStars"))
-    assert_equal(2, model.dig("totals", "renderedDependencyStars"))
-    assert_equal({ "ancestorDepth" => 2, "definitionSites" => 1, "reopenings" => 0, "descendants" => 0,
-      "references" => 5, "members" => 6 }, model.fetch("domains"))
-  end
-
   def test_preserves_package_ruby_construct_counts
     snapshot = {
       "project_name" => "Aggregate Demo",
@@ -109,11 +87,13 @@ class ArtModelBuilderTest < Minitest::Test
       "namespace_names" => [],
       "namespaces" => [],
       "category_stats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
+      "dependency_signal_maxima" => [7, 2, 4, 5, 6, 0],
       "packages" => [
         {
           "name" => "example-gem",
           "role" => 0,
           "location" => 1,
+          "declaration_count" => 2,
           "ruby_counts" => [4, 5, 6, 7],
           "declarations" => [
             [0, 2, 3, 1, 4, 5, 6],
@@ -137,7 +117,8 @@ class ArtModelBuilderTest < Minitest::Test
       "namespace_names" => [],
       "namespaces" => [],
       "category_stats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
-      "packages" => [{ "name" => "large-gem", "role" => 1, "location" => 1, "ruby_counts" => [1, 1, 18_020, 100], "declarations" => declarations }],
+      "dependency_signal_maxima" => [1, 0, 0, 0, 0, 0],
+      "packages" => [{ "name" => "large-gem", "role" => 1, "location" => 1, "declaration_count" => 18_020, "ruby_counts" => [1, 1, 18_020, 100], "declarations" => declarations }],
       "warning_counts" => { "manifest" => 0, "index" => 0, "integrity" => 0 },
     }
 
@@ -156,10 +137,12 @@ class ArtModelBuilderTest < Minitest::Test
       "namespace_names" => [],
       "namespaces" => [],
       "category_stats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
+      "dependency_signal_maxima" => [1, 0, 0, 8, 4, 0],
       "packages" => [{
         "name" => "stable-gem",
         "role" => 1,
         "location" => 1,
+        "declaration_count" => 3,
         "ruby_counts" => [1, 1, 2, 0],
         "declarations" => [[1, 5, 1, 0, 0, 8, 3], [0, 1, 1, 0, 0, 2, 4], [0, 1, 1, 0, 0, 2, 4]],
       }],
@@ -180,7 +163,7 @@ class ArtModelBuilderTest < Minitest::Test
 
   def test_uses_exact_dependency_totals_and_domains_with_bounded_snapshot_rows
     snapshot = {
-      "schema" => "rubylens.snapshot.v5",
+      "schema" => "rubylens.snapshot.v6",
       "project_name" => "Million Demo",
       "components" => [],
       "namespace_names" => [],
@@ -218,6 +201,7 @@ class ArtModelBuilderTest < Minitest::Test
       "namespace_names" => [],
       "namespaces" => [],
       "category_stats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
+      "dependency_signal_maxima" => [1, 0, 0, 0, 0, 0],
       "packages" => [
         { "name" => "system-meta", "role" => 0, "location" => 1, "declaration_count" => 0,
           "ruby_counts" => [0, 0, 0, 0], "declarations" => [] },
