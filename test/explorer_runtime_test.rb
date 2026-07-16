@@ -274,6 +274,44 @@ class ExplorerRuntimeTest < Minitest::Test
     refute_includes(runtime_function("project"), ".find(")
   end
 
+  def test_dependency_morphology_is_independent_bounded_and_precomputed
+    elliptical_host = dependency_morphology_stats(host_family: 0)
+    barred_host = dependency_morphology_stats(host_family: 3)
+
+    assert_equal(elliptical_host, barred_host)
+    assert_equal(true, elliptical_host.fetch("finite"))
+    assert_equal(true, elliptical_host.fetch("deterministic"))
+    assert_operator(elliptical_host.fetch("maxRadius"), :<=, 6 + 1e-9)
+    assert_equal([true, false], elliptical_host.fetch("compacts").first(2))
+    assert_equal([0, 0, 1, 2, 2, 3, 4, 2], elliptical_host.fetch("families"))
+    assert_equal(elliptical_host.fetch("clouds").fetch(3), elliptical_host.fetch("clouds").fetch(4))
+    assert_equal(5, elliptical_host.fetch("familyOffsetHashes").uniq.length)
+    assert_equal(505, elliptical_host.fetch("phaseSeeds").last)
+    assert_equal(true, elliptical_host.fetch("fallbackPhaseMatches"))
+    assert_equal(false, elliptical_host.fetch("compacts").last)
+    assert_equal(18, elliptical_host.fetch("threshold"))
+
+    %w[render renderShowcase].each do |render_name|
+      render = runtime_function(render_name)
+      %w[decodeMorphology decodePackageMorphology dependencyCloudOffset dependencyPosition].each do |name|
+        refute_includes(render, name, "#{name} must remain outside #{render_name}")
+      end
+    end
+    assert_includes(runtime_function("buildPoints"), "dependencyPosition(row[0], packageIndex)")
+  end
+
+  def test_dependency_stars_use_one_uniform_alpha_reduction
+    build_points = runtime_function("buildPoints")
+    assert_includes(RUNTIME, "const DEPENDENCY_STAR_ALPHA_SCALE = .85")
+    assert_includes(build_points, 'point.category === "dependencies" && !point.hub')
+    assert_includes(build_points, "? DEPENDENCY_STAR_ALPHA_SCALE")
+    assert_includes(build_points, "point.maxSize = point.hub ? 5.2 : 3.2")
+
+    explorer_renderer = runtime_function("createExplorerRenderer")
+    assert_includes(explorer_renderer, "focusedDependencyPoint && a_maxSize > 4.0")
+    assert_includes(explorer_renderer, "max(focusedDependencyHub ? 0.34 : 0.289, a_alpha)")
+  end
+
   def test_explorer_requires_webgl2_across_every_unavailable_path
     assert_includes(SHELL, '<p class="coverage" id="coverage" aria-live="polite"></p>')
     renderer = runtime_function("createExplorerRenderer")
@@ -391,15 +429,98 @@ class ExplorerRuntimeTest < Minitest::Test
 
   def dependency_layout(model)
     helpers = RUNTIME.match(/^    const hash = .*?^    const clamp = .*?;$/m).to_s
-    source = RUNTIME.match(/^    const dependencySystems = .*?(?=^    function dependencyPosition)/m).to_s
-    raise "dependency layout source not found" if source.empty?
+    systems = RUNTIME.match(/^    const dependencySystems = .*?(?=^    function decodePackageMorphology)/m).to_s
+    anchors = RUNTIME.match(/^    const dependencyAnchor = .*?(?=^    function dependencyPosition)/m).to_s
+    raise "dependency layout source not found" if [helpers, systems, anchors].any?(&:empty?)
 
     script = <<~JAVASCRIPT
       const model = #{JSON.generate(model)};
       const layoutScale = { dependencyInnerRadius: 70, tests: 1 };
       #{helpers}
-      #{source}
+      #{systems}
+      #{anchors}
       process.stdout.write(JSON.stringify({ systemMembers, systemAggregates, systemAnchors, packageAnchors }));
+    JAVASCRIPT
+    output, error, status = Open3.capture3("node", "-e", script)
+    raise "Node failed: #{error}" unless status.success?
+
+    JSON.parse(output)
+  end
+
+  def dependency_morphology_stats(host_family:)
+    threshold = RUNTIME.match(/^    const DEPENDENCY_CLOUD_THREASHOLD = .*;$/).to_s.strip
+    family = RUNTIME.match(/^    const MORPHOLOGY_FAMILY = .*;$/).to_s.strip
+    legacy = RUNTIME.match(/^    const LEGACY_MORPHOLOGY = Object\.freeze\(\{.*?^    \}\);$/m).to_s
+    helpers = RUNTIME.match(/^    const hash = .*?^    const clamp = .*?;$/m).to_s
+    fallback = runtime_function("fallbackMorphology")
+    decoder = runtime_function("decodeMorphology")
+    package_decoder = runtime_function("decodePackageMorphology")
+    morphologies = RUNTIME.match(/^    const encodedPackageMorphologies = .*?^    const packageMorphologies = .*?;$/m).to_s
+    bounds = runtime_function("boundedDependencyOffset")
+    offsets = runtime_function("dependencyCloudOffset")
+    sources = [threshold, family, legacy, helpers, fallback, decoder, package_decoder, morphologies, bounds, offsets]
+    raise "dependency morphology runtime source not found" if sources.any?(&:empty?)
+
+    model = {
+      "morphology" => if host_family == 0
+        [0, 350, 0, 0, 0, 0, 0, 0, 0, 909]
+      else
+        [3, 0, 240, 2, 100, 520, 450, 0, 0, 909]
+      end,
+      "packages" => [
+        [101, 0, 1, 17, 1, 0, 16, 0, -1],
+        [101, 0, 1, 18, 1, 0, 17, 0, -1],
+        [102, 1, 1, 100, 0, 0, 85, 15, -1],
+        [202, 1, 1, 100, 0, 0, 80, 20, 0],
+        [202, 1, 1, 100, 0, 0, 80, 20, -1],
+        [303, 1, 1, 100, 0, 0, 60, 40, -1],
+        [404, 1, 1, 100, 10, 5, 80, 5, -1],
+        [505, 1, 1, 100, 0, 0, 0, 0, -1],
+      ],
+      "packageMorphologies" => [
+        [0, 350, 0, 0, 0, 0, 0, 0, 0, 101],
+        [0, 350, 0, 0, 0, 0, 0, 0, 0, 101],
+        [1, 0, 350, 0, 0, 0, 0, 0, 0, 102],
+        [2, 0, 240, 4, 120, 520, 0, 0, 0, 202],
+        [2, 0, 240, 4, 120, 520, 0, 0, 0, 202],
+        [3, 0, 240, 2, 100, 520, 450, 0, 0, 303],
+        [4, 0, 0, 0, 0, 0, 0, 4, 600, 404],
+        [99],
+      ],
+    }
+    script = <<~JAVASCRIPT
+      const model = #{JSON.generate(model)};
+      #{threshold}
+      #{family}
+      #{legacy}
+      #{helpers}
+      #{fallback}
+      #{decoder}
+      const morphology = decodeMorphology(model.morphology);
+      #{package_decoder}
+      #{morphologies}
+      #{bounds}
+      #{offsets}
+      const radius = 6;
+      const seeds = Array.from({ length: 1024 }, (_, index) => index + 1);
+      const generated = packageMorphologies.flatMap(cloud => seeds.map(seed => dependencyCloudOffset(seed, cloud, radius)));
+      const repeat = packageMorphologies.flatMap(cloud => seeds.map(seed => dependencyCloudOffset(seed, cloud, radius)));
+      const hashOffsets = cloud => require("node:crypto").createHash("sha256")
+        .update(JSON.stringify(seeds.map(seed => dependencyCloudOffset(seed, cloud, radius))))
+        .digest("hex");
+      process.stdout.write(JSON.stringify({
+        threshold: DEPENDENCY_CLOUD_THREASHOLD,
+        families: packageMorphologies.map(cloud => cloud.family),
+        phaseSeeds: packageMorphologies.map(cloud => cloud.phaseSeed),
+        compacts: packageMorphologies.map(cloud => cloud.compact),
+        clouds: packageMorphologies,
+        familyOffsetHashes: [1, 2, 3, 5, 6].map(index => hashOffsets(packageMorphologies[index])),
+        fallbackPhaseMatches: Object.is(packageMorphologies.at(-1).phase, unit(505, 80) * Math.PI * 2),
+        offsetHash: require("node:crypto").createHash("sha256").update(JSON.stringify(generated)).digest("hex"),
+        finite: generated.every(point => point.every(Number.isFinite)),
+        deterministic: JSON.stringify(generated) === JSON.stringify(repeat),
+        maxRadius: Math.max(...generated.map(point => Math.hypot(...point))),
+      }));
     JAVASCRIPT
     output, error, status = Open3.capture3("node", "-e", script)
     raise "Node failed: #{error}" unless status.success?

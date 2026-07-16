@@ -85,6 +85,75 @@ class MorphologyClassifierTest < Minitest::Test
     assert_equal(first, classify(snapshot(core: 100, modules: 100, roots: 100, project_name: "Alpha")))
   end
 
+  def test_package_aggregates_reach_every_family_through_the_shared_classifier
+    cases = [
+      [29, [10, 5, 20, 5], 4, "Irr", [0, 0, 0, 0, 0, 0, 5, 627, 1234]],
+      [100, [1, 0, 100, 0], 0, "E0", [0, 0, 0, 0, 0, 0, 0, 0, 1234]],
+      [100, [0, 0, 40, 10], 1, "S0", [0, 347, 0, 0, 0, 0, 0, 0, 1234]],
+      [100, [0, 0, 20, 20], 2, "Sc", [0, 234, 4, 114, 513, 0, 0, 0, 1234]],
+      [100, [0, 0, 0, 10], 3, "SBc", [0, 140, 4, 65, 560, 500, 0, 0, 1234]],
+    ]
+
+    cases.each do |size, counts, family, designation, knobs|
+      result = classify_package(size:, counts:, phase_seed: 1234)
+
+      assert_equal(family, result.fetch("family"))
+      assert_equal(designation, result.fetch("designation"))
+      assert_equal(knobs, result.fetch("knobs"))
+    end
+  end
+
+  def test_package_seed_changes_only_orientation_and_metadata_does_not_change_the_decision
+    package = {
+      "name" => "first-name",
+      "role" => 0,
+      "location" => 1,
+      "declaration_count" => 100,
+      "ruby_counts" => [0, 0, 20, 20],
+    }
+    first = RubyLens::MorphologyClassifier.new(package:, phase_seed: 1234).call
+    second = RubyLens::MorphologyClassifier.new(
+      package: package.merge("name" => "other", "role" => 1, "location" => 0),
+      phase_seed: 5678,
+    ).call
+
+    assert_equal(first.fetch("family"), second.fetch("family"))
+    assert_equal(first.fetch("designation"), second.fetch("designation"))
+    assert_equal(first.fetch("knobs").first(8), second.fetch("knobs").first(8))
+    refute_equal(first.fetch("knobs").last, second.fetch("knobs").last)
+  end
+
+  def test_package_module_smoothing_prevents_a_nonadjacent_one_count_jump
+    before = classify_package(size: 30, counts: [0, 0, 30, 0], phase_seed: 1234)
+    after = classify_package(size: 30, counts: [0, 1, 30, 0], phase_seed: 1234)
+
+    assert_equal(0, before.fetch("family"))
+    assert_equal(1, after.fetch("family"))
+  end
+
+  def test_package_without_recognized_constructs_uses_an_independent_seeded_fallback
+    result = classify_package(size: 100, counts: [0, 0, 0, 0], phase_seed: 1234)
+
+    assert_equal(2, result.fetch("family"))
+    assert_equal("Sb", result.fetch("designation"))
+    assert_equal([0, 240, 3, 105, 380, 0, 0, 0, 1234], result.fetch("knobs"))
+  end
+
+  def test_malformed_package_input_uses_a_numeric_default_seed
+    result = RubyLens::MorphologyClassifier.new(package: {}, phase_seed: "private seed").call
+
+    assert_equal(2, result.fetch("family"))
+    assert_equal([0, 240, 3, 105, 380, 0, 0, 0, 0], result.fetch("knobs"))
+  end
+
+  def test_rejects_ambiguous_project_and_package_inputs
+    error = assert_raises(ArgumentError) do
+      RubyLens::MorphologyClassifier.new(snapshot(core: 30), package: {})
+    end
+
+    assert_equal("provide a snapshot or package, not both", error.message)
+  end
+
   def test_mixed_core_and_test_namespaces_count_as_non_test_core
     input = snapshot(core: 30)
     input.fetch("namespaces").first[2] = 2
@@ -117,8 +186,9 @@ class MorphologyClassifierTest < Minitest::Test
   def test_readme_discloses_the_derived_morphology_signal
     readme = File.read(File.expand_path("../README.md", __dir__))
 
-    assert_includes(readme, "Galaxy morphology is derived from coarse code proportions")
-    assert_includes(readme, "including the derived morphology family")
+    assert_includes(readme, "Core/Test body and each dependency package independently")
+    assert_includes(readme, "never inherits the project's, host's, or dependency system's decision")
+    assert_includes(readme, "coarse package aggregate composition more visually legible")
     assert_includes(readme, "docs/specs/2026-07-14-galaxy-morphology-design.md")
   end
 
@@ -126,6 +196,11 @@ class MorphologyClassifierTest < Minitest::Test
 
   def classify(input)
     RubyLens::MorphologyClassifier.new(input).call
+  end
+
+  def classify_package(size:, counts:, phase_seed:)
+    package = { "declaration_count" => size, "ruby_counts" => counts }
+    RubyLens::MorphologyClassifier.new(package:, phase_seed:).call
   end
 
   def snapshot(core:, modules: 0, tests: 0, dependencies: 0, roots: nil, root_counts: nil, project_name: "Synthetic")

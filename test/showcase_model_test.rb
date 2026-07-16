@@ -6,7 +6,7 @@ class ShowcaseModelTest < Minitest::Test
   def test_minimal_projection_omits_statistics_and_private_names
     private_value = "/private/path/Secret::Namespace hidden-gem source comment"
     model = {
-      "schema" => "rubylens.art.v9",
+      "schema" => "rubylens.art.v10",
       "projectName" => "Synthetic App",
       "morphology" => { "family" => 3, "designation" => "SBb", "knobs" => [0, 240, 3, 105, 500, 400, 0, 0, 1234, private_value] },
       "totals" => { "namespaces" => 1, "packages" => 1, "dependencyStars" => 1, "renderedDependencyStars" => 1, "future" => private_value },
@@ -16,6 +16,7 @@ class ShowcaseModelTest < Minitest::Test
       "namespaces" => [[1, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, private_value]],
       "packageNames" => [private_value],
       "packages" => [[2, 0, 1, 9, 1, 2, 3, 4, 0, private_value]],
+      "packageMorphologies" => [[2, 0, 240, 3, 105, 500, 0, 0, 0, 2, private_value]],
       "dependencySystems" => [[4, 0, private_value]],
       "dependencyStars" => [[3, 0, 1, 2, 3, 4, 5, 6, private_value]],
       "warningCounts" => { "index" => 0 },
@@ -27,14 +28,15 @@ class ShowcaseModelTest < Minitest::Test
     encoded = JSON.generate(showcase)
 
     assert_equal(
-      %w[dependencyStars dependencySystems details domains morphology namespaces packages projectName schema],
+      %w[dependencyStars dependencySystems details domains morphology namespaces packageMorphologies packages projectName schema],
       showcase.keys.sort,
     )
     assert_equal(false, showcase.fetch("details"))
-    assert_equal("rubylens.showcase.v3", showcase.fetch("schema"))
+    assert_equal("rubylens.showcase.v4", showcase.fetch("schema"))
     assert_equal([3, 0, 240, 3, 105, 500, 400, 0, 0, 1234], showcase.fetch("morphology"))
     assert_equal(15, showcase.fetch("namespaces").first.length)
     assert_equal(9, showcase.fetch("packages").first.length)
+    assert_equal(10, showcase.fetch("packageMorphologies").first.length)
     assert_equal(2, showcase.fetch("dependencySystems").first.length)
     assert_equal(8, showcase.fetch("dependencyStars").first.length)
     refute_includes(encoded, private_value)
@@ -107,6 +109,15 @@ class ShowcaseModelTest < Minitest::Test
     assert_equal("showcase model rows must contain only numbers", error.message)
   end
 
+  def test_rejects_package_morphologies_that_do_not_align_with_packages
+    model = minimal_model
+    model["packages"] = [[1, 0, 1, 1, 1, 0, 0, 0, -1]]
+
+    error = assert_raises(RubyLens::Error) { RubyLens::ShowcaseModel.new(model).call }
+
+    assert_equal("package morphology rows must align with packages", error.message)
+  end
+
   def test_defaults_missing_morphology_to_the_legacy_row
     model = minimal_model
     model.delete("morphology")
@@ -140,6 +151,7 @@ class ShowcaseModelTest < Minitest::Test
       "namespaces" => [[0] * 15],
       "packageNames" => [],
       "packages" => [],
+      "packageMorphologies" => [],
       "dependencySystems" => [],
       "dependencyStars" => [],
     }
@@ -156,6 +168,7 @@ class ShowcaseModelTest < Minitest::Test
     packages = Array.new(count) { |index| [30_000 + index, 0, 1, index + 1, 1, 2, 3, 4, -1] }
     package_names.concat(["unsafe package", "https://example.test/gem", "../secret"])
     packages.concat(Array.new(3) { |index| [40_000 + index, 0, 1, 1, 1, 2, 3, 4, -1] })
+    package_morphologies = packages.map { |row| [2, 0, 240, 3, 105, 500, 0, 0, 0, row[0]] }
     {
       "projectName" => "Synthetic App",
       "morphology" => { "family" => 2, "designation" => "Sb", "knobs" => [0, 240, 3, 105, 500, 0, 0, 0, 1234] },
@@ -166,6 +179,7 @@ class ShowcaseModelTest < Minitest::Test
       "namespaces" => namespaces,
       "packageNames" => package_names,
       "packages" => packages,
+      "packageMorphologies" => package_morphologies,
       "dependencySystems" => [],
       "dependencyStars" => [],
     }

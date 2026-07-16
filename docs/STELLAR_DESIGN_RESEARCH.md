@@ -4,7 +4,7 @@
 
 RubyLens should use an astrophysical **visual grammar**, not attempt a literal simulation. RubyDex and Bundler signals decide which marks exist and how strongly they matter; galaxy morphology decides how density, light, colour, clustering, and negative space make the whole codebase feel natural.
 
-The implemented per-project classifier, schema, family recipes, privacy boundary, and accepted comparison prototype are preserved in the [galaxy morphology design](specs/2026-07-14-galaxy-morphology-design.md).
+The implemented project and package classifiers, schemas, family recipes, privacy boundary, and accepted comparison prototypes are preserved in the [galaxy morphology design](specs/2026-07-14-galaxy-morphology-design.md).
 
 The strongest direction is one concentrated bulge, an extended irregular disc, and a sparse halo of compact dependency systems. It should never read as three exact rings, a uniform particle sphere, or an orbital diagram.
 
@@ -18,7 +18,7 @@ The strongest direction is one concentrated bulge, an extended irregular disc, a
 
 4. **Make dependency packages satellite systems.** Give every package a compact local population, then distribute those systems through a thicker, much sparser 3D halo with large empty intervals. This matches the useful visual hierarchy of disc, bulge, diffuse halo, globular clusters, and companion systems shown in [NASA’s Milky Way cluster overview](https://science.nasa.gov/asset/hubble/globular-clusters-around-milky-way/) and [ESA Gaia’s cluster and dwarf-galaxy orbit map](https://www.esa.int/ESA_Multimedia/Images/2018/04/Gaia_s_globular_clusters_and_dwarf_galaxies_with_orbits).
 
-5. **Use structured randomness at several scales.** A single morphology should govern the scene. Component phase drift, broken arm segments, package-system inclination, and rare off-plane outliers can vary deterministically. Do not assign every group a different layout grammar.
+5. **Share a grammar without inheriting decisions.** One project morphology governs the Core/Test body. Each dependency package is classified independently from its own existing numeric aggregates and seed; it never inherits a project, host, or system family. Component phase drift, broken arm segments, package-system inclination, and rare off-plane outliers can vary deterministically inside those bounded recipes.
 
 ## Light and material rules
 
@@ -28,7 +28,7 @@ The strongest direction is one concentrated bulge, an extended irregular disc, a
 
 3. **Let bright marks carry HDR energy.** The production Three.js path should use `EffectComposer → RenderPass → UnrealBloomPass → OutputPass`, linear values above display white, ACES filmic tone mapping, and thresholded bloom. Start near threshold `1.0`, strength `0.45`, and radius `0.3`, then tune against Rails and RDoc. See the official [EffectComposer](https://threejs.org/docs/pages/EffectComposer.html), [UnrealBloomPass](https://threejs.org/docs/pages/UnrealBloomPass.html), and [OutputPass](https://threejs.org/docs/pages/OutputPass.html) documentation plus NVIDIA’s [real-time glow chapter](https://developer.nvidia.com/gpugems/gpugems/part-iv-image-processing/chapter-21-real-time-glow).
 
-4. **Compress total dependency flux.** Expanded dependencies must not become dozens of times brighter solely because they contain more declarations. Scale local point alpha approximately with `1 / sqrt(package_count)` and package-hub emphasis with `log1p(package_count)`. Preserve apparent mass while keeping core → disc → satellites as the integrated-light hierarchy.
+4. **Keep dependency light subordinate.** Use fixed category and surface scales rather than package-population exposure. Dense clouds may still accumulate more light through additive overlap, but they must not overwhelm Core or Tests; do not enlarge Showcase dependency stars to compensate for reduced alpha. Preserve apparent mass while keeping core → disc → satellites as the integrated-light hierarchy.
 
 5. **Use temperature-like cores with category-tinted halos.** Hotter stars appear blue-white and cooler stars orange/red-white; [NASA’s blackbody curves](https://science.nasa.gov/asset/webb/continuous-spectra-blackbody-curves-of-stars/) and [stellar colour overview](https://science.nasa.gov/exoplanets/stars/) provide the physical reference. RubyLens can retain ruby core, cyan tests, and amber dependency identity in subtle halo tints rather than saturated star cores.
 
@@ -40,17 +40,16 @@ The strongest direction is one concentrated bulge, an extended irregular disc, a
 | --- | --- | --- |
 | Core | Bulge, nucleus, inner disc | Most concentrated population. Members, descendants, references, ancestry, definition sites, and reopenings control light/scale through user weights; they do not create hard depth bands. |
 | Tests | Extended disc and flocculent arms | Flatter and radially broader. A minority occupies broken arms while most remains in the interarm disc. |
-| Dependency packages | Globular clusters and satellite systems | One anonymous hub per package in a sparse 3D halo. Role sets a broad mean distance, not an exact shell. Hub emphasis uses compressed package size. |
-| Dependency declarations | Stars inside each satellite | Mostly tiny, faint, package-local marks. Population-normalized light prevents large packages from becoming opaque plates. |
+| Dependency packages | Globular clusters and satellite systems | One anonymous hub per package in a sparse 3D halo. Role sets a broad mean distance, not an exact shell. Each package uses an independently classified, bounded local morphology; tiny populations remain compact. |
+| Dependency declarations | Stars inside each satellite | Mostly tiny, faint, package-local marks. Fixed category and surface alpha preserve the hierarchy, while local geometry can still make coarse aggregate composition more legible. |
 | Cross-origin evidence | Halo outliers or short streams | Use only when a real indexed signal supports it; never add decorative tidal tails without data. |
 
 ## Performance strategy
 
 At current whole-codebase scales, point count is cheaper than translucent overdraw and bloom. The renderer should use:
 
-- one `THREE.Points` field for faint/normal stars;
+- one complete GPU point field for faint/normal stars, without far/mobile point sampling;
 - optional instanced billboard quads for the brightest 0.5–1%;
-- deterministic field-level sampling for far/mobile views;
 - half-resolution bloom and density passes on constrained devices;
 - hysteresis when changing detail tiers.
 

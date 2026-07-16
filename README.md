@@ -8,7 +8,7 @@ This is an early local prototype. RubyLens 0.1 supports Ruby 3.2 through 4.0 and
 
 RubyLens borrows the [Hubble sequence](https://science.nasa.gov/asset/hubble/the-hubble-tuning-fork-classification-of-galaxies/) as a visual vocabulary. E0–E7 move from nearly round to increasingly flattened elliptical silhouettes; S0 is a smooth lenticular disc without visible arms; Sa–Sc move from tighter arms and larger bulges to looser arms and smaller bulges; SBa–SBc follow the same progression with a central bar; and Irr uses asymmetric clumps.
 
-RubyLens chooses one of these silhouettes deterministically from existing aggregate project signals. The designation describes the rendered shape, not the codebase's architecture, purpose, or quality.
+RubyLens classifies the Core/Test body and each dependency package independently from existing numeric aggregates and deterministic seeds. They share the same classifier mechanics, but a package never inherits the project's, host's, or dependency system's decision. The designations describe rendered shapes, not the codebase's architecture, purpose, or quality.
 
 [![Five synthetic RubyLens renders of elliptical, lenticular, spiral, barred spiral, and irregular galaxy shapes using identical data.](docs/images/galaxy-morphology-families.jpg)](docs/images/galaxy-morphology-families.jpg)
 
@@ -28,7 +28,7 @@ Add RubyLens to the bundle of the project you want to visualize, then run:
 bundle exec rubylens report
 ```
 
-When `TARGET` is omitted, RubyLens uses the current working directory. Pass a path after the command to visualize a different project. The default report is `rubylens-report.html` in the project root. It contains fully qualified class, module, and gem names for local hover details, but no source text, comments, or paths. Dependency stars remain anonymous and are summarized at the gem level. RubyLens adds that exact default path to Git's local exclude file and writes the report with owner-only permissions, so it stays out of commits without changing the project's `.gitignore`. The model reveals private codebase structure, so keep it local unless you intend to share it. Galaxy morphology is derived from coarse code proportions, so a shared report or Showcase can also reveal bucketed traits such as a test-light or module-heavy project.
+When `TARGET` is omitted, RubyLens uses the current working directory. Pass a path after the command to visualize a different project. The default report is `rubylens-report.html` in the project root. It contains fully qualified class, module, and gem names for local hover details, but no source text, comments, or paths. Dependency stars remain anonymous and are summarized at the gem level. RubyLens adds that exact default path to Git's local exclude file and writes the report with owner-only permissions, so it stays out of commits without changing the project's `.gitignore`. The model reveals private codebase structure, so keep it local unless you intend to share it. Project and package morphology are derived from coarse code proportions; a shared report or Showcase can reveal bucketed project traits, and package-local geometry can make coarse package aggregate composition more visually legible even though it adds no source names.
 
 Ruby API:
 
@@ -66,7 +66,7 @@ result = RubyLens.generate_showcase(path: ".", details: true)
 puts result.output_path
 ```
 
-Showcase generation and viewing need no Chrome, Chromium, Ferrum, FFmpeg, Node, or HTTP server; viewing requires a browser with WebGL2. Both disclosure levels reveal the project name and the numeric visual structure, including the derived morphology family; someone familiar with the family bands can infer coarse code proportions. `details: true` additionally reveals selected code/dependency names and aggregate statistics, so review it before sharing.
+Showcase generation and viewing need no Chrome, Chromium, Ferrum, FFmpeg, Node, or HTTP server; viewing requires a browser with WebGL2. Both disclosure levels reveal the project name and numeric visual structure, including the derived project and package morphology families; someone familiar with the family bands can infer coarse aggregate proportions. `details: true` additionally reveals selected code/dependency names and aggregate statistics, so review it before sharing.
 
 The accepted deterministic morphology design and its self-contained visual prototype are preserved in [`docs/specs/2026-07-14-galaxy-morphology-design.md`](docs/specs/2026-07-14-galaxy-morphology-design.md).
 

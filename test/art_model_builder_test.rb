@@ -47,7 +47,7 @@ class ArtModelBuilderTest < Minitest::Test
     second = builder.build(snapshot)
 
     assert_equal(first, second)
-    assert_equal("rubylens.art.v9", first.fetch("schema"))
+    assert_equal("rubylens.art.v10", first.fetch("schema"))
     assert_equal("Demo", first.fetch("projectName"))
     assert_equal(4, first.dig("morphology", "family"))
     assert_equal("Irr", first.dig("morphology", "designation"))
@@ -59,6 +59,10 @@ class ArtModelBuilderTest < Minitest::Test
     assert_equal({ "core" => [1, 1, 4, 2], "tests" => [0, 1, 1, 0] }, first.fetch("categoryStats"))
     assert_equal(["Demo::Core", "Demo::TestCase"].sort, first.fetch("namespaceNames").sort)
     assert_equal(["example-gem"], first.fetch("packageNames"))
+    assert_equal(1, first.fetch("packageMorphologies").length)
+    assert_equal(10, first.fetch("packageMorphologies").first.length)
+    assert(first.fetch("packageMorphologies").first.all?(Integer))
+    assert_equal(first.fetch("packages").first[0], first.fetch("packageMorphologies").first[9])
     assert_equal(
       [{ "name" => "git-widget", "reason" => "Bundler checkout is unavailable" }],
       first.fetch("dependencyWarnings"),
@@ -67,7 +71,7 @@ class ArtModelBuilderTest < Minitest::Test
     assert_empty(first.fetch("dependencySystems"))
     assert_equal(
       %w[categoryStats componentCounts dependencyStars dependencySystems dependencyWarnings domains
-         morphology namespaceNames namespaces packageNames packages projectName schema totals warningCounts],
+         morphology namespaceNames namespaces packageMorphologies packageNames packages projectName schema totals warningCounts],
       first.keys.sort,
     )
     refute_includes(JSON.generate(first), "Example::Client")
@@ -109,6 +113,31 @@ class ArtModelBuilderTest < Minitest::Test
     assert_equal([0, 1, 2, 4, 5, 6, 7, -1], model.fetch("packages").first.drop(1))
   end
 
+  def test_package_morphology_does_not_inherit_the_project_morphology
+    snapshot = {
+      "project_name" => "Independent Demo",
+      "components" => [],
+      "namespace_names" => Array.new(100) { |index| "Root#{index}::Node" },
+      "namespaces" => Array.new(100) { [0, 0, 0, *Array.new(11, 0)] },
+      "category_stats" => { "core" => [100, 0, 0, 0], "tests" => [0, 0, 0, 0] },
+      "dependency_signal_maxima" => [1, 0, 0, 0, 0, 0],
+      "packages" => [{
+        "name" => "independent-gem", "role" => 1, "location" => 1,
+        "declaration_count" => 100, "ruby_counts" => [0, 0, 20, 20], "declarations" => [],
+      }],
+      "warning_counts" => { "manifest" => 0, "index" => 0, "integrity" => 0 },
+    }
+    project_spiral = Marshal.load(Marshal.dump(snapshot))
+    project_spiral["namespace_names"] = Array.new(100) { |index| "Root::Node#{index}" }
+    project_spiral["namespaces"].each { |row| row[1] = 1 }
+
+    elliptical = RubyLens::ArtModelBuilder.new(seed: 12).build(snapshot)
+    spiral = RubyLens::ArtModelBuilder.new(seed: 12).build(project_spiral)
+
+    refute_equal(elliptical.dig("morphology", "family"), spiral.dig("morphology", "family"))
+    assert_equal(elliptical.fetch("packageMorphologies"), spiral.fetch("packageMorphologies"))
+  end
+
   def test_renders_every_dependency_declaration_from_a_complete_snapshot
     declarations = 18_020.times.map { [2, 0, 1, 0, 0, 0, 0] }
     snapshot = {
@@ -127,6 +156,7 @@ class ArtModelBuilderTest < Minitest::Test
     assert_equal(18_020, model.dig("totals", "dependencyStars"))
     assert_equal(18_020, model.dig("totals", "renderedDependencyStars"))
     assert_equal(9, model.fetch("packages").first.length)
+    assert_equal(10, model.fetch("packageMorphologies").first.length)
     assert_equal([1, 1, 18_020, 1, 1, 18_020, 100, -1], model.fetch("packages").first.drop(1))
   end
 

@@ -10,6 +10,7 @@ Documentation map for RubyLens. Start with [README.md](README.md) for usage and 
 ## Engineering references
 
 - [docs/PERFORMANCE.md](docs/PERFORMANCE.md) — scale instrumentation, complete-row artifact evidence, and the dependency-aggregation benchmark.
+- [docs/EXPLORER_SHOWCASE_RENDERING.md](docs/EXPLORER_SHOWCASE_RENDERING.md) — shared renderer data and intentional Explorer/Showcase presentation differences.
 
 ## Visual design
 

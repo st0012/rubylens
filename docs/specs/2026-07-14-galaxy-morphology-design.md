@@ -12,9 +12,10 @@ same galaxy at different sizes.
 
 ## Goal
 
-Derive a per-project galaxy morphology from data RubyLens already extracts, so
-different projects produce visibly different galaxy types, modeled on the Hubble
-classification (elliptical, lenticular, spiral, barred spiral, irregular).
+Derive project and package-local galaxy morphologies from data RubyLens already
+extracts, so different projects and dependency clouds produce visibly different
+galaxy types, modeled on the Hubble classification (elliptical, lenticular,
+spiral, barred spiral, irregular).
 
 Decisions made during brainstorming:
 
@@ -28,6 +29,10 @@ Decisions made during brainstorming:
   project to the adjacent family on the tuning fork, never a random one.
 - **Applies to Explorer reports and both Showcase modes**, which share the same
   layout runtime.
+- **Shared classifier, independent decisions.** The project morphology governs
+  Core/Test. Each dependency package is classified from its own numeric
+  aggregates and deterministic seed; it never inherits a project, host, or
+  dependency-system family.
 
 ## Non-goals
 
@@ -35,8 +40,10 @@ Decisions made during brainstorming:
   treatments, ring galaxies (future extension once recipes are parameterized).
 - Displaying the designation (for example "SBb") in any UI. The value is stored
   in the art model but has no visual consumer yet.
-- Any change to dependency-halo layout semantics, colors, interactions, camera
-  controls, drift, bloom, or the WebGL2 rendering path.
+- Any change to dependency package/system anchors, grouping, colors,
+  interactions, camera controls, drift, bloom, or the WebGL2 rendering path.
+  Package-local declaration offsets may vary inside their existing bounded
+  cloud radius.
 - New Rubydex indexing. All inputs already exist in the snapshot.
 
 ## Taxonomy
@@ -53,7 +60,9 @@ Decisions made during brainstorming:
 
 ### Inputs
 
-Computed in Ruby from the snapshot. All are cheap aggregates:
+Computed in Ruby from the snapshot. All are cheap aggregates.
+
+#### Project inputs
 
 - `N` — core (non-test) namespace count; `T` — test namespace count
 - `D` — indexed dependency declaration count; `P` — package count
@@ -64,7 +73,14 @@ Computed in Ruby from the snapshot. All are cheap aggregates:
   namespace names: Σ (rootCount / N)² across distinct first segments
 - `size` — N + T
 
-### Mechanics
+#### Package inputs
+
+Each package uses only `declaration_count`, the existing
+`ruby_counts = [classes, modules, methods, constants]`, and its deterministic
+uint32 package seed. Names, roles, locations, source paths, and dependency-system
+membership do not affect the family decision.
+
+### Project mechanics
 
 1. **Irregular floor:** `size < 30` → Irr. (Arm structure cannot render at a
    few dozen points, so this is also a practical guard.)
@@ -82,6 +98,27 @@ Computed in Ruby from the snapshot. All are cheap aggregates:
    (`phaseSeed`: arm phase, warp orientation) hash the project name; they
    change nothing about the perceived type.
 
+### Package mechanics
+
+Packages feed the same family bands and knob recipes through independently
+derived inputs:
+
+- `size = declaration_count`
+- `moduleFraction = modules / max(classes + modules, 1)`
+- `moduleStructure = (modules + 0.5) / (classes + modules + 1.0)`
+- `nonMethodShare = (classes + modules + constants) / max(total constructs, 1)`
+- `constantShare = constants / max(total constructs, 1)`
+- `u = 0.45·nonMethodShare + 0.30·moduleStructure + 0.25·constantShare`
+- `concentration = Σ ((count + 0.5) / (total constructs + 2.0))²`
+- `irregularity = (moduleStructure + nonMethodShare) / 2`, which controls
+  the spread of small Irr clumps
+
+The package's existing seed controls orientation only. Packages with no
+recognized constructs use the current seeded default morphology. At runtime,
+packages with fewer than `DEPENDENCY_CLOUD_THREASHOLD` (`18`) declarations use
+a compact bounded cloud regardless of the classified family, because their
+population is too small to render a legible silhouette.
+
 Initial constants (weights, band edges, knob tables) are implementation
 guidance, not normative: calibrate against a corpus of real projects (for
 example rubylens, a Rails app, a small single-file gem, a test-less script
@@ -89,14 +126,14 @@ repo, a large monorepo) so that every family is reachable and typical gems and
 apps do not all collapse into one band. The mechanism — smooth ratios, wide
 bands, adjacent-family drift — is normative.
 
-Determinism: identical snapshot → identical morphology → identical scene.
-Missing or malformed inputs (zero namespaces, absent fields) fall back to the
-current default morphology (today's three-arm spiral) instead of failing
-generation.
+Determinism: identical snapshot → identical project and aligned package
+morphologies → identical scene. Missing or malformed project inputs fall back
+to the current default morphology; malformed package inputs use that same
+default with a valid package seed when available instead of failing generation.
 
 ## Schema and data flow
 
-### Art model (`rubylens.art.v9`)
+### Art model (`rubylens.art.v10`)
 
 A new `MorphologyClassifier` (new file `lib/rubylens/morphology_classifier.rb`,
 invoked from `ArtModelBuilder#build`) emits:
@@ -111,31 +148,43 @@ invoked from `ArtModelBuilder#build`) emits:
 ```
 
 All knob values are integers: ratio-like knobs scaled × 1000, counts raw,
-`phaseSeed` a uint32. Unused knobs for a family are 0.
+`phaseSeed` a uint32. Unused knobs for a family are 0. The art model also emits
+one numeric row aligned with each `packages` row:
 
-### Showcase model (`rubylens.showcase.v3`)
+```ruby
+"packageMorphologies" => [
+  [family, ellipticity, bulgeShare, armCount, winding, armFraction,
+   barLength, clumpCount, clumpSpread, phaseSeed],
+]
+```
 
-`ShowcaseModel#call` projects morphology as a single integer row through the
-existing `numeric_row` validation:
+Every row has exactly ten integers. The package name is not part of the row or
+the classification input.
+
+### Showcase model (`rubylens.showcase.v4`)
+
+`ShowcaseModel#call` projects the project morphology and aligned package rows
+through the existing `numeric_row` validation:
 
 ```ruby
 "morphology" => [family, *knobs]   # length 10, integers only
+"packageMorphologies" => [[family, *knobs], ...]
 ```
 
-Both minimal and details Showcases include it — it is numeric visual
-structure. The designation string is not shipped in the showcase payload.
+Both minimal and details Showcases include them — they are numeric visual
+structure. Designation strings are not shipped in the showcase payload.
 
 ### Runtime (`assets/runtime/report.js`)
 
-The runtime reads the morphology block; when absent it uses defaults equal to
-today's layout, so the runtime remains correct for any model it is embedded
-with.
+The runtime reads the project block and each package row once at load time.
+Missing or malformed rows use the seeded default, so the runtime remains safe
+for an older or malformed embedded model.
 
 ## Rendering recipes
 
-The three position functions become recipe dispatchers on `family`, still O(1)
-pure functions of `(seed, knobs)` per point — no per-frame cost, no change to
-the WebGL2 100k-scale path.
+The project and package position functions dispatch on `family`, still O(1)
+pure functions of `(seed, knobs)` per point — no per-frame cost and no change
+to the complete-row WebGL2 path.
 
 - **`corePosition`** — `bulgeShare` knob replaces the hardcoded `.24`.
   - E: single triaxial spheroid; vertical scale multiplied by
@@ -158,18 +207,24 @@ the WebGL2 100k-scale path.
   - Irr: same clumps, wider spread.
 - **`dependencyAnchor`** — unchanged recipe (satellite systems read well around
   every family); only its inner radius follows the family's outer extent.
+- **`dependencyCloudOffset`** — dispatches on the package's independently
+  classified family inside its existing package anchor and radius. Every offset
+  is bounded to that radius. Packages below the 18-declaration compact threshold
+  use a readable spheroidal fallback instead of trying to draw arms or clumps.
 - **`layoutMetricsForCoreCount`** — gains a family-aware scene radius;
   `testOuterRadius`, `dependencyInnerRadius`, and camera fitting derive from
   the actual silhouette extent (an E7 spheroid is more compact than an Sc
   disc).
 
-Unchanged: category colors, signal-weighted brightness and sizes, Explorer
+Unchanged: package/system anchors and grouping, category colors, Explorer
 interactions (toggles, focus fly-to, pan, drift), Showcase rotation and
-annotation anchoring, `prefers-reduced-motion` behavior.
+annotation anchoring, and `prefers-reduced-motion` behavior. The accepted
+dependency size/alpha differences between Explorer and Showcase are specified
+separately in [Explorer and Showcase rendering](../EXPLORER_SHOWCASE_RENDERING.md).
 
-This stays within the existing stellar-design rule that a single morphology
-governs the scene (`docs/STELLAR_DESIGN_RESEARCH.md`): the family varies per
-project, not per group within a scene.
+One project morphology still governs the Core/Test body. Dependency packages
+reuse the same visual grammar and classifier implementation, but each family
+decision is independent; systems and hosts do not impose a shared morphology.
 
 ## Prototype findings (2026-07-14)
 
@@ -179,7 +234,8 @@ synthetic project through every family recipe side by side. The prototype is
 preserved next to this spec as
 [`2026-07-14-galaxy-morphology-prototype.html`](2026-07-14-galaxy-morphology-prototype.html)
 — a self-contained page; open it directly in a browser. Outcomes folded into
-this spec:
+this spec. These findings cover the project/Core-Test body; they are historical
+evidence, not a claim about package-family distributions:
 
 - All five families read as distinct silhouettes at report scale; within-family
   knobs (ellipticity E2 vs E6, winding Sa vs Sc, bar length SBa vs SBc)
@@ -195,32 +251,35 @@ this spec:
 
 ## Privacy
 
-The galaxy class is derived from coarse code proportions, so a viewer who
-knows the bands can infer bucketed ratios (roughly "test-light" or
-"module-heavy" granularity) from a minimal Showcase's shape. This is
-consistent with the documented "numeric visual structure" disclosure but is a
-new derived signal; the README privacy paragraphs gain a sentence saying so.
+The project and package galaxy classes are derived from coarse code
+proportions, so a viewer who knows the bands can infer bucketed traits from a
+minimal Showcase's shapes. Package-local geometry can make coarse aggregate
+composition more visually legible even though the payload adds no source
+names, paths, or declaration identities. This remains numeric visual structure
+and must be treated as sensitive when sharing an artifact.
 
 ## Edge cases
 
 - **Zero tests:** E/S0 render naturally; spiral families borrow core disc
   points for arms.
 - **Zero dependencies:** no halo, as today.
-- **Tiny projects:** caught by the Irr floor.
+- **Tiny projects:** caught by the Irr floor. Dependency packages below 18
+  declarations use the compact runtime form.
 - **Band-edge projects:** may alternate between adjacent families across
   regenerations if the codebase hovers on an edge; acceptable because the
   neighboring silhouettes are the most similar pair.
-- **Huge projects:** recipes are per-point O(1); the existing sampling and
-  WebGL2 tiers are unaffected.
+- **Huge projects:** every eligible row remains present. Layout is O(1) per
+  point with no morphology work added per frame; WebGL2 either renders the
+  complete scene or presents the explicit unsupported state.
 
 ## Testing
 
-- Unit tests for `MorphologyClassifier`: fixture snapshots → expected family,
-  designation, and knobs; band-edge values; stability under small
-  perturbations (±1 namespace does not change family away from an edge);
-  fallback on malformed input.
-- Schema tests: art v9 morphology block shape; showcase v3 integer row length
-  and validation.
+- Unit tests for `MorphologyClassifier`: project snapshots and package
+  aggregates → expected family, designation, and knobs; band-edge values;
+  stability under small perturbations; independent orientation seeds; fallback
+  on malformed input.
+- Schema tests: art v10 project block and package-row alignment; showcase v4
+  integer row length, alignment, and validation.
 - End-to-end: report and showcase generation include the morphology block and
   parse.
 - The pinned report SHA is recomputed last, after all runtime edits, with
