@@ -9,7 +9,7 @@ Documentation map for RubyLens. Start with [README.md](README.md) for usage and 
 
 ## Engineering references
 
-- [docs/PERFORMANCE.md](docs/PERFORMANCE.md) — scale instrumentation, artifact row budgets, and the dependency-aggregation benchmark.
+- [docs/PERFORMANCE.md](docs/PERFORMANCE.md) — scale instrumentation, complete-row artifact evidence, and the dependency-aggregation benchmark.
 
 ## Visual design
 

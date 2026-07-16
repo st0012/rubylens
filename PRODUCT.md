@@ -14,7 +14,7 @@ Both outputs are single offline HTML files, written privately by default. Report
 - Core and Test points represent rendered Ruby namespaces. Their labels identify classes or modules already present in the report model.
 - Gem systems represent aggregate dependency packages. Materialized multi-package Git sources share one parent system while preserving inspectable package subclouds, roles, and counts. Their individual stars remain anonymous; package focus describes the aggregate rather than a declaration-by-declaration dependency browser.
 - Classes, modules, methods, and constants are Ruby construct counts for the named category or aggregate system. Visual signal metrics guide exploration; they are not type-checking or correctness claims.
-- Large reports must remain bounded. Rendering, search results, warning details, and dependency detail use deterministic limits, and interaction-only work must not become per-frame work.
+- Large reports must remain scalable. Explorer and Showcase render every eligible scene point through WebGL2 or present an explicit unsupported state; search results, warning details, dependency detail, and cinematic labels remain deterministically bounded, and interaction-only work must not become per-frame work.
 
 ## Privacy
 

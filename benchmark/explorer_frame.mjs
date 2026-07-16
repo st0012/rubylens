@@ -24,7 +24,7 @@ import { join } from "node:path";
 const NAMESPACES = Number(process.env.NAMESPACES || 100_000);
 const TEST_RATIO = Number(process.env.TEST_RATIO || 0.15);
 const PACKAGES = Number(process.env.PACKAGES || 400);
-const DEPENDENCY_DECLARATIONS = Number(process.env.DEPENDENCY_DECLARATIONS || process.env.DEPENDENCY_STARS || 18_000);
+const DEPENDENCY_DECLARATIONS = Number(process.env.DEPENDENCY_DECLARATIONS || process.env.DEPENDENCY_STARS || 164_000);
 // Multi-gem Git dependency systems (rubylens.art.v9): each groups three
 // consecutive packages. Default 0 keeps published benchmark numbers stable.
 const DEPENDENCY_SYSTEMS = Number(process.env.DEPENDENCY_SYSTEMS || 0);
@@ -102,13 +102,6 @@ function buildModel() {
     ]);
   }
   const totalWeight = packageWeights.reduce((sum, weight) => sum + weight, 0);
-  let indexedDependencyCount = 0;
-  packageWeights.forEach((weight, index) => {
-    const declared = Math.max(1, Math.round((weight / totalWeight) * DEPENDENCY_DECLARATIONS * 9));
-    packages[index][3] = declared;
-    indexedDependencyCount += declared;
-  });
-
   const dependencyStars = [];
   for (let index = 0; index < DEPENDENCY_DECLARATIONS; index += 1) {
     let pick = random() * totalWeight;
@@ -117,7 +110,13 @@ function buildModel() {
       pick -= packageWeights[packageIndex];
       packageIndex += 1;
     }
+    packages[packageIndex][3] += 1;
     dependencyStars.push([randomSeed(), packageIndex, ...signalValues()]);
+  }
+  const indexedDependencyCount = dependencyStars.length;
+  const packageDependencyCount = packages.reduce((sum, packageRow) => sum + packageRow[3], 0);
+  if (packageDependencyCount !== indexedDependencyCount) {
+    throw new Error(`package dependency total ${packageDependencyCount} != embedded rows ${indexedDependencyCount}`);
   }
 
   const domains = Object.fromEntries(SIGNAL_FIELDS.map((field, at) => {

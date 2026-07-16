@@ -4,11 +4,9 @@ require "digest"
 require "json"
 require_relative "../lib/rubylens/model/dependency_aggregation"
 
-declaration_count = Integer(ENV.fetch("DECLARATIONS", "1000000"))
-row_limit_value = ENV.fetch("ROW_LIMIT", RubyLens::Model::DependencyAggregation::DEFAULT_ROW_LIMIT)
-row_limit = row_limit_value == "unlimited" ? nil : Integer(row_limit_value)
+declaration_count = Integer(ENV.fetch("DECLARATIONS", "200000"))
 package_count = Integer(ENV.fetch("PACKAGES", "250"))
-aggregation = RubyLens::Model::DependencyAggregation.new(package_count:, row_limit:)
+aggregation = RubyLens::Model::DependencyAggregation.new(package_count:)
 GC.start
 before_slots = GC.stat(:heap_live_slots)
 
@@ -16,7 +14,7 @@ started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 declaration_count.times do |index|
   package_index = index % package_count
   row = [index % 3, index % 128, 1 + index % 4, index % 4, index % 256, index % 512, index % 1024]
-  aggregation.add(package_index:, row:, construct_index: index % 4, sample_key: "Declaration#{index}")
+  aggregation.add(package_index:, row:, construct_index: index % 4)
 end
 elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at
 GC.start
@@ -26,13 +24,12 @@ packages = aggregation.packages
 retained_rows = packages.sum { |package| package.fetch(:declarations).length }
 payload = Marshal.dump([packages, aggregation.signal_maxima])
 exact_declaration_total = packages.sum { |package| package.fetch(:declaration_count) }
-raise "retained row limit exceeded" if row_limit && retained_rows > row_limit
 raise "declaration total changed" unless exact_declaration_total == declaration_count
+raise "declaration rows were omitted" unless retained_rows == declaration_count
 
 puts JSON.pretty_generate(
   declarations: declaration_count,
   packages: package_count,
-  row_limit: row_limit || "unlimited",
   retained_rows: retained_rows,
   retention_ratio: retained_rows.fdiv(declaration_count),
   exact_declaration_total: exact_declaration_total,

@@ -4,13 +4,6 @@ require "base64"
 require_relative "test_helper"
 
 class ShowcaseGeneratorTest < Minitest::Test
-  def test_showcase_pipeline_embeds_complete_dependency_rows
-    pipeline = RubyLens::ShowcaseGenerator.new.instance_variable_get(:@pipeline)
-    adapter = pipeline.instance_variable_get(:@adapter)
-
-    assert_nil(adapter.instance_variable_get(:@dependency_row_limit))
-  end
-
   def test_default_output_is_root_level_private_and_locally_excluded
     with_repository do |directory|
       result = generator.call(path: directory)
