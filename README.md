@@ -41,8 +41,6 @@ puts result.warnings
 
 Passing `output:` selects a custom path. Custom paths are written exactly where requested and are not added to Git's local excludes, so the caller is responsible for keeping them private.
 
-`RubyLens.generate` remains a thin alias for `RubyLens.generate_report`.
-
 The report is fully local: it makes no network requests and needs neither Node nor a server to open. Drag to orbit, zoom toward the cursor, Shift-drag or use Pan mode to traverse dense clouds, or use the arrow keys to move the view. Show or focus core code, tests, and gems independently; selecting a Ruby node or dependency system flies to a top-down relationship view that keeps both the target and Core visible. Drift continues through exploration unless you pause it with the toolbar control or Space. Reset returns to the default camera without changing that explicit drift choice. Double-clicking a gem cloud expands that one existing system for a sharper, more separated view without loading another model.
 
 Explorer reports embed every model-eligible dependency declaration and require WebGL2 to plot the complete dependency scene. If WebGL2 is unavailable or its context is lost, the report stops interactive rendering, disables scene controls, and opens the standard warning instead of presenting a sampled scene. The masthead explains that WebGL2 is required; exact dependency totals and gem aggregates remain complete in the report.

@@ -25,7 +25,7 @@ module RubyLens
       dependency_systems, dependency_system_index = build_dependency_systems(snapshot, package_index)
       packages = package_order.map do |old_index|
         package = snapshot.fetch("packages").fetch(old_index)
-        declaration_count = package.fetch("declaration_count") { package.fetch("declarations").length }
+        declaration_count = package.fetch("declaration_count")
         [
           random.rand(0..0xffff_ffff),
           package.fetch("role"),
@@ -37,7 +37,7 @@ module RubyLens
       end
       package_names = package_order.map { |old_index| snapshot.fetch("packages").fetch(old_index).fetch("name") }
       indexed_dependency_count = snapshot.fetch("packages").sum do |package|
-        package.fetch("declaration_count") { package.fetch("declarations").length }
+        package.fetch("declaration_count")
       end
       dependencies = []
       package_order.each do |old_index|
@@ -61,7 +61,7 @@ module RubyLens
           "dependencyStars" => indexed_dependency_count,
           "renderedDependencyStars" => dependencies.length,
         },
-        "domains" => signal_domains(namespaces, dependencies, snapshot["dependency_signal_maxima"]),
+        "domains" => signal_domains(namespaces, snapshot.fetch("dependency_signal_maxima")),
         "componentCounts" => snapshot.fetch("components"),
         "categoryStats" => snapshot.fetch("category_stats"),
         "namespaceNames" => namespace_names,
@@ -99,13 +99,11 @@ module RubyLens
       [systems, package_system_index]
     end
 
-    def signal_domains(namespaces, dependencies, dependency_maxima = nil)
+    def signal_domains(namespaces, dependency_maxima)
       namespace_columns = [4, 5, 6, 7, 8, 9]
-      dependency_columns = [2, 3, 4, 5, 6, 7]
       namespace_domains = namespace_columns.map { |column| maximum(namespaces, column) }
-      dependency_domains = dependency_maxima || dependency_columns.map { |column| maximum(dependencies, column) }
       SIGNAL_FIELDS.each_with_index.to_h do |field, index|
-        [field, [namespace_domains[index], dependency_domains[index]].max]
+        [field, [namespace_domains[index], dependency_maxima[index]].max]
       end
     end
 
