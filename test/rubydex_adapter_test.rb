@@ -21,9 +21,9 @@ class RubydexAdapterTest < Minitest::Test
         Array.new(index % 7),
       )
     end
-    manifest = Struct.new(:packages).new([Object.new, Object.new])
-    manifest.define_singleton_method(:workspace_path?) { |_path| false }
-    manifest.define_singleton_method(:package_index_for) { |path| paths.index(path) }
+    manifest = stub(packages: [Object.new, Object.new], workspace_path?: false)
+    manifest.stubs(:package_index_for).with(paths.fetch(0)).returns(0)
+    manifest.stubs(:package_index_for).with(paths.fetch(1)).returns(1)
     adapter = RubyLens::Index::RubydexAdapter.new
     adapter.instance_variable_set(:@indexed_package_document_paths, Set.new(paths))
 
@@ -150,26 +150,21 @@ class RubydexAdapterTest < Minitest::Test
 
   def test_safe_length_uses_size_and_falls_back_to_count
     adapter = RubyLens::Index::RubydexAdapter.allocate
-    sized = Object.new
-    sized.define_singleton_method(:size) { 7 }
-    sized.define_singleton_method(:count) { raise "count should not be called" }
-    counted = Object.new
-    counted.define_singleton_method(:size) { nil }
-    counted.define_singleton_method(:count) { 4 }
-    raised_size = Object.new
-    raised_size.define_singleton_method(:size) { raise "size unavailable" }
-    raised_size.define_singleton_method(:count) { 5 }
+    sized = stub(size: 7)
+    sized.expects(:count).never
+    counted = stub(size: nil, count: 4)
+    raised_size = stub(count: 5)
+    raised_size.stubs(:size).raises("size unavailable")
 
-    assert_equal(7, adapter.send(:safe_length, Struct.new(:records).new(sized), :records))
-    assert_equal(4, adapter.send(:safe_length, Struct.new(:records).new(counted), :records))
-    assert_equal(5, adapter.send(:safe_length, Struct.new(:records).new(raised_size), :records))
+    assert_equal(7, adapter.send(:safe_length, stub(records: sized), :records))
+    assert_equal(4, adapter.send(:safe_length, stub(records: counted), :records))
+    assert_equal(5, adapter.send(:safe_length, stub(records: raised_size), :records))
   end
 
   def test_collects_declarations_without_materializing_the_enumerable
-    declarations = Object.new
-    declarations.define_singleton_method(:each) { |_block = nil, &block| [].each(&block) }
-    declarations.define_singleton_method(:to_a) { raise "must stream declarations" }
-    manifest = Struct.new(:packages).new([])
+    declarations = stub(each: nil)
+    declarations.expects(:to_a).never
+    manifest = stub(packages: [])
 
     collected = RubyLens::Index::RubydexAdapter.new.send(:collect_declarations, declarations, manifest)
 
@@ -179,10 +174,9 @@ class RubydexAdapterTest < Minitest::Test
   end
 
   def test_dependency_extraction_failure_cannot_silently_undercount
-    declaration = Object.new
-    declaration.define_singleton_method(:name) { "Broken" }
-    declaration.define_singleton_method(:definitions) { raise "broken definitions" }
-    manifest = Struct.new(:packages).new([Object.new])
+    declaration = stub(name: "Broken")
+    declaration.stubs(:definitions).raises("broken definitions")
+    manifest = stub(packages: [Object.new])
 
     error = assert_raises(RuntimeError) do
       RubyLens::Index::RubydexAdapter.new.send(:collect_declarations, [declaration], manifest)
@@ -192,8 +186,8 @@ class RubydexAdapterTest < Minitest::Test
 
   def test_non_file_definitions_are_intentionally_ineligible_for_packages
     location = Struct.new(:uri).new("https://example.test/builtin.rbs")
-    manifest = Object.new
-    manifest.define_singleton_method(:package_index_for) { raise "non-file locations must not be indexed" }
+    manifest = stub
+    manifest.expects(:package_index_for).never
 
     assert_nil(RubyLens::Index::RubydexAdapter.new.send(:package_index_for_location, location, manifest))
   end
@@ -204,8 +198,7 @@ class RubydexAdapterTest < Minitest::Test
       absent = File.join(directory, "absent.rb")
       File.write(indexed, "Indexed = 1\n")
       File.write(absent, "Absent = 1\n")
-      manifest = Object.new
-      manifest.define_singleton_method(:package_index_for) { |_path| 3 }
+      manifest = stub(package_index_for: 3)
       adapter = RubyLens::Index::RubydexAdapter.new
       adapter.instance_variable_set(:@indexed_package_document_paths, Set[indexed])
 
@@ -217,23 +210,16 @@ class RubydexAdapterTest < Minitest::Test
   end
 
   def test_indexes_the_exact_git_selected_manifest_once
-    captured = nil
-    graph = Object.new
-    graph.define_singleton_method(:index_all) { |files| captured = files; [] }
-    graph.define_singleton_method(:documents) { [] }
-    graph.define_singleton_method(:resolve) { self }
-    graph.define_singleton_method(:check_integrity) { [] }
-    graph.define_singleton_method(:declarations) { [] }
-    graph.define_singleton_method(:constant_references) { [] }
+    graph = stub(documents: [], resolve: nil, check_integrity: [], declarations: [], constant_references: [])
     manifest = Struct.new(:root, :files, :packages, :warnings, :dependency_warnings).new(
       Pathname("/tmp/example"), ["/tmp/a.rb", "/tmp/b.rb"].freeze, [], [], []
     )
 
     Rubydex::Graph.expects(:new).with(workspace_path: manifest.root.to_s).returns(graph)
+    graph.expects(:index_all).with(manifest.files).returns([])
     RubyLens::Index::RubydexAdapter.new.index(manifest)
 
-    assert_equal(manifest.files, captured)
-    assert_equal(captured.uniq, captured)
+    assert_equal(manifest.files.uniq, manifest.files)
   end
 
   def test_reuses_indexed_documents_for_package_audit_and_workspace_rspec_projection

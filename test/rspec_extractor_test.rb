@@ -40,8 +40,7 @@ class RSpecExtractorTest < Minitest::Test
       ]
       graph = graph_with(documents)
       manifest = RubyLens::Index::Manifest.new(root:)
-      manifest.define_singleton_method(:files) { [unindexed.to_s] }
-      manifest.define_singleton_method(:workspace_files) { [unindexed.to_s] }
+      manifest.stubs(files: [unindexed.to_s], workspace_files: [unindexed.to_s])
 
       result = RubyLens::Index::RSpecExtractor.new.call(graph:, manifest:)
 
@@ -59,9 +58,8 @@ class RSpecExtractorTest < Minitest::Test
 
   def test_counts_references_without_reading_their_locations
     references = %w[context it context describe specify shared_examples].map do |name|
-      reference = Object.new
-      reference.define_singleton_method(:name) { name }
-      reference.define_singleton_method(:location) { raise "reference locations must not be read" }
+      reference = stub(name: name)
+      reference.expects(:location).never
       reference
     end
 
@@ -75,8 +73,8 @@ class RSpecExtractorTest < Minitest::Test
     Dir.mktmpdir("rubylens-rspec-errors-") do |directory|
       root = Pathname(directory)
       path = write_file(root.join("spec/example_spec.rb"))
-      broken_reference = Object.new
-      broken_reference.define_singleton_method(:name) { raise "broken method reference" }
+      broken_reference = stub
+      broken_reference.stubs(:name).raises("broken method reference")
       graph = graph_with([document(path, broken_reference)])
       manifest = RubyLens::Index::Manifest.new(root:)
 
@@ -98,10 +96,9 @@ class RSpecExtractorTest < Minitest::Test
   end
 
   def graph_with(documents)
-    Object.new.tap do |graph|
-      graph.define_singleton_method(:documents) { documents.each }
-      graph.define_singleton_method(:document) { |_uri| raise "Graph#document must not be called" }
-    end
+    graph = stub(documents: documents.each)
+    graph.expects(:document).never
+    graph
   end
 
   def reference(name, line, column = 0)
