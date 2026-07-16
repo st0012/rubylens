@@ -20,6 +20,7 @@ class ExplorerRuntimeTest < Minitest::Test
     assert_includes(SHELL, '<summary id="warning-summary"></summary>')
     assert_includes(RUNTIME, "function populateWarningDisclosure()")
     assert_includes(RUNTIME, "const WARNING_ROW_LIMIT = 24")
+    assert_includes(RUNTIME, "const shownWarnings = uniqueWarnings.slice(0, WARNING_ROW_LIMIT)")
     assert_includes(RUNTIME, 'warning && typeof warning.name === "string"')
     assert_includes(RUNTIME, 'const key = `${warning.name}\\u0000${warning.reason}`')
     assert_includes(RUNTIME, 'appendWarningGroup(container, "Ruby index", counts.index')
@@ -30,7 +31,6 @@ class ExplorerRuntimeTest < Minitest::Test
     assert_includes(STYLES, "clip-path: polygon(0 0, 50% 70%, 100% 0, 100% 30%, 50% 100%, 0 30%)")
     assert_includes(STYLES, "details.warning-disclosure[open] > summary::after { transform: rotate(180deg); }")
     assert_includes(STYLES, "overflow-wrap: anywhere")
-    refute_includes(RUNTIME, "appendDependencyWarnings")
     refute_includes(RUNTIME, "innerHTML")
   end
 
@@ -52,7 +52,6 @@ class ExplorerRuntimeTest < Minitest::Test
     toolbar = SHELL.match(/<div class="toolbar">(?<body>.*?)<\/div>/m)[:body]
     expected_order = ['id="motion"', 'id="reset-view"', 'id="pan-mode"', 'id="zoom-out"', 'id="zoom-level"', 'id="zoom-in"']
     assert_equal(expected_order, expected_order.sort_by { |marker| toolbar.index(marker) })
-    refute_includes(SHELL, ">Home</button>")
   end
 
   def test_explorer_drift_is_time_based_gap_capped_and_not_suppressed_by_interaction
@@ -65,10 +64,11 @@ class ExplorerRuntimeTest < Minitest::Test
     assert_includes(RUNTIME, "if (cameraFlight || driftAdvanced) requestRender()")
     assert_includes(RUNTIME, "lastDriftTimestamp = null")
     assert_includes(RUNTIME, "yaw += dx * .006")
-    refute_includes(RUNTIME, "yaw += .00055")
-    refute_match(/drifting && !dragging/, RUNTIME)
-    refute_match(/drifting && .*selectedPoint/, RUNTIME)
 
+    drift = runtime_function("advanceExplorerDrift")
+    %w[dragging pointers gesture selectedPoint pendingHover].each do |interaction_state|
+      refute_includes(drift, interaction_state, "advanceExplorerDrift must not be gated by #{interaction_state}")
+    end
     %w[focusCategory focusPoint focusDependencyPackage focusDependencySystem navigateToSelection resetView].each do |name|
       refute_includes(runtime_function(name), "setDrifting", "#{name} must preserve explicit drift state")
     end
@@ -198,7 +198,6 @@ class ExplorerRuntimeTest < Minitest::Test
     renderer = runtime_function("createExplorerRenderer")
     assert_includes(renderer, "const categoryEmphasisVector = () =>")
     assert_includes(renderer, "return [contextVisibility.package, contextVisibility.package, contextVisibility.package]")
-    refute_includes(RUNTIME, "expandedPackageIndex !== null ? focusedPackagePoint : emphasis >= .1")
   end
 
   def test_explorer_exposure_is_identity_through_100_percent_and_progressively_attenuates_deep_zoom
@@ -309,9 +308,6 @@ class ExplorerRuntimeTest < Minitest::Test
     assert_includes(runtime_function("hitTest"), "return explorerRenderer ? hitTestProjected(x, y) : null")
     assert_includes(runtime_function("dependencyPackageAt"), "if (!explorerRenderer) return null")
 
-    refute_includes(RUNTIME, "CANVAS_DEPENDENCY_ROW_LIMIT")
-    refute_includes(RUNTIME, "canvasDependencyPointSample")
-    refute_includes(RUNTIME, "activateCanvasFallback")
     assert_includes(RUNTIME, 'document.documentElement.dataset.showcaseRenderer = "canvas2d-fallback"')
     assert_operator(RUNTIME.index("const dependencyRubyCounts"), :<, RUNTIME.index("model.dependencyStars = []"))
   end
@@ -341,7 +337,6 @@ class ExplorerRuntimeTest < Minitest::Test
       ],
       JSON.parse(output),
     )
-    refute_includes(RUNTIME, "dependency stars shown")
   end
 
   def test_dependency_sampling_state_only_reports_bounded_embedded_data

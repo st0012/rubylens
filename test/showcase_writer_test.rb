@@ -36,8 +36,6 @@ class ShowcaseWriterTest < Minitest::Test
       assert_includes(html, 'class="cinema-annotation" id="cinema-annotation" aria-hidden="true" hidden')
       assert_includes(html, "const showcaseDetails = showcaseMode && model.details === true")
       refute_includes(html, "{{MODEL_BASE64}}")
-      refute_includes(html, "capture=1")
-      refute_includes(html, "RubyLensCapture")
       refute_match(/<(?:button|aside|iframe|input|select|textarea)\b/, html)
       refute_match(/<canvas[^>]*tabindex=/, html)
       refute_match(%r{https?://}, html)

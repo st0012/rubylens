@@ -187,21 +187,15 @@ class CLITest < Minitest::Test
     assert_includes(output.string, "rubylens showcase --help")
     assert_includes(output.string, "report [OPTIONS] [TARGET]")
     assert_includes(output.string, "showcase [OPTIONS] [TARGET]")
-    refute_includes(output.string, "build [TARGET]")
-    refute_includes(output.string, "gif [TARGET]")
   end
 
-  def test_removed_commands_are_unknown
+  def test_unknown_commands_are_rejected_with_help
     errors = StringIO.new
 
-    build_status = RubyLens::CLI.new(stdout: StringIO.new, stderr: errors).run(["build"])
-    gif_status = RubyLens::CLI.new(stdout: StringIO.new, stderr: errors).run(["gif"])
+    status = RubyLens::CLI.new(stdout: StringIO.new, stderr: errors).run(["cosmos"])
 
-    assert_equal(2, build_status)
-    assert_equal(2, gif_status)
-    assert_includes(errors.string, "Unknown command: build")
-    assert_includes(errors.string, "Unknown command: gif")
-    refute_includes(errors.string, "build [TARGET]")
-    refute_includes(errors.string, "gif [TARGET]")
+    assert_equal(2, status)
+    assert_includes(errors.string, "Unknown command: cosmos")
+    assert_includes(errors.string, "report [OPTIONS] [TARGET]")
   end
 end

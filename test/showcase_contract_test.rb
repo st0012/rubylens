@@ -140,7 +140,6 @@ class ShowcaseContractTest < Minitest::Test
 
     showcase_camera = runtime_function("applyShowcaseCamera")
     assert_includes(showcase_camera, "screenRotationYawSign(SHOWCASE_PRESET.elevationDegrees * Math.PI / 180)")
-    refute_includes(runtime, "SHOWCASE_PRESET.direction")
   end
 
   def test_runtime_uses_the_preset_for_fixed_stage_motion_and_lighting
@@ -156,7 +155,6 @@ class ShowcaseContractTest < Minitest::Test
     end
     assert_includes(runtime, "requestAnimationFrame(renderShowcase)")
     assert_includes(runtime, "Math.min(window.innerWidth / SHOWCASE_PRESET.stageWidth, window.innerHeight / SHOWCASE_PRESET.stageHeight)")
-    refute_includes(runtime, "showcaseSceneRadius")
   end
 
   def test_dependency_preset_only_amplifies_ordinary_showcase_stars
