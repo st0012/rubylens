@@ -63,6 +63,11 @@ class ArtModelBuilderTest < Minitest::Test
     )
     assert_equal([0, 1, 1, 2, 1, 4, 3, -1], first.fetch("packages").first.drop(1))
     assert_empty(first.fetch("dependencySystems"))
+    assert_equal(
+      %w[categoryStats componentCounts dependencyStars dependencySystems dependencyWarnings domains
+         morphology namespaceNames namespaces packageNames packages projectName schema totals warningCounts],
+      first.keys.sort,
+    )
     refute_includes(JSON.generate(first), "Example::Client")
     refute_includes(JSON.generate(first), private_git_source)
     %w[private/dependency credentials@example.invalid private-revision raw\ dependency private\ source].each do |private_value|

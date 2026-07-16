@@ -23,6 +23,12 @@ class PackageTest < Minitest::Test
     refute(specification.files.any? { |path| path.start_with?("docs/") })
   end
 
+  def test_gem_runtime_dependencies_are_rubydex_and_base64_only
+    specification = Gem::Specification.load(File.expand_path("../rubylens.gemspec", __dir__))
+
+    assert_equal(%w[base64 rubydex], specification.runtime_dependencies.map(&:name).sort)
+  end
+
   def test_gem_supports_the_rubydex_ruby_range
     specification = Gem::Specification.load(File.expand_path("../rubylens.gemspec", __dir__))
 

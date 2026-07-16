@@ -64,6 +64,10 @@ class ExplorerRuntimeTest < Minitest::Test
     assert_includes(RUNTIME, "lastDriftTimestamp = null")
     assert_includes(RUNTIME, "yaw += dx * .006")
 
+    drift = runtime_function("advanceExplorerDrift")
+    %w[dragging pointers gesture selectedPoint pendingHover].each do |interaction_state|
+      refute_includes(drift, interaction_state, "advanceExplorerDrift must not be gated by #{interaction_state}")
+    end
     %w[focusCategory focusPoint focusDependencyPackage focusDependencySystem navigateToSelection resetView].each do |name|
       refute_includes(runtime_function(name), "setDrifting", "#{name} must preserve explicit drift state")
     end
