@@ -11,6 +11,16 @@ module RubyLens
     class RubydexAdapter
       TEST_SEGMENTS = %w[test tests spec specs feature features].freeze
 
+      # Everything the collectors need from one declaration's definitions, gathered in a
+      # single pass so each definition's location crosses the Rubydex boundary once.
+      DefinitionSummary = Data.define(
+        :workspace_count,
+        :workspace_relatives,
+        :canonical_relatives,
+        :canonical_site_keys,
+        :package_site_keys,
+      )
+
       def index(manifest)
         @source_path_cache = {}
         @workspace_location_cache = {}
@@ -25,7 +35,7 @@ module RubyLens
           manifest: manifest,
           package_document_paths: @indexed_package_document_paths,
         )
-        workspace = workspace_namespaces(collected.fetch(:workspace_records), rspec.groups, manifest)
+        workspace = workspace_namespaces(collected.fetch(:workspace_records), rspec.groups)
         inbound_references = inbound_workspace_references(graph, manifest, workspace.fetch(:ordinal_by_name))
         category_stats = collected.fetch(:category_stats)
         category_stats.fetch("tests")[0] += rspec.groups.length
@@ -64,29 +74,64 @@ module RubyLens
         declarations.each do |declaration|
           next unless model_eligible_declaration?(declaration)
 
-          if namespace?(declaration)
-            definitions = declaration.definitions.select do |definition|
-              canonical_namespace_definition?(declaration, definition) && workspace_location?(definition.location, manifest)
-            end
-            records << [declaration, definitions] unless definitions.empty?
+          summary = summarize_definitions(declaration, manifest)
+          unless summary.canonical_site_keys.empty?
+            records << [
+              declaration,
+              summary.canonical_site_keys.uniq.length,
+              scope_from(summary.canonical_relatives),
+              component_from(summary.canonical_relatives),
+            ]
           end
-          collect_category_stat(category_stats, declaration, manifest)
-          collect_dependency_declaration(aggregation, declaration, manifest)
+          collect_category_stat(category_stats, declaration, summary)
+          collect_dependency_declaration(aggregation, declaration, summary)
         end
 
         { workspace_records: records, category_stats:, dependency_aggregation: aggregation }
       end
 
-      def workspace_namespaces(records, rspec_groups, manifest)
-        ordinal_by_name = records.each_with_index.to_h { |(declaration, _definitions), index| [declaration.name, index] }
-        components = records.map { |_declaration, definitions| component_for(definitions, manifest) }
+      def summarize_definitions(declaration, manifest)
+        namespace = namespace?(declaration)
+        workspace_count = 0
+        workspace_relatives = []
+        canonical_relatives = []
+        canonical_site_keys = []
+        package_site_keys = {}
+
+        declaration.definitions.each do |definition|
+          location = definition.location
+          if workspace_location?(location, manifest)
+            workspace_count += 1
+            relative = manifest.relative_workspace_path(source_path(location.uri))
+            workspace_relatives << relative if relative
+            if namespace && canonical_namespace_definition?(declaration, definition)
+              canonical_site_keys << site_key(location)
+              canonical_relatives << relative if relative
+            end
+          end
+          package_index = package_index_for_location(location, manifest)
+          (package_site_keys[package_index] ||= []) << site_key(location) if package_index
+        end
+
+        DefinitionSummary.new(
+          workspace_count:,
+          workspace_relatives:,
+          canonical_relatives:,
+          canonical_site_keys:,
+          package_site_keys:,
+        )
+      end
+
+      def workspace_namespaces(records, rspec_groups)
+        ordinal_by_name = records.each_with_index.to_h { |(declaration, *), index| [declaration.name, index] }
+        components = records.map { |_declaration, _sites, _scope, component| component }
         all_components = components + rspec_groups.map(&:component)
         component_ids = all_components.uniq.sort.each_with_index.to_h
 
         {
           records: records,
           rspec_groups: rspec_groups,
-          namespace_names: records.map { |declaration, _definitions| declaration.name } + rspec_groups.map(&:name),
+          namespace_names: records.map { |declaration, *| declaration.name } + rspec_groups.map(&:name),
           ordinal_by_name: ordinal_by_name,
           component_ids: component_ids,
           components: components,
@@ -95,14 +140,17 @@ module RubyLens
       end
 
       def build_workspace_rows(workspace, inbound_references, manifest)
-        rows = workspace.fetch(:records).each_with_index.map do |(declaration, definitions), index|
-          sites = definitions.map { |definition| site_key(definition.location) }.uniq.length
-          scope = scope_for(definitions, manifest)
+        rows = workspace.fetch(:records).each_with_index.map do |(declaration, sites, scope, component), index|
           descendants = declaration.descendants.count do |descendant|
             descendant.name != declaration.name && workspace.fetch(:ordinal_by_name).key?(descendant.name)
           end
+          member_count, ruby_counts, instance_variable_count = member_statistics(
+            declaration,
+            manifest,
+            count_instance_variables: declaration.is_a?(Rubydex::Class) && scope != 1,
+          )
           [
-            workspace.fetch(:component_ids).fetch(workspace.fetch(:components)[index]),
+            workspace.fetch(:component_ids).fetch(component),
             declaration.is_a?(Rubydex::Class) ? 0 : 1,
             scope,
             [declaration.ancestors.count - 1, 0].max,
@@ -110,9 +158,9 @@ module RubyLens
             [sites - 1, 0].max,
             descendants,
             inbound_references.fetch(index, 0),
-            workspace_member_count(declaration, manifest),
-            *namespace_ruby_counts(declaration, manifest),
-            namespace_instance_variable_count(declaration, manifest, scope),
+            member_count,
+            *ruby_counts,
+            instance_variable_count,
           ]
         end
         rows.concat(workspace.fetch(:rspec_groups).map { |group| build_rspec_row(group, workspace) })
@@ -154,11 +202,13 @@ module RubyLens
         end
       end
 
-      def collect_dependency_declaration(aggregation, declaration, manifest)
-        package_index, definitions = dominant_package_definitions(declaration, manifest)
+      def collect_dependency_declaration(aggregation, declaration, summary)
+        package_index, site_keys = summary.package_site_keys.max_by do |index, keys|
+          [keys.length, -index]
+        end
         return unless package_index
 
-        sites = definitions.map { |definition| site_key(definition.location) }.uniq.length
+        sites = site_keys.uniq.length
         row = [
           namespace_kind(declaration),
           namespace?(declaration) ? [declaration.ancestors.count - 1, 0].max : 0,
@@ -179,22 +229,13 @@ module RubyLens
         graph.constant_references.each_with_object(Hash.new(0)) do |reference, counts|
           next unless reference.is_a?(Rubydex::ResolvedConstantReference)
 
-          next unless workspace_location?(reference.location, manifest)
+          ordinal = ordinal_by_name[reference.declaration.name]
+          next unless ordinal
 
-          target = reference.declaration
-          ordinal = ordinal_by_name[target.name]
-          counts[ordinal] += 1 if ordinal
+          counts[ordinal] += 1 if workspace_location?(reference.location, manifest)
         rescue StandardError
           next
         end
-      end
-
-      def dominant_package_definitions(declaration, manifest)
-        grouped = declaration.definitions.group_by do |definition|
-          package_index_for_location(definition.location, manifest)
-        end
-        grouped.reject { |index, _records| index.nil? }
-          .max_by { |index, records| [records.length, -index] }
       end
 
       def package_index_for_location(location, manifest)
@@ -213,59 +254,45 @@ module RubyLens
         end
       end
 
-      def workspace_member_count(declaration, manifest)
-        members = declaration.members.to_a
-        members.concat(declaration.singleton_class.members.to_a) if declaration.singleton_class
-        members.uniq(&:name).count do |member|
-          member.definitions.any? { |definition| workspace_location?(definition.location, manifest) }
-        end
-      rescue StandardError
-        0
-      end
-
-      def namespace_ruby_counts(declaration, manifest)
-        counts = Array.new(4, 0)
+      # One sweep over a namespace's direct and singleton members yields the
+      # workspace member count, the method/constant construct counts, and the
+      # instance-variable count that previously took three walks each re-reading
+      # every member's definitions.
+      def member_statistics(declaration, manifest, count_instance_variables:)
+        member_count = 0
+        instance_variable_count = 0
+        ruby_counts = Array.new(4, 0)
         own_construct = ruby_construct_index(declaration)
-        counts[own_construct] += 1 if own_construct == 0 || own_construct == 1
+        ruby_counts[own_construct] += 1 if own_construct == 0 || own_construct == 1
 
-        members = declaration.members.to_a
-        members.concat(declaration.singleton_class.members.to_a) if declaration.singleton_class
-        members.uniq(&:name).each do |member|
-          construct_index = ruby_construct_index(member)
-          next unless construct_index && construct_index >= 2
-          next unless member.definitions.any? { |definition| workspace_location?(definition.location, manifest) }
+        seen_names = Set.new
+        walk = lambda do |members, direct|
+          members.each do |member|
+            next unless seen_names.add?(member.name)
+            next unless member.definitions.any? { |definition| workspace_location?(definition.location, manifest) }
 
-          counts[construct_index] += 1
+            member_count += 1
+            construct_index = ruby_construct_index(member)
+            ruby_counts[construct_index] += 1 if construct_index && construct_index >= 2
+            if direct && count_instance_variables && member.is_a?(Rubydex::InstanceVariable)
+              instance_variable_count += 1
+            end
+          end
         end
-        counts
+        walk.call(declaration.members, true)
+        walk.call(declaration.singleton_class.members, false) if declaration.singleton_class
+        [member_count, ruby_counts, instance_variable_count]
       rescue StandardError
-        counts || Array.new(4, 0)
+        [member_count, ruby_counts, instance_variable_count]
       end
 
-      def namespace_instance_variable_count(declaration, manifest, scope)
-        return 0 unless declaration.is_a?(Rubydex::Class) && scope != 1
-
-        declaration.members.to_a.uniq(&:name).count do |member|
-          member.is_a?(Rubydex::InstanceVariable) &&
-            member.definitions.any? { |definition| workspace_location?(definition.location, manifest) }
-        end
-      rescue StandardError
-        0
-      end
-
-      def collect_category_stat(stats, declaration, manifest)
+      def collect_category_stat(stats, declaration, summary)
         construct_index = ruby_construct_index(declaration)
         return unless construct_index
+        return if summary.workspace_count.zero?
 
-        definitions = declaration.definitions.select do |definition|
-          workspace_location?(definition.location, manifest)
-        end
-        return if definitions.empty?
-
-        category = scope_for(definitions, manifest) == 1 ? "tests" : "core"
+        category = scope_from(summary.workspace_relatives) == 1 ? "tests" : "core"
         stats.fetch(category)[construct_index] += 1
-      rescue StandardError
-        nil
       end
 
       def workspace_location?(location, manifest)
@@ -279,21 +306,13 @@ module RubyLens
         false
       end
 
-      def component_for(definitions, manifest)
-        candidates = definitions.filter_map do |definition|
-          relative = manifest.relative_workspace_path(location_path(definition.location))
-          next unless relative
-
-          SourcePath.component_for(relative)
-        end
+      def component_from(relatives)
+        candidates = relatives.map { |relative| SourcePath.component_for(relative) }
         candidates.tally.max_by { |name, count| [count, name] }&.first || "root"
       end
 
-      def scope_for(definitions, manifest)
-        scopes = definitions.filter_map do |definition|
-          relative = manifest.relative_workspace_path(location_path(definition.location))
-          next unless relative
-
+      def scope_from(relatives)
+        scopes = relatives.map do |relative|
           relative.split(File::SEPARATOR).any? { |segment| TEST_SEGMENTS.include?(segment) } ? 1 : 0
         end.uniq
         scopes.length > 1 ? 2 : scopes.first || 0
@@ -338,10 +357,6 @@ module RubyLens
         when Rubydex::Method then 2
         when Rubydex::Constant, Rubydex::ConstantAlias then 3
         end
-      end
-
-      def location_path(location)
-        source_path(location.uri) || raise(Error, "Rubydex returned a non-file location")
       end
 
       def source_path(uri_string)

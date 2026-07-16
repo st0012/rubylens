@@ -54,6 +54,7 @@ module RubyLens
 
       def build
         @workspace_files = GitRepository.new(@root).selected_files.freeze
+        @workspace_file_set = @workspace_files.to_set
         build_packages
         @package_roots = @packages.each_with_index.map { |package, index| [package.root, index] }
           .sort_by do |package_root, index|
@@ -85,12 +86,24 @@ module RubyLens
         path = path.to_s
         return @relative_workspace_path_cache[path] if @relative_workspace_path_cache.key?(path)
 
-        @relative_workspace_path_cache[path] = Pathname(path).realpath.relative_path_from(@root).to_s
-      rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP, ArgumentError
-        nil
+        @relative_workspace_path_cache[path] = uncached_relative_workspace_path(path)
       end
 
       private
+
+      # Workspace files are enumerated as realpaths, so known files relativize with
+      # string arithmetic; unknown paths still resolve symlinks and must land inside
+      # the workspace to count as workspace-relative.
+      def uncached_relative_workspace_path(path)
+        return path.delete_prefix("#{@root}#{File::SEPARATOR}") if @workspace_file_set&.include?(path)
+
+        resolved = Pathname(path).realpath
+        return unless Paths.inside?(resolved, @root)
+
+        resolved.relative_path_from(@root).to_s
+      rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP, ArgumentError
+        nil
+      end
 
       def build_package_index
         package_index_by_file = {}

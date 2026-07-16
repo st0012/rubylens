@@ -40,8 +40,7 @@ class RSpecExtractorTest < Minitest::Test
       ]
       graph = graph_with(documents)
       manifest = RubyLens::Index::Manifest.new(root:)
-      manifest.define_singleton_method(:files) { [unindexed.to_s] }
-      manifest.define_singleton_method(:workspace_files) { [unindexed.to_s] }
+      manifest.stubs(files: [unindexed.to_s], workspace_files: [unindexed.to_s])
 
       result = RubyLens::Index::RSpecExtractor.new.call(graph:, manifest:)
 
@@ -57,34 +56,25 @@ class RSpecExtractorTest < Minitest::Test
     end
   end
 
-  def test_sorts_references_by_rubydex_location_and_name
-    references = [
-      reference("context", 8, 3),
-      reference("it", 4, 1),
-      reference("context", 2, 5),
-      reference("describe", 2, 5),
-      reference("specify", 4, 0),
-    ]
+  def test_counts_references_without_reading_their_locations
+    references = %w[context it context describe specify shared_examples].map do |name|
+      reference = stub(name: name)
+      reference.expects(:location).never
+      reference
+    end
 
-    groups, method_count = RubyLens::Index::RSpecExtractor.new.send(:references, references)
+    group_count, example_count = RubyLens::Index::RSpecExtractor.new.send(:reference_counts, references)
 
-    assert_equal(
-      [
-        ["file:///test.rb", 2, 5, 2, 6, "context"],
-        ["file:///test.rb", 2, 5, 2, 6, "describe"],
-        ["file:///test.rb", 8, 3, 8, 4, "context"],
-      ],
-      groups,
-    )
-    assert_equal(2, method_count)
+    assert_equal(3, group_count)
+    assert_equal(2, example_count)
   end
 
   def test_propagates_malformed_method_reference_failures
     Dir.mktmpdir("rubylens-rspec-errors-") do |directory|
       root = Pathname(directory)
       path = write_file(root.join("spec/example_spec.rb"))
-      broken_reference = Object.new
-      broken_reference.define_singleton_method(:name) { raise "broken method reference" }
+      broken_reference = stub
+      broken_reference.stubs(:name).raises("broken method reference")
       graph = graph_with([document(path, broken_reference)])
       manifest = RubyLens::Index::Manifest.new(root:)
 
@@ -106,10 +96,9 @@ class RSpecExtractorTest < Minitest::Test
   end
 
   def graph_with(documents)
-    Object.new.tap do |graph|
-      graph.define_singleton_method(:documents) { documents.each }
-      graph.define_singleton_method(:document) { |_uri| raise "Graph#document must not be called" }
-    end
+    graph = stub(documents: documents.each)
+    graph.expects(:document).never
+    graph
   end
 
   def reference(name, line, column = 0)
