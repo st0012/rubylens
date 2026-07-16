@@ -4,4 +4,4 @@
 require "rubylens"
 require "rubylens/cli"
 
-exit RubyLens::CLI.new.run(ARGV)
+exit RubyLens::CLI.new(ARGV).run

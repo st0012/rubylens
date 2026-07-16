@@ -42,7 +42,7 @@ class RSpecExtractorTest < Minitest::Test
       manifest = RubyLens::Index::Manifest.new(root:)
       manifest.stubs(files: [unindexed.to_s], workspace_files: [unindexed.to_s])
 
-      result = RubyLens::Index::RSpecExtractor.new.call(graph:, manifest:)
+      result = RubyLens::Index::RSpecExtractor.new(graph:, manifest:).call
 
       assert_equal(
         (1..3).map { |index| format("RSpec example group #%06d", index) },
@@ -63,7 +63,7 @@ class RSpecExtractorTest < Minitest::Test
       reference
     end
 
-    group_count, example_count = RubyLens::Index::RSpecExtractor.new.send(:reference_counts, references)
+    group_count, example_count = RubyLens::Index::RSpecExtractor.new(graph: nil, manifest: nil).send(:reference_counts, references)
 
     assert_equal(3, group_count)
     assert_equal(2, example_count)
@@ -79,7 +79,7 @@ class RSpecExtractorTest < Minitest::Test
       manifest = RubyLens::Index::Manifest.new(root:)
 
       error = assert_raises(RuntimeError) do
-        RubyLens::Index::RSpecExtractor.new.call(graph:, manifest:)
+        RubyLens::Index::RSpecExtractor.new(graph:, manifest:).call
       end
       assert_equal("broken method reference", error.message)
     end

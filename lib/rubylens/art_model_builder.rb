@@ -13,7 +13,7 @@ module RubyLens
 
     def build(snapshot)
       random = Random.new(@seed)
-      morphology = MorphologyClassifier.new.call(snapshot)
+      morphology = MorphologyClassifier.new(snapshot).call
       namespace_order = (0...snapshot.fetch("namespaces").length).to_a.shuffle(random: random)
       namespaces = namespace_order.map do |index|
         row = snapshot.fetch("namespaces").fetch(index)

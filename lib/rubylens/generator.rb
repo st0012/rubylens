@@ -4,9 +4,14 @@ module RubyLens
   Result = Data.define(:output_path, :counts, :warnings)
 
   class GenerationPipeline
-    def call(root:, lockfile: nil)
-      manifest = Index::Manifest.build(root: root, lockfile: lockfile)
-      snapshot = Index::RubydexAdapter.new.index(manifest)
+    def initialize(root:, lockfile: nil)
+      @root = root
+      @lockfile = lockfile
+    end
+
+    def call
+      manifest = Index::Manifest.build(root: @root, lockfile: @lockfile)
+      snapshot = Index::RubydexAdapter.new(manifest).index
       model = ArtModelBuilder.new.build(snapshot)
       warning_counts = snapshot.fetch("warning_counts")
       warnings = manifest.warnings.dup
@@ -19,9 +24,16 @@ module RubyLens
   class Generator
     DEFAULT_REPORT_NAME = "rubylens-report.html"
 
-    def call(path: Dir.pwd, output: nil, lockfile: nil)
-      root = File.realpath(path)
+    def initialize(path: Dir.pwd, output: nil, lockfile: nil)
+      @path = path
+      @output = output
+      @lockfile = lockfile
+    end
+
+    def call
+      root = File.realpath(@path)
       report_writer = ReportWriter.new
+      output = @output
       if output.nil?
         output = File.join(root, DEFAULT_REPORT_NAME)
         if File.exist?(output) && !report_writer.rubylens_report?(output)
@@ -29,7 +41,7 @@ module RubyLens
         end
         GitRepository.new(root).exclude_local(output)
       end
-      model, warnings = GenerationPipeline.new.call(root:, lockfile:)
+      model, warnings = GenerationPipeline.new(root:, lockfile: @lockfile).call
       output_path = report_writer.write(model, output: output)
 
       RubyLens::Result.new(output_path: output_path, counts: model.fetch("totals").freeze, warnings:)

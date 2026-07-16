@@ -153,7 +153,7 @@ class CLITest < Minitest::Test
 
   def run_cli(arguments)
     status = nil
-    output, errors = capture_io { status = RubyLens::CLI.new.run(arguments) }
+    output, errors = capture_io { status = RubyLens::CLI.new(arguments).run }
     [status, output, errors]
   end
 end

@@ -19,8 +19,12 @@ module RubyLens
 
     DEFAULT_KNOBS = [0, 240, 3, 105, 380, 0, 0, 0, 0].freeze
 
-    def call(snapshot)
-      inputs = inputs_for(snapshot)
+    def initialize(snapshot)
+      @snapshot = snapshot
+    end
+
+    def call
+      inputs = classification_inputs
       return fallback unless inputs
 
       classify(**inputs)
@@ -30,13 +34,13 @@ module RubyLens
 
     private
 
-    def inputs_for(snapshot)
-      return unless snapshot.is_a?(Hash)
+    def classification_inputs
+      return unless @snapshot.is_a?(Hash)
 
-      rows = snapshot.fetch("namespaces")
-      names = snapshot.fetch("namespace_names")
-      packages = snapshot.fetch("packages")
-      project_name = snapshot.fetch("project_name")
+      rows = @snapshot.fetch("namespaces")
+      names = @snapshot.fetch("namespace_names")
+      packages = @snapshot.fetch("packages")
+      project_name = @snapshot.fetch("project_name")
       return unless rows.is_a?(Array) && names.is_a?(Array) && rows.length == names.length
       return unless packages.is_a?(Array) && project_name.is_a?(String)
       return if rows.empty?

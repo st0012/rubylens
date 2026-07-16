@@ -478,7 +478,7 @@ class IndexManifestTest < Minitest::Test
         repeated.packages.map { |package| [package.name, package.files] },
       )
 
-      snapshot = RubyLens::Index::RubydexAdapter.new.index(manifest)
+      snapshot = RubyLens::Index::RubydexAdapter.new(manifest).index
       inner = snapshot.fetch("packages").find { |package| package.fetch("name") == "inner-gem" }
       outer = snapshot.fetch("packages").find { |package| package.fetch("name") == "outer-gem" }
       assert_equal(1, inner.fetch("declaration_count"))
@@ -530,10 +530,10 @@ class IndexManifestTest < Minitest::Test
       refute_includes(serialized, checkout.to_s)
       assert_empty(first.dependency_warnings)
 
-      snapshot = RubyLens::Index::RubydexAdapter.new.index(first)
+      snapshot = RubyLens::Index::RubydexAdapter.new(first).index
       snapshot_packages = snapshot.fetch("packages").to_h { |package| [package.fetch("name"), package] }
       model = RubyLens::ArtModelBuilder.new(seed: 12).build(snapshot)
-      showcase = RubyLens::ShowcaseModel.new.call(model)
+      showcase = RubyLens::ShowcaseModel.new(model).call
       payloads = [snapshot, model, showcase].map { |payload| JSON.generate(payload) }
 
       assert_equal(0, snapshot_packages.fetch("system-meta").fetch("declaration_count"))

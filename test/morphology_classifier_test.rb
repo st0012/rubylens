@@ -3,10 +3,6 @@
 require_relative "test_helper"
 
 class MorphologyClassifierTest < Minitest::Test
-  def setup
-    @classifier = RubyLens::MorphologyClassifier.new
-  end
-
   def test_reaches_all_five_families
     assert_equal(4, classify(snapshot(core: 29)).fetch("family"))
     assert_equal(0, classify(snapshot(core: 100)).fetch("family"))
@@ -129,7 +125,7 @@ class MorphologyClassifierTest < Minitest::Test
   private
 
   def classify(input)
-    @classifier.call(input)
+    RubyLens::MorphologyClassifier.new(input).call
   end
 
   def snapshot(core:, modules: 0, tests: 0, dependencies: 0, roots: nil, root_counts: nil, project_name: "Synthetic")

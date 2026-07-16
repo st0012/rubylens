@@ -14,11 +14,17 @@ module RubyLens
       Group = Data.define(:name, :component)
       Result = Data.define(:groups, :method_count)
 
-      def call(graph:, manifest:, package_document_paths: Set.new)
+      def initialize(graph:, manifest:, package_document_paths: Set.new)
+        @graph = graph
+        @manifest = manifest
+        @package_document_paths = package_document_paths
+      end
+
+      def call
         groups = []
         method_count = 0
 
-        spec_documents(graph, manifest, package_document_paths).each do |document, relative|
+        spec_documents.each do |document, relative|
           group_count, example_count = reference_counts(document.method_references)
           method_count += example_count
           component = SourcePath.component_for(relative)
@@ -35,13 +41,13 @@ module RubyLens
 
       private
 
-      def spec_documents(graph, manifest, package_document_paths)
-        graph.documents.filter_map do |document|
+      def spec_documents
+        @graph.documents.filter_map do |document|
           path = SourcePath.from_file_uri(document.uri)
-          next unless path && manifest.workspace_path?(path)
-          next if package_document_paths.include?(path)
+          next unless path && @manifest.workspace_path?(path)
+          next if @package_document_paths.include?(path)
 
-          relative = manifest.relative_workspace_path(path)
+          relative = @manifest.relative_workspace_path(path)
           next unless relative&.end_with?(".rb")
           next unless relative.split(File::SEPARATOR).any? { |segment| SPEC_SEGMENTS.include?(segment) }
 
