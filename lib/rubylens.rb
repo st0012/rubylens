@@ -25,10 +25,10 @@ module RubyLens
   module_function
 
   def generate_report(path: Dir.pwd, output: nil, lockfile: nil)
-    Generator.new.call(path: path, output: output, lockfile: lockfile)
+    Generator.new(path: path, output: output, lockfile: lockfile).call
   end
 
   def generate_showcase(path: Dir.pwd, output: nil, lockfile: nil, details: false)
-    ShowcaseGenerator.new.call(path: path, output: output, lockfile: lockfile, details: details)
+    ShowcaseGenerator.new(path: path, output: output, lockfile: lockfile, details: details).call
   end
 end

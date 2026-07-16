@@ -16,35 +16,39 @@ module RubyLens
     RSPEC_PROXY_PREFIX = "RSpec example group #"
     LEGACY_MORPHOLOGY_ROW = [MorphologyClassifier::SPIRAL, *MorphologyClassifier::DEFAULT_KNOBS].freeze
 
-    def call(model, details: false)
-      details = details == true
+    def initialize(model, details: false)
+      @model = model
+      @details = details == true
+    end
+
+    def call
       showcase = {
         "schema" => "rubylens.showcase.v3",
-        "projectName" => model.fetch("projectName"),
-        "details" => details,
-        "domains" => project_hash(model.fetch("domains"), SIGNAL_FIELDS),
-        "morphology" => morphology_row(model),
-        "namespaces" => model.fetch("namespaces").map { |row| numeric_row(row, 15) },
-        "packages" => model.fetch("packages").map { |row| numeric_row(row, 9) },
-        "dependencySystems" => model.fetch("dependencySystems", []).map { |row| numeric_row(row, 2) },
-        "dependencyStars" => model.fetch("dependencyStars").map { |row| numeric_row(row, 8) },
+        "projectName" => @model.fetch("projectName"),
+        "details" => @details,
+        "domains" => project_hash(@model.fetch("domains"), SIGNAL_FIELDS),
+        "morphology" => morphology_row,
+        "namespaces" => @model.fetch("namespaces").map { |row| numeric_row(row, 15) },
+        "packages" => @model.fetch("packages").map { |row| numeric_row(row, 9) },
+        "dependencySystems" => @model.fetch("dependencySystems", []).map { |row| numeric_row(row, 2) },
+        "dependencyStars" => @model.fetch("dependencyStars").map { |row| numeric_row(row, 8) },
       }
-      return showcase unless details
+      return showcase unless @details
 
       showcase.merge(
-        "totals" => project_hash(model.fetch("totals"), TOTAL_FIELDS),
+        "totals" => project_hash(@model.fetch("totals"), TOTAL_FIELDS),
         "categoryStats" => CATEGORY_FIELDS.to_h do |category|
-          [category, numeric_row(model.fetch("categoryStats").fetch(category), 4)]
+          [category, numeric_row(@model.fetch("categoryStats").fetch(category), 4)]
         end,
-        "pinnedNamespaceAnchors" => pinned_namespace_anchors(model),
-        "annotations" => annotation_projection(model),
+        "pinnedNamespaceAnchors" => pinned_namespace_anchors,
+        "annotations" => annotation_projection,
       )
     end
 
     private
 
-    def morphology_row(model)
-      morphology = model["morphology"]
+    def morphology_row
+      morphology = @model["morphology"]
       return LEGACY_MORPHOLOGY_ROW.dup unless morphology.is_a?(Hash)
 
       knobs = morphology["knobs"]
@@ -67,11 +71,11 @@ module RubyLens
       raise Error, "showcase model rows must contain only numbers"
     end
 
-    def annotation_projection(model)
+    def annotation_projection
       buckets = {
-        "core" => namespace_annotations(model, test: false),
-        "tests" => namespace_annotations(model, test: true),
-        "dependencies" => dependency_annotations(model),
+        "core" => namespace_annotations(test: false),
+        "tests" => namespace_annotations(test: true),
+        "dependencies" => dependency_annotations,
       }
       annotations = []
       offsets = Hash.new(0)
@@ -91,16 +95,16 @@ module RubyLens
       annotations
     end
 
-    def pinned_namespace_anchors(model)
-      names = model.fetch("namespaceNames")
+    def pinned_namespace_anchors
+      names = @model.fetch("namespaceNames")
       names.each_index.select do |index|
         OMITTED_ANNOTATION_NAMES.include?(names.fetch(index))
       end
     end
 
-    def namespace_annotations(model, test:)
-      names = model.fetch("namespaceNames")
-      rows = model.fetch("namespaces")
+    def namespace_annotations(test:)
+      names = @model.fetch("namespaceNames")
+      rows = @model.fetch("namespaces")
       names.each_with_index.filter_map do |name, index|
         row = rows.fetch(index)
         next unless (row.fetch(3) == 1) == test
@@ -117,9 +121,9 @@ module RubyLens
         .map(&:last)
     end
 
-    def dependency_annotations(model)
-      names = model.fetch("packageNames")
-      rows = model.fetch("packages")
+    def dependency_annotations
+      names = @model.fetch("packageNames")
+      rows = @model.fetch("packages")
       names.each_with_index.filter_map do |name, index|
         next unless safe_dependency_name?(name)
 

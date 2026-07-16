@@ -6,8 +6,12 @@ require_relative "../rubylens"
 
 module RubyLens
   class CLI
-    def run(arguments)
-      arguments = arguments.dup
+    def initialize(arguments)
+      @arguments = arguments.dup
+    end
+
+    def run
+      arguments = @arguments.dup
       command = arguments.shift
       return print_version if %w[-v --version version].include?(command)
       return print_help(0) if command.nil? || %w[-h --help help].include?(command)

@@ -5,7 +5,7 @@ require_relative "test_helper"
 class GeneratorTest < Minitest::Test
   def test_generation_pipeline_builds_a_model_and_shared_manifest_warnings
     with_repository do |directory|
-      model, warnings = RubyLens::GenerationPipeline.new.call(root: directory)
+      model, warnings = RubyLens::GenerationPipeline.new(root: directory).call
 
       assert_equal("rubylens.art.v9", model.fetch("schema"))
       assert_equal(0, model.dig("totals", "namespaces"))
@@ -16,7 +16,7 @@ class GeneratorTest < Minitest::Test
 
   def test_default_output_is_root_level_and_locally_excluded
     with_repository do |directory|
-      result = generator.call(path: directory)
+      result = generate(path: directory)
 
       assert_equal(File.join(File.realpath(directory), "rubylens-report.html"), result.output_path)
       assert(RubyLens::ReportWriter.new.rubylens_report?(result.output_path))
@@ -29,7 +29,7 @@ class GeneratorTest < Minitest::Test
       output = File.join(directory, "rubylens-report.html")
       File.write(output, "unrelated private file")
 
-      error = assert_raises(RubyLens::Error) { generator.call(path: directory) }
+      error = assert_raises(RubyLens::Error) { generate(path: directory) }
 
       assert_equal("default report path already exists and is not a RubyLens report", error.message)
       assert_equal("unrelated private file", File.read(output))
@@ -42,7 +42,7 @@ class GeneratorTest < Minitest::Test
       before = File.binread(exclude)
       output = File.join(directory, "custom-report.html")
 
-      result = generator.call(path: directory, output: output)
+      result = generate(path: directory, output: output)
 
       assert_equal(output, result.output_path)
       assert_equal(before, File.binread(exclude))
@@ -59,7 +59,7 @@ class GeneratorTest < Minitest::Test
     end
   end
 
-  def generator
-    RubyLens::Generator.new
+  def generate(**options)
+    RubyLens::Generator.new(**options).call
   end
 end

@@ -23,7 +23,7 @@ class ShowcaseModelTest < Minitest::Test
       "futurePrivateField" => private_value,
     }
 
-    showcase = RubyLens::ShowcaseModel.new.call(model)
+    showcase = RubyLens::ShowcaseModel.new(model).call
     encoded = JSON.generate(showcase)
 
     assert_equal(
@@ -51,8 +51,8 @@ class ShowcaseModelTest < Minitest::Test
 
   def test_annotated_projection_is_safe_balanced_deterministic_and_capped
     model = annotated_model(90)
-    first = RubyLens::ShowcaseModel.new.call(model, details: true)
-    second = RubyLens::ShowcaseModel.new.call(model, details: true)
+    first = RubyLens::ShowcaseModel.new(model, details: true).call
+    second = RubyLens::ShowcaseModel.new(model, details: true).call
     annotations = first.fetch("annotations")
 
     assert_equal(first, second)
@@ -82,7 +82,7 @@ class ShowcaseModelTest < Minitest::Test
     end
     model.fetch("totals")["namespaces"] = model.fetch("namespaces").length
 
-    showcase = RubyLens::ShowcaseModel.new.call(model, details: true)
+    showcase = RubyLens::ShowcaseModel.new(model, details: true).call
 
     assert_equal(4, showcase.fetch("namespaces").length)
     assert_equal([0, 1, 2], showcase.fetch("pinnedNamespaceAnchors"))
@@ -91,7 +91,7 @@ class ShowcaseModelTest < Minitest::Test
   end
 
   def test_only_literal_true_enables_details
-    showcase = RubyLens::ShowcaseModel.new.call(minimal_model, details: "true")
+    showcase = RubyLens::ShowcaseModel.new(minimal_model, details: "true").call
 
     assert_equal(false, showcase.fetch("details"))
     refute(showcase.key?("totals"))
@@ -102,7 +102,7 @@ class ShowcaseModelTest < Minitest::Test
     model = minimal_model
     model.fetch("namespaces").first[4] = "Secret::Namespace"
 
-    error = assert_raises(RubyLens::Error) { RubyLens::ShowcaseModel.new.call(model) }
+    error = assert_raises(RubyLens::Error) { RubyLens::ShowcaseModel.new(model).call }
 
     assert_equal("showcase model rows must contain only numbers", error.message)
   end
@@ -111,7 +111,7 @@ class ShowcaseModelTest < Minitest::Test
     model = minimal_model
     model.delete("morphology")
 
-    showcase = RubyLens::ShowcaseModel.new.call(model)
+    showcase = RubyLens::ShowcaseModel.new(model).call
 
     assert_equal(RubyLens::ShowcaseModel::LEGACY_MORPHOLOGY_ROW, showcase.fetch("morphology"))
   end
@@ -121,7 +121,7 @@ class ShowcaseModelTest < Minitest::Test
     model = minimal_model
     model.fetch("morphology").fetch("knobs")[4] = private_value
 
-    showcase = RubyLens::ShowcaseModel.new.call(model)
+    showcase = RubyLens::ShowcaseModel.new(model).call
 
     assert_equal(RubyLens::ShowcaseModel::LEGACY_MORPHOLOGY_ROW, showcase.fetch("morphology"))
     refute_includes(JSON.generate(showcase), private_value)

@@ -6,7 +6,7 @@ require_relative "test_helper"
 class ShowcaseGeneratorTest < Minitest::Test
   def test_default_output_is_root_level_private_and_locally_excluded
     with_repository do |directory|
-      result = generator.call(path: directory)
+      result = generate(path: directory)
       expected = File.join(File.realpath(directory), "rubylens-showcase.html")
 
       assert_equal(expected, result.output_path)
@@ -24,7 +24,7 @@ class ShowcaseGeneratorTest < Minitest::Test
       output = File.join(directory, "rubylens-showcase.html")
       File.write(output, "unrelated private file")
 
-      error = assert_raises(RubyLens::Error) { generator.call(path: directory) }
+      error = assert_raises(RubyLens::Error) { generate(path: directory) }
 
       assert_equal("default showcase path already exists and is not a RubyLens showcase", error.message)
       assert_equal("unrelated private file", File.read(output))
@@ -37,7 +37,7 @@ class ShowcaseGeneratorTest < Minitest::Test
       before = File.binread(exclude)
       output = File.join(directory, "custom-showcase.html")
 
-      result = generator.call(path: directory, output: output)
+      result = generate(path: directory, output: output)
 
       assert_equal(output, result.output_path)
       assert_equal(before, File.binread(exclude))
@@ -47,7 +47,7 @@ class ShowcaseGeneratorTest < Minitest::Test
 
   def test_details_opt_in_reaches_the_serialized_showcase_model
     with_repository do |directory|
-      result = generator.call(path: directory, details: true)
+      result = generate(path: directory, details: true)
       encoded = File.read(result.output_path).match(/JSON\.parse\(atob\("([^"]+)"\)\)/)[1]
       model = JSON.parse(Base64.strict_decode64(encoded))
 
@@ -65,7 +65,7 @@ class ShowcaseGeneratorTest < Minitest::Test
       File.write(output, '<meta name="rubylens-artifact" content="showcase">')
       system("git", "-C", directory, "add", "rubylens-showcase.html", exception: true)
 
-      error = assert_raises(RubyLens::GitError) { generator.call(path: directory) }
+      error = assert_raises(RubyLens::GitError) { generate(path: directory) }
 
       assert_equal("default showcase path is already tracked by Git", error.message)
       assert_equal('<meta name="rubylens-artifact" content="showcase">', File.read(output))
@@ -81,7 +81,7 @@ class ShowcaseGeneratorTest < Minitest::Test
     end
   end
 
-  def generator
-    RubyLens::ShowcaseGenerator.new
+  def generate(**options)
+    RubyLens::ShowcaseGenerator.new(**options).call
   end
 end

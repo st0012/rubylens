@@ -21,60 +21,61 @@ module RubyLens
         :package_site_keys,
       )
 
-      def index(manifest)
+      def initialize(manifest)
+        @manifest = manifest
         @source_path_cache = {}
         @workspace_location_cache = {}
-        graph = Rubydex::Graph.new(workspace_path: manifest.root.to_s)
-        index_errors = graph.index_all(manifest.files)
-        @indexed_package_document_paths = indexed_package_document_paths(graph, manifest)
+        @indexed_package_document_paths = Set.new
+      end
+
+      def index
+        graph = Rubydex::Graph.new(workspace_path: @manifest.root.to_s)
+        index_errors = graph.index_all(@manifest.files)
+        @indexed_package_document_paths = indexed_package_document_paths(graph)
         graph.resolve
         integrity_failures = graph.check_integrity
-        collected = collect_declarations(graph.declarations, manifest)
-        rspec = RSpecExtractor.new.call(
+        collected = collect_declarations(graph.declarations)
+        rspec = RSpecExtractor.new(
           graph: graph,
-          manifest: manifest,
+          manifest: @manifest,
           package_document_paths: @indexed_package_document_paths,
-        )
+        ).call
         workspace = workspace_namespaces(collected.fetch(:workspace_records), rspec.groups)
-        inbound_references = inbound_workspace_references(graph, manifest, workspace.fetch(:ordinal_by_name))
+        inbound_references = inbound_workspace_references(graph, workspace.fetch(:ordinal_by_name))
         category_stats = collected.fetch(:category_stats)
         category_stats.fetch("tests")[0] += rspec.groups.length
         category_stats.fetch("tests")[2] += rspec.method_count
 
         {
           "schema" => "rubylens.snapshot.v6",
-          "project_name" => project_name(manifest),
+          "project_name" => project_name,
           "components" => workspace.fetch(:component_counts),
           "namespace_names" => workspace.fetch(:namespace_names),
-          "namespaces" => build_workspace_rows(workspace, inbound_references, manifest),
+          "namespaces" => build_workspace_rows(workspace, inbound_references),
           "category_stats" => category_stats,
           "dependency_signal_maxima" => collected.fetch(:dependency_aggregation).signal_maxima,
-          "packages" => build_package_rows(collected.fetch(:dependency_aggregation), manifest),
-          "dependency_systems" => build_dependency_system_rows(manifest),
-          "dependency_warnings" => manifest.respond_to?(:dependency_warnings) ? manifest.dependency_warnings : [],
+          "packages" => build_package_rows(collected.fetch(:dependency_aggregation)),
+          "dependency_systems" => build_dependency_system_rows,
+          "dependency_warnings" => @manifest.respond_to?(:dependency_warnings) ? @manifest.dependency_warnings : [],
           "warning_counts" => {
-            "manifest" => manifest.warnings.length,
+            "manifest" => @manifest.warnings.length,
             "index" => index_errors.length,
             "integrity" => integrity_failures.length,
           },
         }
-      ensure
-        @source_path_cache = nil
-        @workspace_location_cache = nil
-        @indexed_package_document_paths = nil
       end
 
       private
 
-      def collect_declarations(declarations, manifest)
+      def collect_declarations(declarations)
         records = []
         category_stats = { "core" => Array.new(4, 0), "tests" => Array.new(4, 0) }
-        aggregation = Model::DependencyAggregation.new(package_count: manifest.packages.length)
+        aggregation = Model::DependencyAggregation.new(package_count: @manifest.packages.length)
 
         declarations.each do |declaration|
           next unless model_eligible_declaration?(declaration)
 
-          summary = summarize_definitions(declaration, manifest)
+          summary = summarize_definitions(declaration)
           unless summary.canonical_site_keys.empty?
             records << [
               declaration,
@@ -90,7 +91,7 @@ module RubyLens
         { workspace_records: records, category_stats:, dependency_aggregation: aggregation }
       end
 
-      def summarize_definitions(declaration, manifest)
+      def summarize_definitions(declaration)
         namespace = namespace?(declaration)
         workspace_count = 0
         workspace_relatives = []
@@ -100,16 +101,16 @@ module RubyLens
 
         declaration.definitions.each do |definition|
           location = definition.location
-          if workspace_location?(location, manifest)
+          if workspace_location?(location)
             workspace_count += 1
-            relative = manifest.relative_workspace_path(source_path(location.uri))
+            relative = @manifest.relative_workspace_path(source_path(location.uri))
             workspace_relatives << relative if relative
             if namespace && canonical_namespace_definition?(declaration, definition)
               canonical_site_keys << site_key(location)
               canonical_relatives << relative if relative
             end
           end
-          package_index = package_index_for_location(location, manifest)
+          package_index = package_index_for_location(location)
           (package_site_keys[package_index] ||= []) << site_key(location) if package_index
         end
 
@@ -139,14 +140,13 @@ module RubyLens
         }
       end
 
-      def build_workspace_rows(workspace, inbound_references, manifest)
+      def build_workspace_rows(workspace, inbound_references)
         rows = workspace.fetch(:records).each_with_index.map do |(declaration, sites, scope, component), index|
           descendants = declaration.descendants.count do |descendant|
             descendant.name != declaration.name && workspace.fetch(:ordinal_by_name).key?(descendant.name)
           end
           member_count, ruby_counts, instance_variable_count = member_statistics(
             declaration,
-            manifest,
             count_instance_variables: declaration.is_a?(Rubydex::Class) && scope != 1,
           )
           [
@@ -175,9 +175,9 @@ module RubyLens
         ]
       end
 
-      def build_package_rows(aggregation, manifest)
+      def build_package_rows(aggregation)
         aggregates = aggregation.packages
-        manifest.packages.each_with_index.map do |package, index|
+        @manifest.packages.each_with_index.map do |package, index|
           aggregate = aggregates.fetch(index)
           {
             "name" => package.name,
@@ -190,10 +190,10 @@ module RubyLens
         end
       end
 
-      def build_dependency_system_rows(manifest)
-        return [] unless manifest.respond_to?(:dependency_systems)
+      def build_dependency_system_rows
+        return [] unless @manifest.respond_to?(:dependency_systems)
 
-        manifest.dependency_systems.map do |system|
+        @manifest.dependency_systems.map do |system|
           {
             "id" => system.id,
             "package_indexes" => system.package_indexes,
@@ -225,29 +225,29 @@ module RubyLens
         )
       end
 
-      def inbound_workspace_references(graph, manifest, ordinal_by_name)
+      def inbound_workspace_references(graph, ordinal_by_name)
         graph.constant_references.each_with_object(Hash.new(0)) do |reference, counts|
           next unless reference.is_a?(Rubydex::ResolvedConstantReference)
 
           ordinal = ordinal_by_name[reference.declaration.name]
           next unless ordinal
 
-          counts[ordinal] += 1 if workspace_location?(reference.location, manifest)
+          counts[ordinal] += 1 if workspace_location?(reference.location)
         rescue StandardError
           next
         end
       end
 
-      def package_index_for_location(location, manifest)
+      def package_index_for_location(location)
         path = source_path(location.uri)
         return nil unless path
-        return nil unless @indexed_package_document_paths&.include?(path)
+        return nil unless @indexed_package_document_paths.include?(path)
 
-        manifest.package_index_for(path)
+        @manifest.package_index_for(path)
       end
 
-      def indexed_package_document_paths(graph, manifest)
-        audited = manifest.packages.flat_map(&:files).to_set
+      def indexed_package_document_paths(graph)
+        audited = @manifest.packages.flat_map(&:files).to_set
         graph.documents.each_with_object(Set.new) do |document, paths|
           path = source_path(document.uri)
           paths << path if path && audited.include?(path)
@@ -258,7 +258,7 @@ module RubyLens
       # workspace member count, the method/constant construct counts, and the
       # instance-variable count that previously took three walks each re-reading
       # every member's definitions.
-      def member_statistics(declaration, manifest, count_instance_variables:)
+      def member_statistics(declaration, count_instance_variables:)
         member_count = 0
         instance_variable_count = 0
         ruby_counts = Array.new(4, 0)
@@ -269,7 +269,7 @@ module RubyLens
         walk = lambda do |members, direct|
           members.each do |member|
             next unless seen_names.add?(member.name)
-            next unless member.definitions.any? { |definition| workspace_location?(definition.location, manifest) }
+            next unless member.definitions.any? { |definition| workspace_location?(definition.location) }
 
             member_count += 1
             construct_index = ruby_construct_index(member)
@@ -295,13 +295,12 @@ module RubyLens
         stats.fetch(category)[construct_index] += 1
       end
 
-      def workspace_location?(location, manifest)
+      def workspace_location?(location)
         uri = location.uri
-        @workspace_location_cache ||= {}
         return @workspace_location_cache[uri] if @workspace_location_cache.key?(uri)
 
         path = source_path(uri)
-        @workspace_location_cache[uri] = path ? manifest.workspace_path?(path) : false
+        @workspace_location_cache[uri] = path ? @manifest.workspace_path?(path) : false
       rescue StandardError
         false
       end
@@ -360,7 +359,6 @@ module RubyLens
       end
 
       def source_path(uri_string)
-        @source_path_cache ||= {}
         return @source_path_cache[uri_string] if @source_path_cache.key?(uri_string)
 
         @source_path_cache[uri_string] = SourcePath.from_file_uri(uri_string)
@@ -380,8 +378,8 @@ module RubyLens
         0
       end
 
-      def project_name(manifest)
-        basename = manifest.root.basename.to_s
+      def project_name
+        basename = @manifest.root.basename.to_s
         return "IRB" if basename.casecmp("irb").zero?
         return "RDoc" if basename.casecmp("rdoc").zero?
 

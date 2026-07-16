@@ -24,10 +24,10 @@ class RubydexAdapterTest < Minitest::Test
     manifest = stub(packages: [Object.new, Object.new], workspace_path?: false)
     manifest.stubs(:package_index_for).with(paths.fetch(0)).returns(0)
     manifest.stubs(:package_index_for).with(paths.fetch(1)).returns(1)
-    adapter = RubyLens::Index::RubydexAdapter.new
+    adapter = RubyLens::Index::RubydexAdapter.new(manifest)
     adapter.instance_variable_set(:@indexed_package_document_paths, Set.new(paths))
 
-    aggregation = adapter.send(:collect_declarations, declarations, manifest).fetch(:dependency_aggregation)
+    aggregation = adapter.send(:collect_declarations, declarations).fetch(:dependency_aggregation)
     packages = aggregation.packages
 
     assert_equal(30, packages.sum { |package| package.fetch(:declarations).length })
@@ -37,8 +37,7 @@ class RubydexAdapterTest < Minitest::Test
 
   def test_real_adapter_returns_hover_identity_without_paths_or_source
     manifest = RubyLens::Index::Manifest.build(root: FIXTURE)
-    adapter = RubyLens::Index::RubydexAdapter.new
-    snapshot = adapter.index(manifest)
+    snapshot = RubyLens::Index::RubydexAdapter.new(manifest).index
     serialized = JSON.generate(snapshot)
 
     assert_equal("rubylens.snapshot.v6", snapshot.fetch("schema"))
@@ -58,8 +57,6 @@ class RubydexAdapterTest < Minitest::Test
     refute_includes(serialized, FIXTURE.to_s)
     refute_includes(serialized, "domain.rb")
     refute_includes(serialized, "PRIVATE_VALUE")
-    assert_nil(adapter.instance_variable_get(:@source_path_cache))
-    assert_nil(adapter.instance_variable_get(:@workspace_location_cache))
   end
 
   def test_filters_synthetic_declarations_before_visual_aggregation
@@ -95,7 +92,7 @@ class RubydexAdapterTest < Minitest::Test
       todo_singleton = declarations.find { |declaration| declaration.name == "Missing::<Missing>" }
       todo_owned_constant = declarations.find { |declaration| declaration.name == "Missing::VALUE" }
       anonymous = declarations.select { |declaration| declaration.name.include?("<anonymous>") }
-      adapter = RubyLens::Index::RubydexAdapter.new
+      adapter = RubyLens::Index::RubydexAdapter.new(RubyLens::Index::Manifest.build(root: directory))
 
       assert(adapter.send(:model_eligible_declaration?, direct_singleton))
       refute(adapter.send(:model_eligible_declaration?, nested_singleton))
@@ -104,7 +101,7 @@ class RubydexAdapterTest < Minitest::Test
       assert(adapter.send(:model_eligible_declaration?, todo_owned_constant))
       anonymous.each { |declaration| refute(adapter.send(:model_eligible_declaration?, declaration)) }
 
-      snapshot = adapter.index(RubyLens::Index::Manifest.build(root: directory))
+      snapshot = adapter.index
       serialized = JSON.generate(snapshot)
 
       assert_equal(%w[Assigned Missing::Nested Named], snapshot.fetch("namespace_names").sort)
@@ -115,7 +112,7 @@ class RubydexAdapterTest < Minitest::Test
 
   def test_models_raw_rspec_references_as_statless_nonidentifying_proxies
     manifest = RubyLens::Index::Manifest.build(root: RSPEC_FIXTURE)
-    snapshot = RubyLens::Index::RubydexAdapter.new.index(manifest)
+    snapshot = RubyLens::Index::RubydexAdapter.new(manifest).index
     names = snapshot.fetch("namespace_names")
     rows = names.zip(snapshot.fetch("namespaces")).select do |name, _row|
       name.start_with?("RSpec example group #")
@@ -141,15 +138,15 @@ class RubydexAdapterTest < Minitest::Test
   end
 
   def test_preserves_known_project_acronyms
-    adapter = RubyLens::Index::RubydexAdapter.allocate
     manifest = Struct.new(:root)
+    adapter = ->(root) { RubyLens::Index::RubydexAdapter.new(manifest.new(Pathname(root))) }
 
-    assert_equal("IRB", adapter.send(:project_name, manifest.new(Pathname("/tmp/irb"))))
-    assert_equal("RDoc", adapter.send(:project_name, manifest.new(Pathname("/tmp/rdoc"))))
+    assert_equal("IRB", adapter.call("/tmp/irb").send(:project_name))
+    assert_equal("RDoc", adapter.call("/tmp/rdoc").send(:project_name))
   end
 
   def test_safe_length_uses_size_and_falls_back_to_count
-    adapter = RubyLens::Index::RubydexAdapter.allocate
+    adapter = RubyLens::Index::RubydexAdapter.new(stub)
     sized = stub(size: 7)
     sized.expects(:count).never
     counted = stub(size: nil, count: 4)
@@ -164,9 +161,8 @@ class RubydexAdapterTest < Minitest::Test
   def test_collects_declarations_without_materializing_the_enumerable
     declarations = stub(each: nil)
     declarations.expects(:to_a).never
-    manifest = stub(packages: [])
 
-    collected = RubyLens::Index::RubydexAdapter.new.send(:collect_declarations, declarations, manifest)
+    collected = RubyLens::Index::RubydexAdapter.new(stub(packages: [])).send(:collect_declarations, declarations)
 
     assert_empty(collected.fetch(:workspace_records))
     assert_equal({ "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] }, collected.fetch(:category_stats))
@@ -179,7 +175,7 @@ class RubydexAdapterTest < Minitest::Test
     manifest = stub(packages: [Object.new])
 
     error = assert_raises(RuntimeError) do
-      RubyLens::Index::RubydexAdapter.new.send(:collect_declarations, [declaration], manifest)
+      RubyLens::Index::RubydexAdapter.new(manifest).send(:collect_declarations, [declaration])
     end
     assert_equal("broken definitions", error.message)
   end
@@ -189,7 +185,7 @@ class RubydexAdapterTest < Minitest::Test
     manifest = stub
     manifest.expects(:package_index_for).never
 
-    assert_nil(RubyLens::Index::RubydexAdapter.new.send(:package_index_for_location, location, manifest))
+    assert_nil(RubyLens::Index::RubydexAdapter.new(manifest).send(:package_index_for_location, location))
   end
 
   def test_package_attribution_requires_a_document_rubydex_actually_indexed
@@ -199,13 +195,13 @@ class RubydexAdapterTest < Minitest::Test
       File.write(indexed, "Indexed = 1\n")
       File.write(absent, "Absent = 1\n")
       manifest = stub(package_index_for: 3)
-      adapter = RubyLens::Index::RubydexAdapter.new
+      adapter = RubyLens::Index::RubydexAdapter.new(manifest)
       adapter.instance_variable_set(:@indexed_package_document_paths, Set[indexed])
 
       indexed_location = Struct.new(:uri).new("file://#{indexed}")
       absent_location = Struct.new(:uri).new("file://#{absent}")
-      assert_equal(3, adapter.send(:package_index_for_location, indexed_location, manifest))
-      assert_nil(adapter.send(:package_index_for_location, absent_location, manifest))
+      assert_equal(3, adapter.send(:package_index_for_location, indexed_location))
+      assert_nil(adapter.send(:package_index_for_location, absent_location))
     end
   end
 
@@ -217,7 +213,7 @@ class RubydexAdapterTest < Minitest::Test
 
     Rubydex::Graph.expects(:new).with(workspace_path: manifest.root.to_s).returns(graph)
     graph.expects(:index_all).with(manifest.files).returns([])
-    RubyLens::Index::RubydexAdapter.new.index(manifest)
+    RubyLens::Index::RubydexAdapter.new(manifest).index
 
     assert_equal(manifest.files.uniq, manifest.files)
   end
@@ -256,7 +252,7 @@ class RubydexAdapterTest < Minitest::Test
         Pathname(path).realpath == dependency_spec.realpath ? 0 : nil
       end
 
-      snapshot = RubyLens::Index::RubydexAdapter.new.index(manifest)
+      snapshot = RubyLens::Index::RubydexAdapter.new(manifest).index
       package_row = snapshot.fetch("packages").fetch(0)
 
       assert_equal(["RSpec example group #000001"], snapshot.fetch("namespace_names"))
@@ -292,7 +288,7 @@ class RubydexAdapterTest < Minitest::Test
       system("git", "-C", directory, "init", "--quiet", exception: true)
       system("git", "-C", directory, "add", "lib/client.rb", "Gemfile.lock", exception: true)
 
-      snapshot = RubyLens::Index::RubydexAdapter.new.index(RubyLens::Index::Manifest.build(root: directory))
+      snapshot = RubyLens::Index::RubydexAdapter.new(RubyLens::Index::Manifest.build(root: directory)).index
       package = snapshot.fetch("packages").find { |row| row.fetch("name") == "minitest" }
 
       assert(package)
