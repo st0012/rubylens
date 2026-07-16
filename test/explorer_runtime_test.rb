@@ -221,8 +221,6 @@ class ExplorerRuntimeTest < Minitest::Test
     assert_includes(explorer_renderer, "a_alpha * emphasis) * u_exposure")
     assert_includes(explorer_renderer, "gl.uniform1f(pointUniforms.exposure, explorerExposureForZoom(zoom))")
 
-    showcase_fallback = RUNTIME.match(/function renderShowcaseFallback\(\) \{(?<body>.*?)^    \}/m)[:body]
-    refute_includes(showcase_fallback, "explorerExposureForZoom")
     refute_includes(RUNTIME.match(/function createShowcaseRenderer\(\) \{(?<body>.*?)^    \}/m)[:body], "explorerExposureForZoom")
   end
 
@@ -308,7 +306,7 @@ class ExplorerRuntimeTest < Minitest::Test
     assert_includes(runtime_function("hitTest"), "return explorerRenderer ? hitTestProjected(x, y) : null")
     assert_includes(runtime_function("dependencyPackageAt"), "if (!explorerRenderer) return null")
 
-    assert_includes(RUNTIME, 'document.documentElement.dataset.showcaseRenderer = "canvas2d-fallback"')
+    assert_includes(RUNTIME, 'document.documentElement.dataset.showcaseRenderer = "unavailable"')
     assert_operator(RUNTIME.index("const dependencyRubyCounts"), :<, RUNTIME.index("model.dependencyStars = []"))
   end
 

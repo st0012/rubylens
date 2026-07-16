@@ -7,41 +7,26 @@ class RubydexAdapterTest < Minitest::Test
 
   RSPEC_FIXTURE = ROOT.join("test/fixtures/rspec_repo")
 
-  def test_dependency_rows_are_bounded_by_default_and_can_be_unlimited
-    bounded = RubyLens::Index::RubydexAdapter.new
-    unlimited = RubyLens::Index::RubydexAdapter.new(dependency_row_limit: nil)
-
-    assert_equal(18_000, bounded.instance_variable_get(:@dependency_row_limit))
-    assert_nil(unlimited.instance_variable_get(:@dependency_row_limit))
-  end
-
-  def test_configured_dependency_row_limit_reaches_streaming_aggregation
+  def test_collects_every_eligible_dependency_row
     declarations = 30.times.map do |index|
       [index % 2, [index % 2, index, 1, index % 3, index % 5, index % 7, index % 11], index % 4]
     end
     manifest = Struct.new(:packages).new([Object.new, Object.new])
-    collect = lambda do |limit|
-      adapter = RubyLens::Index::RubydexAdapter.new(dependency_row_limit: limit)
-      adapter.define_singleton_method(:model_eligible_declaration?) { |_declaration| true }
-      adapter.define_singleton_method(:namespace?) { |_declaration| false }
-      adapter.define_singleton_method(:collect_category_stat) { |_stats, _declaration, _manifest| }
-      adapter.define_singleton_method(:collect_dependency_declaration) do |aggregation, declaration, _manifest|
-        package_index, row, construct_index = declaration
-        aggregation.add(package_index:, row:, construct_index:, sample_key: "Declaration#{row[1]}")
-      end
-      adapter.send(:collect_declarations, declarations, manifest).fetch(:dependency_aggregation)
+    adapter = RubyLens::Index::RubydexAdapter.new
+    adapter.define_singleton_method(:model_eligible_declaration?) { |_declaration| true }
+    adapter.define_singleton_method(:namespace?) { |_declaration| false }
+    adapter.define_singleton_method(:collect_category_stat) { |_stats, _declaration, _manifest| }
+    adapter.define_singleton_method(:collect_dependency_declaration) do |aggregation, declaration, _manifest|
+      package_index, row, construct_index = declaration
+      aggregation.add(package_index:, row:, construct_index:)
     end
 
-    bounded = collect.call(12)
-    unlimited = collect.call(nil)
+    aggregation = adapter.send(:collect_declarations, declarations, manifest).fetch(:dependency_aggregation)
+    packages = aggregation.packages
 
-    assert_equal(12, bounded.packages.sum { |package| package.fetch(:declarations).length })
-    assert_equal(30, unlimited.packages.sum { |package| package.fetch(:declarations).length })
-    assert_equal(
-      unlimited.packages.map { |package| package.fetch(:declaration_count) },
-      bounded.packages.map { |package| package.fetch(:declaration_count) },
-    )
-    assert_equal(unlimited.signal_maxima, bounded.signal_maxima)
+    assert_equal(30, packages.sum { |package| package.fetch(:declarations).length })
+    assert_equal([15, 15], packages.map { |package| package.fetch(:declaration_count) })
+    assert_equal([29, 1, 2, 4, 6, 10], aggregation.signal_maxima)
   end
 
   def test_real_adapter_returns_hover_identity_without_paths_or_source

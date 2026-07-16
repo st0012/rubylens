@@ -5,6 +5,7 @@
     const interactiveMode = !showcaseMode;
     const canvas = document.getElementById("cosmos");
     const showcaseStage = document.getElementById("showcase-stage");
+    const showcaseStatus = document.getElementById("showcase-status");
     const showcaseAnnotation = document.getElementById("cinema-annotation");
     const showcaseAnnotationKind = showcaseAnnotation?.querySelector(".cinema-annotation-kind");
     const showcaseAnnotationName = showcaseAnnotation?.querySelector(".cinema-annotation-name");
@@ -31,7 +32,7 @@
       dependencies: { ancestorDepth: .12, definitionSites: .35, reopenings: .2, descendants: .32, references: .48, members: .4 },
     };
     let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedSystemIndex = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, showcaseRenderer = null, showcaseAnnotationSlot = -1, activeShowcaseAnnotation = null;
-    const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35, SHOWCASE_POINT_LIMIT = 50_000;
+    const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35;
     const CORE_SCALE_BASELINE = 3_000;
     const MORPHOLOGY_FAMILY = Object.freeze({ elliptical: 0, lenticular: 1, spiral: 2, barredSpiral: 3, irregular: 4 });
     const MORPHOLOGY_FAMILY_LABELS = Object.freeze(["Elliptical galaxy", "Lenticular galaxy", "Spiral galaxy", "Barred spiral galaxy", "Irregular galaxy"]);
@@ -139,7 +140,6 @@
     let drifting = driftRequested && !reducedMotionQuery.matches;
     const colours = { core: [244, 82, 132], tests: [87, 204, 255], dependencies: [255, 184, 77] };
     const whiteHotColour = [255, 248, 244];
-    const whiteHotRgb = whiteHotColour.join(",");
     const glslVec3 = rgb => `vec3(${rgb.map(channel => channel.toFixed(1)).join(", ")})`;
     const colourStyles = Object.fromEntries(Object.entries(colours).map(([category, rgb]) => [category, `rgb(${rgb.join(",")})`]));
     const projectionScratch = [0, 0, 0];
@@ -518,31 +518,7 @@
       return { points, interactivePoints, dependencyHubs, packageHubs, systemHubs };
     }
     const { points, interactivePoints, dependencyHubs, packageHubs, systemHubs } = buildPoints();
-    function showcasePointSample() {
-      if (!showcaseMode || points.length <= SHOWCASE_POINT_LIMIT) return points;
-      const rank = point => [hash(point.seed, 73), point.seed, point];
-      const sample = (candidates, limit) => candidates.map(rank)
-        .sort((left, right) => left[0] - right[0] || left[1] - right[1])
-        .slice(0, limit)
-        .map(candidate => candidate[2]);
-      const pinned = showcaseDetails ? Array.from(showcasePointsByAnchor.values()) : [];
-      const pinnedPoints = new Set(pinned);
-      const hubs = points.filter(point => point.hub && !pinnedPoints.has(point));
-      const availableAfterPins = Math.max(0, SHOWCASE_POINT_LIMIT - pinned.length);
-      if (hubs.length >= availableAfterPins) {
-        return sample(hubs, availableAfterPins).concat(pinned);
-      }
-      const availableAfterHubs = Math.max(0, availableAfterPins - hubs.length);
-      const unpinnedStars = points.filter(point => !point.hub && !pinnedPoints.has(point));
-      const dependencyStars = unpinnedStars.filter(point => point.category === "dependencies");
-      if (dependencyStars.length >= availableAfterHubs) {
-        return sample(dependencyStars, availableAfterHubs).concat(hubs, pinned);
-      }
-      const namespacePoints = unpinnedStars.filter(point => point.category !== "dependencies");
-      const availableAfterDependencies = Math.max(0, availableAfterHubs - dependencyStars.length);
-      return sample(namespacePoints, availableAfterDependencies).concat(dependencyStars, hubs, pinned);
-    }
-    const renderPoints = showcasePointSample();
+    const renderPoints = points;
     const totals = model.totals || {
       namespaces: model.namespaces.length,
       packages: model.packages.length,
@@ -589,11 +565,16 @@
 
     function updateGalaxySummary() {
       const summary = document.getElementById("galaxy-summary");
-      if (document.documentElement.dataset.explorerRenderer === "unavailable") {
+      const rendererUnavailable = showcaseMode
+        ? document.documentElement.dataset.showcaseRenderer === "unavailable"
+        : document.documentElement.dataset.explorerRenderer === "unavailable";
+      if (rendererUnavailable) {
         summary.textContent = `${MORPHOLOGY_FAMILY_LABELS[morphology.family]} · WebGL2 required`;
         return;
       }
-      summary.textContent = `${MORPHOLOGY_FAMILY_LABELS[morphology.family]} - ${renderPoints.length.toLocaleString("en-US")} ${renderPoints.length === 1 ? "star" : "stars"}`;
+      summary.textContent = showcaseMode
+        ? `${MORPHOLOGY_FAMILY_LABELS[morphology.family]} · ${renderPoints.length.toLocaleString("en-US")} ${renderPoints.length === 1 ? "scene point" : "scene points"}`
+        : `${MORPHOLOGY_FAMILY_LABELS[morphology.family]} - ${renderPoints.length.toLocaleString("en-US")} ${renderPoints.length === 1 ? "star" : "stars"}`;
     }
 
     function disableExplorerControls() {
@@ -646,6 +627,32 @@
       updateGalaxySummary();
       populateWarningDisclosure();
       if (hadInteractiveFocus) document.getElementById("warning-summary").focus({ preventScroll: true });
+    }
+
+    function markShowcaseUnavailable(reason, error = null) {
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      animationFrame = 0;
+      showcaseRenderer = null;
+      showcaseStartedAt = null;
+      showcaseAnnotationSlot = -1;
+      activeShowcaseAnnotation = null;
+      hideShowcaseAnnotation();
+      if (showcaseAnnotation) showcaseAnnotation.hidden = true;
+      canvas.hidden = true;
+      canvas.setAttribute("aria-label", "Showcase artwork unavailable because WebGL2 is required.");
+      if (showcaseStatus) {
+        showcaseStatus.textContent = "WebGL2 is required to render this complete Showcase.";
+        showcaseStatus.hidden = false;
+      }
+      document.documentElement.dataset.showcaseRenderer = "unavailable";
+      document.documentElement.dataset.showcaseUnavailableReason = reason;
+      plottedDependencyDeclarations = 0;
+      document.documentElement.dataset.plottedDependencyDeclarations = String(plottedDependencyDeclarations);
+      document.documentElement.dataset.plottedScenePoints = "0";
+      document.documentElement.dataset.showcaseMotion = "unavailable";
+      document.documentElement.dataset.showcaseReady = "true";
+      if (error) document.documentElement.dataset.showcaseRendererError = error.message;
+      updateGalaxySummary();
     }
     const renderedShowcaseAnnotations = showcaseAnnotationData.map(annotation => {
       const point = showcasePointsByAnchor.get(showcaseAnnotationKey(annotation.category, annotation.anchor));
@@ -705,12 +712,7 @@
     }
 
     function createShowcaseRenderer() {
-      const liveCanvas = document.createElement("canvas");
-      liveCanvas.id = "showcase-cosmos";
-      liveCanvas.setAttribute("role", "img");
-      liveCanvas.setAttribute("aria-label", canvas.getAttribute("aria-label") || "Autonomous stellar artwork of a Ruby codebase.");
-      canvas.insertAdjacentElement("afterend", liveCanvas);
-      const gl = liveCanvas.getContext("webgl2", {
+      const gl = canvas.getContext("webgl2", {
         alpha: false,
         antialias: true,
         depth: false,
@@ -719,8 +721,14 @@
         preserveDrawingBuffer: false,
       });
       if (!gl) {
-        liveCanvas.remove();
-        document.documentElement.dataset.showcaseRenderer = "canvas2d-fallback";
+        document.documentElement.dataset.showcaseUnavailableReason = "webgl2-unavailable";
+        return null;
+      }
+      // Largest sprite is an unexpanded hub glow: radius 5.2 * 3.4 CSS pixels.
+      const maxSpriteCssSize = 5.2 * 3.4 * 2 + 2;
+      const pointSizeRange = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE);
+      if (pointSizeRange[1] < maxSpriteCssSize) {
+        document.documentElement.dataset.showcaseUnavailableReason = "webgl2-point-size-range";
         return null;
       }
 
@@ -869,16 +877,18 @@
         deepDetail: gl.getUniformLocation(pointProgram, "u_deepDetail"),
         pass: gl.getUniformLocation(pointProgram, "u_pass"),
       };
-      const pointSizeRange = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE);
+      canvas.addEventListener("webglcontextlost", () => {
+        markShowcaseUnavailable("webgl2-context-lost");
+      });
+
       document.documentElement.dataset.showcaseRenderer = "webgl2";
       document.documentElement.dataset.pointSizeRange = `${pointSizeRange[0]},${pointSizeRange[1]}`;
-      canvas.style.display = "none";
 
       return Object.freeze({
         resize(viewportWidth, viewportHeight) {
-          liveCanvas.width = Math.round(viewportWidth);
-          liveCanvas.height = Math.round(viewportHeight);
-          gl.viewport(0, 0, liveCanvas.width, liveCanvas.height);
+          canvas.width = Math.round(viewportWidth);
+          canvas.height = Math.round(viewportHeight);
+          gl.viewport(0, 0, canvas.width, canvas.height);
         },
         render() {
           const deepDetail = clamp(Math.log2(Math.max(1, zoom)) / 5, 0, 1);
@@ -915,14 +925,24 @@
       });
     }
 
+    let showcaseRendererError = null;
     if (showcaseMode) {
       try {
         showcaseRenderer = createShowcaseRenderer();
       } catch (error) {
-        document.getElementById("showcase-cosmos")?.remove();
-        canvas.style.display = "";
-        document.documentElement.dataset.showcaseRenderer = "canvas2d-fallback";
-        document.documentElement.dataset.showcaseRendererError = error.message;
+        showcaseRendererError = error;
+        document.documentElement.dataset.showcaseUnavailableReason = "webgl2-initialization-error";
+      }
+      if (showcaseRenderer) {
+        document.documentElement.dataset.dependencySampling = String(embeddedDependencyDeclarations < exactDependencyDeclarations);
+        document.documentElement.dataset.embeddedDependencySampling = String(embeddedDependencyDeclarations < exactDependencyDeclarations);
+        document.documentElement.dataset.plottedDependencyDeclarations = String(embeddedDependencyDeclarations);
+        document.documentElement.dataset.plottedScenePoints = String(renderPoints.length);
+      } else {
+        markShowcaseUnavailable(
+          document.documentElement.dataset.showcaseUnavailableReason || "webgl2-unavailable",
+          showcaseRendererError,
+        );
       }
     }
 
@@ -1204,7 +1224,7 @@
         );
       }
     }
-    const context = canvas.getContext("2d", { alpha: Boolean(explorerRenderer) });
+    const context = interactiveMode ? canvas.getContext("2d", { alpha: Boolean(explorerRenderer) }) : null;
     const directGemCount = model.packages.filter(row => row[1] === 0).length;
     const transitiveGemCount = totals.packages - directGemCount;
     const allRubyMetricIndexes = [0, 1, 2, 3];
@@ -2186,15 +2206,10 @@
         width = SHOWCASE_PRESET.stageWidth;
         height = SHOWCASE_PRESET.stageHeight;
         if (showcaseRenderer) showcaseRenderer.resize(width, height);
-        else {
-          canvas.width = width;
-          canvas.height = height;
-          context.setTransform(1, 0, 0, 1, 0, 0);
-        }
         fitShowcaseStage();
         updateSceneViewport();
         if (reducedMotionQuery.matches) applyShowcaseCamera(0);
-        requestRender();
+        if (showcaseRenderer) requestRender();
         return;
       }
       dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -2364,58 +2379,10 @@
       context.globalCompositeOperation = "source-over";
     }
 
-    function renderShowcaseFallback() {
-      context.globalCompositeOperation = "source-over";
-      context.fillStyle = "#03040a";
-      context.fillRect(0, 0, width, height);
-      const vignette = context.createRadialGradient(sceneCenterX, sceneCenterY, 0, sceneCenterX, sceneCenterY, Math.max(width, height) * .72);
-      vignette.addColorStop(0, `rgba(30,16,45,${Math.min(.5, .18 * SHOWCASE_PRESET.backgroundGlowPercent / 100)})`);
-      vignette.addColorStop(1, "rgba(0,0,0,.6)");
-      context.fillStyle = vignette;
-      context.fillRect(0, 0, width, height);
-      context.globalCompositeOperation = "lighter";
-      const matrix = viewMatrix();
-      const deepDetail = clamp(Math.log2(Math.max(1, zoom)) / 5, 0, 1);
-      for (const point of renderPoints) {
-        const projected = project(point, matrix);
-        if (!projected) continue;
-        const [x, y, perspective] = projected;
-        if (x < -20 || x > sceneRight + 20 || y < -20 || y > sceneBottom + 20) continue;
-        const dependencyStar = point.category === "dependencies" && !point.hub;
-        const sizeScale = dependencyStar ? SHOWCASE_DEPENDENCY_PRESET.starSizeScale : 1;
-        const alphaScale = dependencyStar ? SHOWCASE_DEPENDENCY_PRESET.starAlphaScale : 1;
-        const size = clamp(point.sizeFactor * sizeScale * perspective, .35, point.maxSize);
-        const alpha = clamp(point.alphaBase * alphaScale, 0, 1) * SHOWCASE_PRESET.starBrightnessPercent / 100;
-        const colour = colours[point.category];
-        if (size > 1.35) {
-          const glowScale = (3.4 - deepDetail * 1.3) * (.75 + .25 * SHOWCASE_PRESET.pointGlowPercent / 100);
-          context.beginPath();
-          context.arc(x, y, size * glowScale, 0, Math.PI * 2);
-          context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${alpha * .055 * SHOWCASE_PRESET.pointGlowPercent / 100})`;
-          context.fill();
-        }
-        context.fillStyle = `rgba(${colour[0]},${colour[1]},${colour[2]},${alpha})`;
-        if (size < .85) context.fillRect(x, y, 1, 1);
-        else {
-          context.beginPath();
-          context.arc(x, y, size, 0, Math.PI * 2);
-          context.fill();
-        }
-        if (size > 1.1) {
-          context.beginPath();
-          context.arc(x, y, Math.max(.45 + deepDetail * .25, size * (.24 + deepDetail * .06)), 0, Math.PI * 2);
-          context.fillStyle = `rgba(${whiteHotRgb},${Math.min(.9, alpha * 1.25)})`;
-          context.fill();
-        }
-      }
-      context.globalCompositeOperation = "source-over";
-    }
-
     function render(timestamp) {
       animationFrame = 0;
       if (showcaseMode) {
         if (showcaseRenderer) showcaseRenderer.render();
-        else renderShowcaseFallback();
         return;
       }
       if (!explorerRenderer) return;
@@ -2526,12 +2493,14 @@
     }
 
     function renderShowcase(timestamp) {
+      if (!showcaseRenderer) return;
       showcaseStartedAt ??= timestamp;
       const frameCount = SHOWCASE_PRESET.targetFps * SHOWCASE_PRESET.durationMs / 1000;
       const rawProgress = ((timestamp - showcaseStartedAt) % SHOWCASE_PRESET.durationMs) / SHOWCASE_PRESET.durationMs;
       const progress = Math.floor(rawProgress * frameCount) / frameCount;
       applyShowcaseCamera(progress);
       render(timestamp);
+      if (!showcaseRenderer) return;
       if (showcaseDetails) updateShowcaseAnnotation(timestamp);
       document.documentElement.dataset.showcaseReady = "true";
       if (!reducedMotionQuery.matches) animationFrame = requestAnimationFrame(renderShowcase);
@@ -2543,6 +2512,13 @@
       showcaseStartedAt = null;
       showcaseAnnotationSlot = -1;
       activeShowcaseAnnotation = null;
+      if (!showcaseRenderer) {
+        if (showcaseAnnotation) showcaseAnnotation.hidden = true;
+        hideShowcaseAnnotation();
+        document.documentElement.dataset.showcaseMotion = "unavailable";
+        document.documentElement.dataset.showcaseReady = "true";
+        return;
+      }
       if (reducedMotionQuery.matches) {
         if (showcaseAnnotation) showcaseAnnotation.hidden = true;
         hideShowcaseAnnotation();
@@ -2775,7 +2751,6 @@
       document.title = `${model.projectName} · RubyLens showcase`;
       const showcaseLabel = `Autonomous stellar artwork of ${model.projectName}, completing one slow rotation each minute.`;
       canvas.setAttribute("aria-label", showcaseLabel);
-      document.getElementById("showcase-cosmos")?.setAttribute("aria-label", showcaseLabel);
       populateShowcaseStats();
       reducedMotionQuery.addEventListener("change", startShowcase);
       resize();
