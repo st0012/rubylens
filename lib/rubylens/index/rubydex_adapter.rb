@@ -11,14 +11,10 @@ module RubyLens
     class RubydexAdapter
       TEST_SEGMENTS = %w[test tests spec specs feature features].freeze
 
-      def initialize(graph_factory: nil)
-        @graph_factory = graph_factory || ->(root) { Rubydex::Graph.new(workspace_path: root.to_s) }
-      end
-
       def index(manifest)
         @source_path_cache = {}
         @workspace_location_cache = {}
-        graph = @graph_factory.call(manifest.root)
+        graph = Rubydex::Graph.new(workspace_path: manifest.root.to_s)
         index_errors = graph.index_all(manifest.files)
         @indexed_package_document_paths = indexed_package_document_paths(graph, manifest)
         graph.resolve

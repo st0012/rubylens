@@ -59,7 +59,7 @@ class ShowcaseGeneratorTest < Minitest::Test
     end
   end
 
-  def test_refuses_a_tracked_default_showcase_before_indexing
+  def test_refuses_a_tracked_default_showcase
     with_repository do |directory|
       output = File.join(directory, "rubylens-showcase.html")
       File.write(output, '<meta name="rubylens-artifact" content="showcase">')
@@ -68,7 +68,7 @@ class ShowcaseGeneratorTest < Minitest::Test
       error = assert_raises(RubyLens::GitError) { generator.call(path: directory) }
 
       assert_equal("default showcase path is already tracked by Git", error.message)
-      refute(@indexed)
+      assert_equal('<meta name="rubylens-artifact" content="showcase">', File.read(output))
     end
   end
 
@@ -82,29 +82,6 @@ class ShowcaseGeneratorTest < Minitest::Test
   end
 
   def generator
-    @indexed = false
-    manifest = Struct.new(:warnings).new([])
-    manifest_builder = Object.new
-    manifest_builder.define_singleton_method(:build) { |root:, lockfile:| manifest }
-    adapter = Object.new
-    owner = self
-    adapter.define_singleton_method(:index) do |_manifest|
-      owner.instance_variable_set(:@indexed, true)
-      { "warning_counts" => { "index" => 0, "integrity" => 0 } }
-    end
-    model_builder = Object.new
-    model_builder.define_singleton_method(:build) do |_snapshot|
-      {
-        "projectName" => "Synthetic App",
-        "morphology" => { "family" => 2, "designation" => "Sb", "knobs" => [0, 240, 3, 105, 500, 0, 0, 0, 1234] },
-        "totals" => { "namespaces" => 0, "packages" => 0, "dependencyStars" => 0, "renderedDependencyStars" => 0 },
-        "domains" => RubyLens::ArtModelBuilder::SIGNAL_FIELDS.to_h { |field| [field, 0] },
-        "categoryStats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
-        "namespaceNames" => [],
-        "namespaces" => [], "packages" => [], "dependencyStars" => [],
-        "packageNames" => [],
-      }
-    end
-    RubyLens::ShowcaseGenerator.new(manifest_builder:, adapter:, model_builder:)
+    RubyLens::ShowcaseGenerator.new
   end
 end

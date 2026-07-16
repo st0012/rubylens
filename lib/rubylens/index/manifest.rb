@@ -40,6 +40,7 @@ module RubyLens
       def initialize(root:, lockfile: nil)
         @root = Pathname(root).expand_path.realpath
         @lockfile = Pathname(lockfile || @root.join("Gemfile.lock")).expand_path
+        @nix_store_provider = NixStoreProvider.new
         @warnings = []
         @dependency_warnings = []
         @packages = []
@@ -237,7 +238,7 @@ module RubyLens
         normal_checkout = !checkout.symlink? &&
           Paths.inside?(resolved_gemspec_root, canonical_checkout) &&
           Paths.inside?(logical_canonical_root, canonical_checkout)
-        return unless normal_checkout || immutable_git_store_provider.trusted?(resolved_gemspec_root)
+        return unless normal_checkout || @nix_store_provider.trusted?(resolved_gemspec_root)
 
         canonical_root = normal_checkout ? logical_canonical_root : resolved_gemspec_root
 
@@ -302,10 +303,6 @@ module RubyLens
         end
       rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP
         raise UnsafeGitPackageFile
-      end
-
-      def immutable_git_store_provider
-        @immutable_git_store_provider ||= NixStoreProvider.new
       end
 
       def skip_git_dependency(locked, reason_code)
