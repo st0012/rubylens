@@ -138,7 +138,10 @@
     let driftRequested = interactiveMode;
     let drifting = driftRequested && !reducedMotionQuery.matches;
     const colours = { core: [244, 82, 132], tests: [87, 204, 255], dependencies: [255, 184, 77] };
-    const colourStyles = { core: "rgb(244,82,132)", tests: "rgb(87,204,255)", dependencies: "rgb(255,184,77)" };
+    const whiteHotColour = [255, 248, 244];
+    const whiteHotRgb = whiteHotColour.join(",");
+    const glslVec3 = rgb => `vec3(${rgb.map(channel => channel.toFixed(1)).join(", ")})`;
+    const colourStyles = Object.fromEntries(Object.entries(colours).map(([category, rgb]) => [category, `rgb(${rgb.join(",")})`]));
     const projectionScratch = [0, 0, 0];
     let zoomReadout = null;
     let zoomReadoutText = "";
@@ -601,7 +604,6 @@
       searchRegion.hidden = true;
       searchResults.hidden = true;
       canvas.removeAttribute("tabindex");
-      canvas.classList.add("is-unavailable");
       canvas.style.pointerEvents = "none";
       canvas.style.cursor = "default";
       const hint = document.querySelector(".hint");
@@ -649,6 +651,29 @@
       const point = showcasePointsByAnchor.get(showcaseAnnotationKey(annotation.category, annotation.anchor));
       return point ? Object.freeze({ ...annotation, point }) : null;
     }).filter(Boolean);
+
+    const FULLSCREEN_TRIANGLE_VERTEX_SOURCE = `#version 300 es
+        precision highp float;
+        const vec2 POSITIONS[3] = vec2[3](vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
+        void main() { gl_Position = vec4(POSITIONS[gl_VertexID], 0.0, 1.0); }
+      `;
+
+    const POINT_FRAGMENT_SOURCE = `#version 300 es
+        precision highp float;
+        in vec3 v_colour;
+        in float v_alpha;
+        in float v_radius;
+        out vec4 outColor;
+        void main() {
+          if (v_alpha <= 0.0) discard;
+          float radial = length(gl_PointCoord - vec2(0.5)) * 2.0;
+          float feather = min(1.0, 1.0 / max(v_radius, 1.0));
+          float coverage = 1.0 - smoothstep(1.0 - feather, 1.0, radial);
+          if (coverage <= 0.0) discard;
+          float contribution = v_alpha * coverage;
+          outColor = vec4(v_colour * contribution, contribution);
+        }
+      `;
 
     function compileGlShader(gl, type, source) {
       const shader = gl.createShader(type);
@@ -701,11 +726,7 @@
 
       const createProgram = (vertexSource, fragmentSource) => createGlProgram(gl, vertexSource, fragmentSource);
 
-      const backgroundProgram = createProgram(`#version 300 es
-        precision highp float;
-        const vec2 POSITIONS[3] = vec2[3](vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
-        void main() { gl_Position = vec4(POSITIONS[gl_VertexID], 0.0, 1.0); }
-      `, `#version 300 es
+      const backgroundProgram = createProgram(FULLSCREEN_TRIANGLE_VERTEX_SOURCE, `#version 300 es
         precision highp float;
         uniform vec2 u_resolution;
         uniform vec2 u_center;
@@ -777,8 +798,8 @@
           float radius = size;
           float alpha = visibleAlpha;
           vec3 colour = a_category < 0.5
-            ? vec3(244.0, 82.0, 132.0) / 255.0
-            : (a_category < 1.5 ? vec3(87.0, 204.0, 255.0) / 255.0 : vec3(255.0, 184.0, 77.0) / 255.0);
+            ? ${glslVec3(colours.core)} / 255.0
+            : (a_category < 1.5 ? ${glslVec3(colours.tests)} / 255.0 : ${glslVec3(colours.dependencies)} / 255.0);
 
           if (u_pass == 0) {
             if (size <= 1.35 || u_glow <= 0.0) { hidePoint(); return; }
@@ -791,7 +812,7 @@
             if (size <= 1.1) { hidePoint(); return; }
             radius = max(0.45 + u_deepDetail * 0.25, size * (0.24 + u_deepDetail * 0.06));
             alpha = min(0.9, visibleAlpha * 1.25);
-            colour = vec3(255.0, 248.0, 244.0) / 255.0;
+            colour = ${glslVec3(whiteHotColour)} / 255.0;
           }
 
           gl_Position = vec4(screen.x / u_resolution.x * 2.0 - 1.0, 1.0 - screen.y / u_resolution.y * 2.0, 0.0, 1.0);
@@ -800,22 +821,7 @@
           v_alpha = alpha;
           v_radius = radius;
         }
-      `, `#version 300 es
-        precision highp float;
-        in vec3 v_colour;
-        in float v_alpha;
-        in float v_radius;
-        out vec4 outColor;
-        void main() {
-          if (v_alpha <= 0.0) discard;
-          float radial = length(gl_PointCoord - vec2(0.5)) * 2.0;
-          float feather = min(1.0, 1.0 / max(v_radius, 1.0));
-          float coverage = 1.0 - smoothstep(1.0 - feather, 1.0, radial);
-          if (coverage <= 0.0) discard;
-          float contribution = v_alpha * coverage;
-          outColor = vec4(v_colour * contribution, contribution);
-        }
-      `);
+      `, POINT_FRAGMENT_SOURCE);
 
       const pointData = new Float32Array(renderPoints.length * 7);
       const categoryIndex = { core: 0, tests: 1, dependencies: 2 };
@@ -830,7 +836,7 @@
         pointData[offset + 3] = point.sizeFactor * sizeScale;
         pointData[offset + 4] = clamp(point.alphaBase * alphaScale, 0, 1);
         pointData[offset + 5] = categoryIndex[point.category];
-        pointData[offset + 6] = point.hub ? 5.2 : 3.2;
+        pointData[offset + 6] = point.maxSize;
       });
 
       const pointVao = gl.createVertexArray();
@@ -947,11 +953,7 @@
       }
       let rendererDpr = 1;
 
-      const backgroundProgram = createGlProgram(gl, `#version 300 es
-        precision highp float;
-        const vec2 POSITIONS[3] = vec2[3](vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
-        void main() { gl_Position = vec4(POSITIONS[gl_VertexID], 0.0, 1.0); }
-      `, `#version 300 es
+      const backgroundProgram = createGlProgram(gl, FULLSCREEN_TRIANGLE_VERTEX_SOURCE, `#version 300 es
         precision highp float;
         uniform vec2 u_resolution;
         uniform vec2 u_center;
@@ -1042,8 +1044,8 @@
           float radius = size;
           float alpha = visibleAlpha;
           vec3 colour = a_category < 0.5
-            ? vec3(244.0, 82.0, 132.0) / 255.0
-            : (a_category < 1.5 ? vec3(87.0, 204.0, 255.0) / 255.0 : vec3(255.0, 184.0, 77.0) / 255.0);
+            ? ${glslVec3(colours.core)} / 255.0
+            : (a_category < 1.5 ? ${glslVec3(colours.tests)} / 255.0 : ${glslVec3(colours.dependencies)} / 255.0);
 
           if (u_pass == 0) {
             if (size <= 1.35 || !detailed) { hidePoint(); return; }
@@ -1056,7 +1058,7 @@
             if (size <= 1.1 || !detailed) { hidePoint(); return; }
             radius = max(0.45 + u_deepDetail * 0.25, size * (0.24 + u_deepDetail * 0.06));
             alpha = min(0.9, visibleAlpha * 1.25);
-            colour = vec3(255.0, 248.0, 244.0) / 255.0;
+            colour = ${glslVec3(whiteHotColour)} / 255.0;
           }
 
           gl_Position = vec4(screen.x / u_resolution.x * 2.0 - 1.0, 1.0 - screen.y / u_resolution.y * 2.0, 0.0, 1.0);
@@ -1065,22 +1067,7 @@
           v_alpha = alpha;
           v_radius = radius * u_dpr;
         }
-      `, `#version 300 es
-        precision highp float;
-        in vec3 v_colour;
-        in float v_alpha;
-        in float v_radius;
-        out vec4 outColor;
-        void main() {
-          if (v_alpha <= 0.0) discard;
-          float radial = length(gl_PointCoord - vec2(0.5)) * 2.0;
-          float feather = min(1.0, 1.0 / max(v_radius, 1.0));
-          float coverage = 1.0 - smoothstep(1.0 - feather, 1.0, radial);
-          if (coverage <= 0.0) discard;
-          float contribution = v_alpha * coverage;
-          outColor = vec4(v_colour * contribution, contribution);
-        }
-      `);
+      `, POINT_FRAGMENT_SOURCE);
 
       const pointData = new Float32Array(renderPoints.length * 9);
       const categoryIndex = { core: 0, tests: 1, dependencies: 2 };
@@ -2387,7 +2374,7 @@
       context.fillStyle = vignette;
       context.fillRect(0, 0, width, height);
       context.globalCompositeOperation = "lighter";
-      const matrix = [Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch)];
+      const matrix = viewMatrix();
       const deepDetail = clamp(Math.log2(Math.max(1, zoom)) / 5, 0, 1);
       for (const point of renderPoints) {
         const projected = project(point, matrix);
@@ -2417,7 +2404,7 @@
         if (size > 1.1) {
           context.beginPath();
           context.arc(x, y, Math.max(.45 + deepDetail * .25, size * (.24 + deepDetail * .06)), 0, Math.PI * 2);
-          context.fillStyle = `rgba(255,248,244,${Math.min(.9, alpha * 1.25)})`;
+          context.fillStyle = `rgba(${whiteHotRgb},${Math.min(.9, alpha * 1.25)})`;
           context.fill();
         }
       }
@@ -2507,7 +2494,7 @@
       const elapsed = Math.max(0, timestamp - showcaseStartedAt);
       const slot = Math.floor(elapsed / SHOWCASE_ANNOTATION_PRESET.slotDurationMs);
       const slotElapsed = elapsed % SHOWCASE_ANNOTATION_PRESET.slotDurationMs;
-      const matrix = [Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch)];
+      const matrix = viewMatrix();
       if (showcaseAnnotationSlot !== slot) {
         showcaseAnnotationSlot = slot;
         hideShowcaseAnnotation();
@@ -2634,7 +2621,7 @@
       canvas.classList.remove("is-dragging-pan");
       canvas.classList.remove("is-star");
       requestRender();
-    };
+    }
     if (interactiveMode) {
     canvas.addEventListener("pointerdown", event => {
       cancelCameraFlight();
