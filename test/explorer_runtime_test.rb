@@ -20,6 +20,7 @@ class ExplorerRuntimeTest < Minitest::Test
     assert_includes(SHELL, '<summary id="warning-summary"></summary>')
     assert_includes(RUNTIME, "function populateWarningDisclosure()")
     assert_includes(RUNTIME, "const WARNING_ROW_LIMIT = 24")
+    assert_includes(RUNTIME, "const shownWarnings = uniqueWarnings.slice(0, WARNING_ROW_LIMIT)")
     assert_includes(RUNTIME, 'warning && typeof warning.name === "string"')
     assert_includes(RUNTIME, 'const key = `${warning.name}\\u0000${warning.reason}`')
     assert_includes(RUNTIME, 'appendWarningGroup(container, "Ruby index", counts.index')
