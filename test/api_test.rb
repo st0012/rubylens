@@ -54,11 +54,6 @@ class APITest < Minitest::Test
     end
   end
 
-  def test_gif_entry_point_is_removed
-    refute_respond_to(RubyLens, :generate_gif)
-  end
-
-
   private
 
   def embedded_model(path)

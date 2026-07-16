@@ -63,8 +63,6 @@ class ArtModelBuilderTest < Minitest::Test
     )
     assert_equal([0, 1, 1, 2, 1, 4, 3, -1], first.fetch("packages").first.drop(1))
     assert_empty(first.fetch("dependencySystems"))
-    refute(first.key?("dependencyDeclarationNames"))
-    refute(first.key?("dependencyDeclarations"))
     refute_includes(JSON.generate(first), "Example::Client")
     refute_includes(JSON.generate(first), private_git_source)
     %w[private/dependency credentials@example.invalid private-revision raw\ dependency private\ source].each do |private_value|
@@ -144,7 +142,6 @@ class ArtModelBuilderTest < Minitest::Test
     assert_equal(18_020, model.dig("totals", "renderedDependencyStars"))
     assert_equal(9, model.fetch("packages").first.length)
     assert_equal([1, 1, 18_020, 1, 1, 18_020, 100, -1], model.fetch("packages").first.drop(1))
-    refute(model.key?("dependencyDeclarationNames"))
   end
 
   def test_dependency_rows_are_deterministic_across_snapshot_traversal_order

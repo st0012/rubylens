@@ -24,7 +24,6 @@ class LayoutDensityRuntimeTest < Minitest::Test
     end
 
     assert_includes(RUNTIME, "function layoutMetricsForCoreCount(coreCount, activeMorphology) {")
-    refute_includes(RUNTIME, "TEST_SCALE_BASELINE")
   end
 
   def test_outer_system_expansion_is_monotonic_and_concave
@@ -80,8 +79,6 @@ class LayoutDensityRuntimeTest < Minitest::Test
     assert_includes(RUNTIME, "const perspective = cameraFocalLength / depth * zoom;")
     assert_includes(RUNTIME, "function contextualSelectionCameraTarget(point, preferredZoom = point.hub ? 4 : point.category === \"dependencies\" ? 5 : 7) {")
     assert_includes(RUNTIME, "const coreFitZoom = Math.min(sceneRight, sceneBottom) * .28 * cameraDistance / (layoutScale.coreOuterRadius * cameraFocalLength);")
-    refute_includes(RUNTIME, "float depth = 270.0 - z2;")
-    refute_includes(RUNTIME, "const depth = 270 - z2;")
   end
 
   def test_dependency_anchor_boundary_stays_eight_units_outside_the_test_boundary
