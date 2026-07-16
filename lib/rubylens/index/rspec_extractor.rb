@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "pathname"
 require "set"
 require_relative "source_path"
 
@@ -20,10 +19,10 @@ module RubyLens
         method_count = 0
 
         spec_documents(graph, manifest, package_document_paths).each do |document, relative|
-          group_references, example_count = references(document.method_references)
+          group_count, example_count = reference_counts(document.method_references)
           method_count += example_count
-          component = component_for(relative)
-          group_references.each do
+          component = SourcePath.component_for(relative)
+          group_count.times do
             groups << Group.new(
               format("%s%06d", PROXY_NAME_PREFIX, groups.length + 1),
               component,
@@ -40,9 +39,6 @@ module RubyLens
         graph.documents.filter_map do |document|
           path = SourcePath.from_file_uri(document.uri)
           next unless path && manifest.workspace_path?(path)
-
-          path = Pathname(path).realpath.to_s
-          next unless manifest.workspace_path?(path)
           next if package_document_paths.include?(path)
 
           relative = manifest.relative_workspace_path(path)
@@ -50,27 +46,23 @@ module RubyLens
           next unless relative.split(File::SEPARATOR).any? { |segment| SPEC_SEGMENTS.include?(segment) }
 
           [document, relative]
-        rescue Errno::EACCES, Errno::ENOENT, Errno::ELOOP
-          nil
         end.sort_by { |_document, relative| relative }
       end
 
-      def references(method_references)
-        relevant = method_references.filter_map do |reference|
+      # Proxy groups are numbered by document order and never expose spec text or
+      # positions, so only the per-document reference tallies matter.
+      def reference_counts(method_references)
+        group_count = 0
+        example_count = 0
+        method_references.each do |reference|
           name = reference.name
-          next unless GROUP_METHODS.include?(name) || EXAMPLE_METHODS.include?(name)
-
-          location = reference.location
-          [*location.comparable_values, name]
-        end.sort
-        [
-          relevant.select { |reference| GROUP_METHODS.include?(reference.last) },
-          relevant.count { |reference| EXAMPLE_METHODS.include?(reference.last) },
-        ]
-      end
-
-      def component_for(relative)
-        SourcePath.component_for(relative)
+          if GROUP_METHODS.include?(name)
+            group_count += 1
+          elsif EXAMPLE_METHODS.include?(name)
+            example_count += 1
+          end
+        end
+        [group_count, example_count]
       end
     end
   end

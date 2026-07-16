@@ -57,26 +57,18 @@ class RSpecExtractorTest < Minitest::Test
     end
   end
 
-  def test_sorts_references_by_rubydex_location_and_name
-    references = [
-      reference("context", 8, 3),
-      reference("it", 4, 1),
-      reference("context", 2, 5),
-      reference("describe", 2, 5),
-      reference("specify", 4, 0),
-    ]
+  def test_counts_references_without_reading_their_locations
+    references = %w[context it context describe specify shared_examples].map do |name|
+      reference = Object.new
+      reference.define_singleton_method(:name) { name }
+      reference.define_singleton_method(:location) { raise "reference locations must not be read" }
+      reference
+    end
 
-    groups, method_count = RubyLens::Index::RSpecExtractor.new.send(:references, references)
+    group_count, example_count = RubyLens::Index::RSpecExtractor.new.send(:reference_counts, references)
 
-    assert_equal(
-      [
-        ["file:///test.rb", 2, 5, 2, 6, "context"],
-        ["file:///test.rb", 2, 5, 2, 6, "describe"],
-        ["file:///test.rb", 8, 3, 8, 4, "context"],
-      ],
-      groups,
-    )
-    assert_equal(2, method_count)
+    assert_equal(3, group_count)
+    assert_equal(2, example_count)
   end
 
   def test_propagates_malformed_method_reference_failures

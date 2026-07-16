@@ -8,25 +8,31 @@ class RubydexAdapterTest < Minitest::Test
   RSPEC_FIXTURE = ROOT.join("test/fixtures/rspec_repo")
 
   def test_collects_every_eligible_dependency_row
+    location_class = Data.define(:uri) do
+      def comparable_values = [uri, 0, 0, 0, 1]
+    end
+    definition_class = Data.define(:location)
+    declaration_class = Data.define(:name, :definitions, :references)
+    paths = ["/deps/alpha/lib/alpha.rb", "/deps/beta/lib/beta.rb"]
     declarations = 30.times.map do |index|
-      [index % 2, [index % 2, index, 1, index % 3, index % 5, index % 7, index % 11], index % 4]
+      declaration_class.new(
+        "Dependency#{index}",
+        [definition_class.new(location_class.new("file://#{paths.fetch(index % 2)}"))],
+        Array.new(index % 7),
+      )
     end
     manifest = Struct.new(:packages).new([Object.new, Object.new])
+    manifest.define_singleton_method(:workspace_path?) { |_path| false }
+    manifest.define_singleton_method(:package_index_for) { |path| paths.index(path) }
     adapter = RubyLens::Index::RubydexAdapter.new
-    adapter.define_singleton_method(:model_eligible_declaration?) { |_declaration| true }
-    adapter.define_singleton_method(:namespace?) { |_declaration| false }
-    adapter.define_singleton_method(:collect_category_stat) { |_stats, _declaration, _manifest| }
-    adapter.define_singleton_method(:collect_dependency_declaration) do |aggregation, declaration, _manifest|
-      package_index, row, construct_index = declaration
-      aggregation.add(package_index:, row:, construct_index:)
-    end
+    adapter.instance_variable_set(:@indexed_package_document_paths, Set.new(paths))
 
     aggregation = adapter.send(:collect_declarations, declarations, manifest).fetch(:dependency_aggregation)
     packages = aggregation.packages
 
     assert_equal(30, packages.sum { |package| package.fetch(:declarations).length })
     assert_equal([15, 15], packages.map { |package| package.fetch(:declaration_count) })
-    assert_equal([29, 1, 2, 4, 6, 10], aggregation.signal_maxima)
+    assert_equal([0, 1, 0, 0, 6, 0], aggregation.signal_maxima)
   end
 
   def test_real_adapter_returns_hover_identity_without_paths_or_source
@@ -174,11 +180,12 @@ class RubydexAdapterTest < Minitest::Test
 
   def test_dependency_extraction_failure_cannot_silently_undercount
     declaration = Object.new
+    declaration.define_singleton_method(:name) { "Broken" }
     declaration.define_singleton_method(:definitions) { raise "broken definitions" }
     manifest = Struct.new(:packages).new([Object.new])
 
     error = assert_raises(RuntimeError) do
-      RubyLens::Index::RubydexAdapter.new.send(:collect_dependency_declaration, Object.new, declaration, manifest)
+      RubyLens::Index::RubydexAdapter.new.send(:collect_declarations, [declaration], manifest)
     end
     assert_equal("broken definitions", error.message)
   end
