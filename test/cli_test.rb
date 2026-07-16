@@ -5,197 +5,155 @@ require_relative "../lib/rubylens/cli"
 
 class CLITest < Minitest::Test
   def test_report_defaults_to_current_directory_and_prints_machine_readable_result
-    output = StringIO.new
-    errors = StringIO.new
     result = RubyLens::Result.new(
       output_path: "/tmp/report.html",
       counts: { "namespaces" => 12 },
       warnings: ["partial dependency index"],
     )
-    received = nil
-    report_generator = ->(**arguments) { received = arguments; result }
+    RubyLens.expects(:generate_report)
+      .with(path: Dir.pwd, output: nil, lockfile: nil)
+      .returns(result)
 
-    status = RubyLens::CLI.new(stdout: output, stderr: errors, report_generator: report_generator)
-      .run(["report"])
+    status, output, errors = run_cli(["report"])
 
     assert_equal(0, status)
-    assert_equal({ path: Dir.pwd, output: nil, lockfile: nil }, received)
-    assert_equal("/tmp/report.html", JSON.parse(output.string).fetch("output"))
-    assert_includes(errors.string, "private codebase structure")
+    assert_equal("/tmp/report.html", JSON.parse(output).fetch("output"))
+    assert_includes(errors, "private codebase structure")
   end
 
   def test_version
-    output = StringIO.new
-
-    status = RubyLens::CLI.new(stdout: output, stderr: StringIO.new).run(["--version"])
+    status, output, = run_cli(["--version"])
 
     assert_equal(0, status)
-    assert_equal("#{RubyLens::VERSION}\n", output.string)
+    assert_equal("#{RubyLens::VERSION}\n", output)
   end
 
   def test_showcase_defaults_to_current_directory_and_prints_machine_readable_result
-    output = StringIO.new
-    errors = StringIO.new
-    received = nil
-    showcase_generator = lambda do |**options|
-      received = options
-      RubyLens::Result.new(
-        output_path: "/tmp/showcase.html",
-        counts: { "namespaces" => 24 },
-        warnings: [],
-      )
-    end
+    result = RubyLens::Result.new(
+      output_path: "/tmp/showcase.html",
+      counts: { "namespaces" => 24 },
+      warnings: [],
+    )
+    RubyLens.expects(:generate_showcase)
+      .with(path: Dir.pwd, output: nil, lockfile: nil, details: false)
+      .returns(result)
 
-    status = RubyLens::CLI.new(stdout: output, stderr: errors, showcase_generator: showcase_generator)
-      .run(["showcase"])
+    status, output, errors = run_cli(["showcase"])
 
     assert_equal(0, status)
-    assert_equal({ path: Dir.pwd, output: nil, lockfile: nil, details: false }, received)
-    assert_equal("/tmp/showcase.html", JSON.parse(output.string).fetch("output"))
-    assert_includes(errors.string, "--details also includes")
+    assert_equal("/tmp/showcase.html", JSON.parse(output).fetch("output"))
+    assert_includes(errors, "--details also includes")
   end
 
   def test_showcase_details_is_an_explicit_single_opt_in
-    output = StringIO.new
-    errors = StringIO.new
-    received = nil
-    showcase_generator = lambda do |**options|
-      received = options
-      RubyLens::Result.new(output_path: "/tmp/showcase.html", counts: {}, warnings: [])
-    end
+    result = RubyLens::Result.new(output_path: "/tmp/showcase.html", counts: {}, warnings: [])
+    RubyLens.expects(:generate_showcase)
+      .with(path: "project", output: nil, lockfile: nil, details: true)
+      .returns(result)
 
-    status = RubyLens::CLI.new(stdout: output, stderr: errors, showcase_generator: showcase_generator)
-      .run(["showcase", "--details", "project"])
+    status, _output, errors = run_cli(["showcase", "--details", "project"])
 
     assert_equal(0, status)
-    assert_equal({ path: "project", output: nil, lockfile: nil, details: true }, received)
-    assert_includes(errors.string, "selected Ruby and dependency names")
+    assert_includes(errors, "selected Ruby and dependency names")
   end
 
   def test_options_work_without_a_target
     cases = {
-      "report" => ["--output", "/tmp/report.html", "--lockfile", "/tmp/report.lock"],
-      "showcase" => ["--lockfile", "/tmp/showcase.lock", "--output", "/tmp/showcase.html"],
+      generate_report: ["report", "--output", "/tmp/report.html", "--lockfile", "/tmp/report.lock"],
+      generate_showcase: ["showcase", "--lockfile", "/tmp/showcase.lock", "--output", "/tmp/showcase.html"],
     }
 
-    cases.each do |command, arguments|
-      received = nil
-      generator = lambda do |**options|
-        received = options
-        RubyLens::Result.new(output_path: options[:output], counts: {}, warnings: [])
-      end
-      cli = RubyLens::CLI.new(
-        stdout: StringIO.new,
-        stderr: StringIO.new,
-        report_generator: generator,
-        showcase_generator: generator,
-      )
+    cases.each do |method, arguments|
+      command = arguments.first
+      expected = { path: Dir.pwd, output: "/tmp/#{command}.html", lockfile: "/tmp/#{command}.lock" }
+      expected[:details] = false if command == "showcase"
+      result = RubyLens::Result.new(output_path: expected.fetch(:output), counts: {}, warnings: [])
+      RubyLens.expects(method).with(**expected).returns(result)
 
-      status = cli.run([command, *arguments])
+      status, output, = run_cli(arguments)
 
       assert_equal(0, status, command)
-      assert_equal(Dir.pwd, received[:path], command)
-      assert_equal("/tmp/#{command}.html", received[:output], command)
-      assert_equal("/tmp/#{command}.lock", received[:lockfile], command)
+      assert_equal(expected.fetch(:output), JSON.parse(output).fetch("output"), command)
     end
   end
 
   def test_explicit_target_works_with_options_in_either_order
     cases = {
-      "report" => ["--output", "/tmp/report.html", "project", "--lockfile", "/tmp/report.lock"],
-      "showcase" => ["project", "--lockfile", "/tmp/showcase.lock", "--output", "/tmp/showcase.html"],
+      generate_report: ["report", "--output", "/tmp/report.html", "project", "--lockfile", "/tmp/report.lock"],
+      generate_showcase: ["showcase", "project", "--lockfile", "/tmp/showcase.lock", "--output", "/tmp/showcase.html"],
     }
 
-    cases.each do |command, arguments|
-      received = nil
-      generator = lambda do |**options|
-        received = options
-        RubyLens::Result.new(output_path: options[:output], counts: {}, warnings: [])
-      end
-      cli = RubyLens::CLI.new(
-        stdout: StringIO.new,
-        stderr: StringIO.new,
-        report_generator: generator,
-        showcase_generator: generator,
-      )
-
-      status = cli.run([command, *arguments])
-
-      assert_equal(0, status, command)
+    cases.each do |method, arguments|
+      command = arguments.first
       expected = { path: "project", output: "/tmp/#{command}.html", lockfile: "/tmp/#{command}.lock" }
       expected[:details] = false if command == "showcase"
-      assert_equal(expected, received, command)
+      result = RubyLens::Result.new(output_path: expected.fetch(:output), counts: {}, warnings: [])
+      RubyLens.expects(method).with(**expected).returns(result)
+
+      status, output, = run_cli(arguments)
+
+      assert_equal(0, status, command)
+      assert_equal(expected.fetch(:output), JSON.parse(output).fetch("output"), command)
     end
   end
 
   def test_extra_target_is_rejected_before_generation
-    generator = ->(**) { flunk("generator should not be called") }
+    RubyLens.expects(:generate_report).never
+    RubyLens.expects(:generate_showcase).never
 
     %w[report showcase].each do |command|
-      errors = StringIO.new
-      cli = RubyLens::CLI.new(
-        stdout: StringIO.new,
-        stderr: errors,
-        report_generator: generator,
-        showcase_generator: generator,
-      )
-
-      status = cli.run([command, "first", "second"])
+      status, _output, errors = run_cli([command, "first", "second"])
 
       assert_equal(2, status, command)
-      assert_includes(errors.string, "unexpected argument: second", command)
+      assert_includes(errors, "unexpected argument: second", command)
     end
   end
 
-  def test_subcommand_help_uses_cli_output_without_generating
-    generator = ->(**) { flunk("generator should not be called") }
+  def test_subcommand_help_does_not_generate
+    RubyLens.expects(:generate_report).never
+    RubyLens.expects(:generate_showcase).never
 
     [["report", "--help"], ["showcase", "-h"]].each do |command, help_flag|
-      output = StringIO.new
-      errors = StringIO.new
-      cli = RubyLens::CLI.new(
-        stdout: output,
-        stderr: errors,
-        report_generator: generator,
-        showcase_generator: generator,
-      )
-
-      status = cli.run([command, help_flag])
+      status, output, errors = run_cli([command, help_flag])
 
       assert_equal(0, status, command)
-      assert_includes(output.string, "Usage: rubylens #{command} [OPTIONS] [TARGET]", command)
-      assert_includes(output.string, "TARGET defaults to the current working directory", command)
-      assert_includes(output.string, "--output FILE", command)
-      assert_includes(output.string, "--lockfile FILE", command)
+      assert_includes(output, "Usage: rubylens #{command} [OPTIONS] [TARGET]", command)
+      assert_includes(output, "TARGET defaults to the current working directory", command)
+      assert_includes(output, "--output FILE", command)
+      assert_includes(output, "--lockfile FILE", command)
       if command == "showcase"
-        assert_includes(output.string, "--details", command)
+        assert_includes(output, "--details", command)
       else
-        refute_includes(output.string, "--details", command)
+        refute_includes(output, "--details", command)
       end
-      assert_empty(errors.string, command)
+      assert_empty(errors, command)
     end
   end
 
   def test_help_lists_only_the_supported_product_commands
-    output = StringIO.new
-
-    status = RubyLens::CLI.new(stdout: output, stderr: StringIO.new).run(["help"])
+    status, output, = run_cli(["help"])
 
     assert_equal(0, status)
-    assert_includes(output.string, "TARGET defaults to the current working directory")
-    assert_includes(output.string, "rubylens report --help")
-    assert_includes(output.string, "rubylens showcase --help")
-    assert_includes(output.string, "report [OPTIONS] [TARGET]")
-    assert_includes(output.string, "showcase [OPTIONS] [TARGET]")
+    assert_includes(output, "TARGET defaults to the current working directory")
+    assert_includes(output, "rubylens report --help")
+    assert_includes(output, "rubylens showcase --help")
+    assert_includes(output, "report [OPTIONS] [TARGET]")
+    assert_includes(output, "showcase [OPTIONS] [TARGET]")
   end
 
   def test_unknown_commands_are_rejected_with_help
-    errors = StringIO.new
-
-    status = RubyLens::CLI.new(stdout: StringIO.new, stderr: errors).run(["cosmos"])
+    status, _output, errors = run_cli(["cosmos"])
 
     assert_equal(2, status)
-    assert_includes(errors.string, "Unknown command: cosmos")
-    assert_includes(errors.string, "report [OPTIONS] [TARGET]")
+    assert_includes(errors, "Unknown command: cosmos")
+    assert_includes(errors, "report [OPTIONS] [TARGET]")
+  end
+
+  private
+
+  def run_cli(arguments)
+    status = nil
+    output, errors = capture_io { status = RubyLens::CLI.new.run(arguments) }
+    [status, output, errors]
   end
 end

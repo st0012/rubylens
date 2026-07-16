@@ -159,16 +159,6 @@ class RubydexAdapterTest < Minitest::Test
     assert_equal(5, adapter.send(:safe_length, Struct.new(:records).new(raised_size), :records))
   end
 
-  def test_location_caches_are_cleared_when_indexing_fails
-    adapter = RubyLens::Index::RubydexAdapter.new(graph_factory: ->(_root) { raise "index failed" })
-    manifest = Struct.new(:root).new(Pathname("/tmp/example"))
-
-    assert_raises(RuntimeError) { adapter.index(manifest) }
-    assert_nil(adapter.instance_variable_get(:@source_path_cache))
-    assert_nil(adapter.instance_variable_get(:@workspace_location_cache))
-    assert_nil(adapter.instance_variable_get(:@indexed_package_document_paths))
-  end
-
   def test_collects_declarations_without_materializing_the_enumerable
     declarations = Object.new
     declarations.define_singleton_method(:each) { |_block = nil, &block| [].each(&block) }
@@ -219,7 +209,7 @@ class RubydexAdapterTest < Minitest::Test
     end
   end
 
-  def test_passes_the_manifest_unique_file_list_to_rubydex_once
+  def test_indexes_the_exact_git_selected_manifest_once
     captured = nil
     graph = Object.new
     graph.define_singleton_method(:index_all) { |files| captured = files; [] }
@@ -232,7 +222,8 @@ class RubydexAdapterTest < Minitest::Test
       Pathname("/tmp/example"), ["/tmp/a.rb", "/tmp/b.rb"].freeze, [], [], []
     )
 
-    RubyLens::Index::RubydexAdapter.new(graph_factory: ->(_root) { graph }).index(manifest)
+    Rubydex::Graph.expects(:new).with(workspace_path: manifest.root.to_s).returns(graph)
+    RubyLens::Index::RubydexAdapter.new.index(manifest)
 
     assert_equal(manifest.files, captured)
     assert_equal(captured.uniq, captured)

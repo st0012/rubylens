@@ -875,23 +875,26 @@ class IndexManifestTest < Minitest::Test
   end
 
   def build_manifest_with_parser(parser, root:, lockfile:, immutable_store_root: nil)
-    manifest = RubyLens::Index::Manifest.new(root: root, lockfile: lockfile)
     if immutable_store_root
       provider = mock("immutable Git store provider")
       provider.stubs(:trusted?).returns(false)
       provider.stubs(:trusted?).with { |path| RubyLens::Paths.inside?(path, immutable_store_root) }.returns(true)
-      manifest.stubs(:immutable_git_store_provider).returns(provider)
+      RubyLens::Index::Manifest::NixStoreProvider.stubs(:new).returns(provider)
     end
-
-    repository = stub("Git repository", selected_files: [])
-    RubyLens::GitRepository.stubs(:new).with(manifest.root).returns(repository)
-    Bundler::LockfileParser.stubs(:new).with(lockfile.read).returns(parser)
-    Open3.expects(:capture3).never
     begin
-      manifest.build
+      manifest = RubyLens::Index::Manifest.new(root: root, lockfile: lockfile)
+      repository = stub("Git repository", selected_files: [])
+      RubyLens::GitRepository.stubs(:new).with(manifest.root).returns(repository)
+      Bundler::LockfileParser.stubs(:new).with(lockfile.read).returns(parser)
+      Open3.expects(:capture3).never
+      begin
+        manifest.build
+      ensure
+        RubyLens::GitRepository.unstub(:new)
+        Bundler::LockfileParser.unstub(:new)
+      end
     ensure
-      RubyLens::GitRepository.unstub(:new)
-      Bundler::LockfileParser.unstub(:new)
+      RubyLens::Index::Manifest::NixStoreProvider.unstub(:new) if immutable_store_root
     end
   end
 

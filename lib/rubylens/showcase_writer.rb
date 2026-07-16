@@ -9,8 +9,8 @@ module RubyLens
     STYLESHEET_PATH = File.expand_path("../../assets/styles/showcase.css", __dir__)
     RUNTIME_PATH = File.expand_path("../../assets/runtime/report.js", __dir__)
 
-    def initialize(asset_assembler: nil)
-      super(asset_assembler: asset_assembler || ReportAssetAssembler.new(
+    def initialize
+      super(asset_assembler: ReportAssetAssembler.new(
         shell_path: SHELL_PATH,
         stylesheet_path: STYLESHEET_PATH,
         runtime_path: RUNTIME_PATH,

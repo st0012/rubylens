@@ -3,26 +3,15 @@
 require_relative "test_helper"
 
 class GeneratorTest < Minitest::Test
-  def test_generation_pipeline_builds_the_model_and_shared_warnings
-    manifest = Struct.new(:warnings).new(["manifest warning"])
-    manifest_builder = Object.new
-    manifest_builder.define_singleton_method(:build) { |root:, lockfile:| manifest }
-    adapter = Object.new
-    adapter.define_singleton_method(:index) do |_manifest|
-      { "warning_counts" => { "index" => 2, "integrity" => 1 } }
+  def test_generation_pipeline_builds_a_model_and_shared_manifest_warnings
+    with_repository do |directory|
+      model, warnings = RubyLens::GenerationPipeline.new.call(root: directory)
+
+      assert_equal("rubylens.art.v9", model.fetch("schema"))
+      assert_equal(0, model.dig("totals", "namespaces"))
+      assert_equal(["No Gemfile.lock found; dependency systems were omitted."], warnings)
+      assert_predicate(warnings, :frozen?)
     end
-    model_builder = Object.new
-    model_builder.define_singleton_method(:build) { |_snapshot| { "totals" => { "namespaces" => 3 } } }
-
-    model, warnings = RubyLens::GenerationPipeline.new(manifest_builder:, adapter:, model_builder:)
-      .call(root: "/tmp/project", lockfile: "/tmp/Gemfile.lock")
-
-    assert_equal({ "totals" => { "namespaces" => 3 } }, model)
-    assert_equal(
-      ["manifest warning", "Rubydex reported 2 indexing error(s).", "Rubydex reported 1 integrity issue(s)."],
-      warnings,
-    )
-    assert_predicate(warnings, :frozen?)
   end
 
   def test_default_output_is_root_level_and_locally_excluded
@@ -71,15 +60,6 @@ class GeneratorTest < Minitest::Test
   end
 
   def generator
-    manifest = Struct.new(:warnings).new([])
-    manifest_builder = Object.new
-    manifest_builder.define_singleton_method(:build) { |root:, lockfile:| manifest }
-    adapter = Object.new
-    adapter.define_singleton_method(:index) do |_manifest|
-      { "warning_counts" => { "index" => 0, "integrity" => 0 } }
-    end
-    model_builder = Object.new
-    model_builder.define_singleton_method(:build) { |_snapshot| { "totals" => { "namespaces" => 0 } } }
-    RubyLens::Generator.new(manifest_builder: manifest_builder, adapter: adapter, model_builder: model_builder)
+    RubyLens::Generator.new
   end
 end

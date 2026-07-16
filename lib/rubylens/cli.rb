@@ -6,18 +6,6 @@ require_relative "../rubylens"
 
 module RubyLens
   class CLI
-    def initialize(
-      stdout: $stdout,
-      stderr: $stderr,
-      report_generator: RubyLens.method(:generate_report),
-      showcase_generator: RubyLens.method(:generate_showcase)
-    )
-      @stdout = stdout
-      @stderr = stderr
-      @report_generator = report_generator
-      @showcase_generator = showcase_generator
-    end
-
     def run(arguments)
       arguments = arguments.dup
       command = arguments.shift
@@ -26,10 +14,10 @@ module RubyLens
       return generate_report(arguments) if command == "report"
       return generate_showcase(arguments) if command == "showcase"
 
-      @stderr.puts "Unknown command: #{command}"
+      $stderr.puts "Unknown command: #{command}"
       print_help(2)
     rescue OptionParser::ParseError, Error, Errno::ENOENT => error
-      @stderr.puts "rubylens: #{error.message}"
+      $stderr.puts "rubylens: #{error.message}"
       2
     end
 
@@ -40,7 +28,7 @@ module RubyLens
         arguments,
         command: "report",
         default_name: "rubylens-report.html",
-        generator: @report_generator,
+        generator: RubyLens.method(:generate_report),
         warning: "RubyLens reports contain private codebase structure. Keep the output local unless you intend to share it.",
       )
     end
@@ -50,7 +38,7 @@ module RubyLens
         arguments,
         command: "showcase",
         default_name: "rubylens-showcase.html",
-        generator: @showcase_generator,
+        generator: RubyLens.method(:generate_showcase),
         warning: "RubyLens showcases disclose the project name and visual codebase structure; --details also includes aggregate statistics and selected Ruby and dependency names. Share them intentionally.",
         details_option: true,
       )
@@ -81,7 +69,7 @@ module RubyLens
       end
       parser.parse!(arguments)
       if help
-        @stdout.puts parser
+        $stdout.puts parser
         return 0
       end
 
@@ -92,12 +80,12 @@ module RubyLens
       generator_options[:details] = options.fetch(:details, false) if details_option
       result = generator.call(**generator_options)
       print_result(result)
-      @stderr.puts warning
+      $stderr.puts warning
       0
     end
 
     def print_result(result)
-      @stdout.puts JSON.generate(
+      $stdout.puts JSON.generate(
         output: result.output_path,
         counts: result.counts,
         warnings: result.warnings,
@@ -105,12 +93,12 @@ module RubyLens
     end
 
     def print_version
-      @stdout.puts RubyLens::VERSION
+      $stdout.puts RubyLens::VERSION
       0
     end
 
     def print_help(status)
-      stream = status.zero? ? @stdout : @stderr
+      stream = status.zero? ? $stdout : $stderr
       stream.puts <<~HELP
         Usage: rubylens COMMAND
 
