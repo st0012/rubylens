@@ -77,13 +77,30 @@ describe("buildPoints", () => {
   });
 
   it("applies the star alpha scale to dependency stars but not hubs", () => {
+    const model = fixtureModel();
+    const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
     const alphaAt = index => runtime.sceneData[index * runtime.SCENE_POINT_STRIDE + 4];
     const maxSizeAt = index => runtime.sceneData[index * runtime.SCENE_POINT_STRIDE + 6];
+    // Exact per-row values: stars scale by 0.85, hubs use the unscaled .86 cap.
     for (const star of [4, 5, 6, 7]) {
-      expect(alphaAt(star)).toBeLessThanOrEqual(0.7 * runtime.DEPENDENCY_STAR_ALPHA_SCALE + 1e-6);
+      const signal = runtime.weightedSignal(runtime.normalizedSignals(model.dependencyStars[star - 4].slice(2, 8)), "dependencies");
+      expect(alphaAt(star)).toBeCloseTo(clamp(0.14 + signal * 0.105, 0.12, 0.7) * runtime.DEPENDENCY_STAR_ALPHA_SCALE, 6);
       expect(maxSizeAt(star)).toBeCloseTo(3.2, 5);
     }
+    const systemSignal = runtime.weightedSignal(runtime.normalizedSignals([0, 3, 0, 0, 0, 0]), "dependencies");
+    expect(alphaAt(8)).toBeCloseTo(clamp(0.14 + systemSignal * 0.105, 0.12, 0.86), 6);
     for (const hub of [8, 9, 10, 11]) expect(maxSizeAt(hub)).toBeCloseTo(5.2, 5);
+  });
+
+  it("places dependency stars at their package cloud positions", () => {
+    const model = fixtureModel();
+    model.dependencyStars.forEach((row, index) => {
+      const offset = (4 + index) * runtime.SCENE_POINT_STRIDE;
+      const expected = runtime.dependencyPosition(row[0], row[1]);
+      expect(runtime.sceneData[offset]).toBeCloseTo(expected[0], 3);
+      expect(runtime.sceneData[offset + 1]).toBeCloseTo(expected[1], 3);
+      expect(runtime.sceneData[offset + 2]).toBeCloseTo(expected[2], 3);
+    });
   });
 
   it("stamps package and system indexes for expansion", () => {

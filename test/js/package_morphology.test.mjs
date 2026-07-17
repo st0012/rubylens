@@ -66,16 +66,15 @@ describe("package cloud morphology", () => {
     expect(fallback.phase).toBe(runtime.fallbackMorphology(505).phase);
   });
 
-  it("keeps every family recipe finite, bounded, deterministic, and distinct", () => {
+  it("keeps every cloud finite, bounded, and deterministic, with distinct family recipes", () => {
     const distinct = new Set();
-    for (const index of [1, 2, 3, 5, 6]) {
-      const cloud = runtime.packageMorphologies[index];
+    runtime.packageMorphologies.forEach((cloud, index) => {
       const offsets = offsetsFor(runtime, cloud);
       expect(offsets.every(point => point.every(Number.isFinite))).toBe(true);
       expect(Math.max(...offsets.map(point => Math.hypot(...point)))).toBeLessThanOrEqual(6 + 1e-9);
       expect(offsetsFor(runtime, cloud)).toEqual(offsets);
-      distinct.add(JSON.stringify(offsets));
-    }
+      if ([1, 2, 3, 5, 6].includes(index)) distinct.add(JSON.stringify(offsets));
+    });
     expect(distinct.size).toBe(5);
   });
 });

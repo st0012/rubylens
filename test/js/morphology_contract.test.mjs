@@ -23,17 +23,23 @@ describe("Ruby classifier rows decode losslessly", () => {
       expect(decoded.family).toBe(entry.family);
       expect(decoded.phaseSeed).toBe(row[9] >>> 0);
       if (row[9] !== 0) expect(decoded.phase).toBe(runtime.fallbackMorphology(row[9]).phase);
-      if (entry.family === 0) expect(decoded.ellipticity).toBeCloseTo(clamp(row[1], 0, 700) / 1000, 9);
-      if ([1, 2, 3].includes(entry.family)) expect(decoded.bulgeShare).toBeCloseTo(clamp(row[2], 80, 600) / 1000, 9);
+      const inRange = (value, low, high) => expect(clamp(value, low, high)).toBe(value);
+      if (entry.family === 0) { inRange(row[1], 0, 700); expect(decoded.ellipticity).toBeCloseTo(row[1] / 1000, 9); }
+      if ([1, 2, 3].includes(entry.family)) { inRange(row[2], 80, 600); expect(decoded.bulgeShare).toBeCloseTo(row[2] / 1000, 9); }
       if ([2, 3].includes(entry.family)) {
-        expect(decoded.armCount).toBe(clamp(row[3], 2, entry.family === 2 ? 6 : 4));
-        expect(decoded.winding).toBeCloseTo(clamp(row[4], 40, 220) / 1000, 9);
-        expect(decoded.armFraction).toBeCloseTo(clamp(row[5], 0, 800) / 1000, 9);
+        inRange(row[3], 2, entry.family === 2 ? 6 : 4);
+        inRange(row[4], 40, 220);
+        inRange(row[5], 0, 800);
+        expect(decoded.armCount).toBe(row[3]);
+        expect(decoded.winding).toBeCloseTo(row[4] / 1000, 9);
+        expect(decoded.armFraction).toBeCloseTo(row[5] / 1000, 9);
       }
-      if (entry.family === 3) expect(decoded.barLength).toBeCloseTo(clamp(row[6], 100, 700) / 1000, 9);
+      if (entry.family === 3) { inRange(row[6], 100, 700); expect(decoded.barLength).toBeCloseTo(row[6] / 1000, 9); }
       if (entry.family === 4) {
-        expect(decoded.clumpCount).toBe(clamp(row[7], 2, 5));
-        expect(decoded.clumpSpread).toBeCloseTo(clamp(row[8], 250, 1000) / 1000, 9);
+        inRange(row[7], 2, 5);
+        inRange(row[8], 250, 1000);
+        expect(decoded.clumpCount).toBe(row[7]);
+        expect(decoded.clumpSpread).toBeCloseTo(row[8] / 1000, 9);
       }
     });
   }

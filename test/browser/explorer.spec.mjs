@@ -12,6 +12,8 @@ async function openExplorer(page) {
 }
 
 // Freeze the scene so projections computed in evaluate() stay valid for input.
+// Order matters: setDrifting schedules a frame via syncDrifting, so the
+// animation frame is cancelled after it.
 function freeze(page) {
   return page.evaluate(() => {
     setDrifting(false);
