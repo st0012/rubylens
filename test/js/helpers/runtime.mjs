@@ -25,6 +25,8 @@ const EXPORTS = `;return ({
   decodeMorphology, fallbackMorphology, morphology, packageMorphologies,
   layoutMetricsForCoreCount, normalizedSignals, weightedSignal, explorerExposureForZoom,
   corePosition, testPosition, dependencyCloudOffset, dependencyPosition,
+  systemMembers, systemAggregates, systemAnchors, packageAnchors,
+  decodePackageMorphology, DEPENDENCY_CLOUD_THREASHOLD,
   SCENE_POINT_STRIDE, categoryCodes, sceneData, scenePointCount,
   interactivePoints, dependencyHubs, packageHubs, systemHubs,
   ensureHitScanRows, hitTestProjected, ensureSearchIndex, searchRenderedPoints,
