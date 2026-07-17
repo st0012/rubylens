@@ -141,7 +141,7 @@ class ReportWriterTest < Minitest::Test
       assert_includes(html, "navigateToSelection(hub, { button, expandDependency: true })")
       assert_includes(html, "if (cameraFlight || !point?.screen)")
       assert_includes(html, 'canvas.setAttribute("aria-busy", "true")')
-      assert_includes(html, "Double-click a dependency system or gem subcloud, press Enter")
+      assert_includes(html, "Double-click a dependency system or gem cloud, press Enter")
       assert_includes(html, "press Enter or F on its selected marker")
       assert_includes(html, 'aria-keyshortcuts="Space"')
       assert_includes(html, 'id="reset-view" aria-label="Reset to default view"')

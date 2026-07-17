@@ -169,7 +169,7 @@ class ShowcaseContractTest < Minitest::Test
     assert_includes(runtime, "const { sceneData, scenePointCount, interactivePoints, dependencyHubs, packageHubs, systemHubs } = buildPoints()")
     assert_includes(runtime_function("createShowcaseRenderer"), "gl.bufferData(gl.ARRAY_BUFFER, sceneData, gl.STATIC_DRAW)")
     assert_includes(runtime_function("createShowcaseRenderer"), "gl.drawArrays(gl.POINTS, 0, scenePointCount)")
-    assert_includes(runtime_function("updateGalaxySummary"), '"scene points"')
+    assert_includes(runtime_function("updateGalaxySummary"), '${scenePointCount.toLocaleString("en-US")} ${scenePointCount === 1 ? "star" : "stars"}')
   end
 
   def test_showcase_requires_webgl2_and_fails_explicitly
@@ -190,7 +190,7 @@ class ShowcaseContractTest < Minitest::Test
     assert_includes(unavailable, 'dataset.plottedScenePoints = "0"')
     assert_includes(unavailable, 'dataset.showcaseMotion = "unavailable"')
     assert_includes(unavailable, 'dataset.showcaseReady = "true"')
-    assert_includes(unavailable, 'showcaseStatus.textContent = "WebGL2 is required to render this complete Showcase."')
+    assert_includes(unavailable, 'showcaseStatus.textContent = "WebGL2 is required to display this Showcase."')
     assert_includes(runtime, 'const context = interactiveMode ? canvas.getContext("2d"')
     assert_includes(File.read(STYLES_PATH), ".showcase-status { max-width: 720px; font-size: 24px; }")
   end
