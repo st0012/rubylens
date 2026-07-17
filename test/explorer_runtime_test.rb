@@ -303,8 +303,7 @@ class ExplorerRuntimeTest < Minitest::Test
   def test_dependency_stars_use_one_uniform_alpha_reduction
     build_points = runtime_function("buildPoints")
     assert_includes(RUNTIME, "const DEPENDENCY_STAR_ALPHA_SCALE = .85")
-    assert_includes(build_points, 'point.category === "dependencies" && !point.hub')
-    assert_includes(build_points, "? DEPENDENCY_STAR_ALPHA_SCALE")
+    assert_includes(build_points, 'category === "dependencies" && !hub ? DEPENDENCY_STAR_ALPHA_SCALE : 1')
     assert_includes(build_points, "point.maxSize = point.hub ? 5.2 : 3.2")
 
     explorer_renderer = runtime_function("createExplorerRenderer")

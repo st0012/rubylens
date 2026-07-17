@@ -537,21 +537,45 @@
       ];
     }
 
+    // Every scene point writes its render attributes into one interleaved
+    // Float32Array consumed directly by both renderers. A JS point object is
+    // created only when the point is consulted again after upload: hover and
+    // search targets, dependency hubs, and showcase annotation anchors.
+    const SCENE_POINT_STRIDE = 9;
+    const categoryCodes = { core: 0, tests: 1, dependencies: 2 };
     function buildPoints() {
-      const points = [];
+      const scenePointCount = model.namespaces.length + model.dependencyStars.length + systemAnchors.length + packageAnchors.length;
+      const sceneData = new Float32Array(scenePointCount * SCENE_POINT_STRIDE);
       const interactivePoints = [];
       const dependencyHubs = [];
       const packageHubs = [];
       const systemHubs = [];
-      const addPoint = (point, interactive = true) => {
-        point.sizeFactor = point.base * (.62 + point.signal * .46);
+      let nextRenderIndex = 0;
+
+      const writeScenePoint = (category, position, signal, base, hub, packageIndex, systemIndex) => {
+        const offset = nextRenderIndex * SCENE_POINT_STRIDE;
+        const sizeFactor = base * (.62 + signal * .46);
+        const alphaScale = category === "dependencies" && !hub ? DEPENDENCY_STAR_ALPHA_SCALE : 1;
+        sceneData[offset] = position[0];
+        sceneData[offset + 1] = position[1];
+        sceneData[offset + 2] = position[2];
+        sceneData[offset + 3] = sizeFactor;
+        sceneData[offset + 4] = clamp(.14 + signal * .105, .12, hub ? .86 : .7) * alphaScale;
+        sceneData[offset + 5] = categoryCodes[category];
+        sceneData[offset + 6] = hub ? 5.2 : 3.2;
+        sceneData[offset + 7] = packageIndex;
+        sceneData[offset + 8] = systemIndex;
+        nextRenderIndex += 1;
+        return sizeFactor;
+      };
+
+      // Must run in the same iteration as the point's writeScenePoint call:
+      // renderIndex pairs the object with its sceneData row and gl_VertexID.
+      const addPoint = (point, sizeFactor, interactive = true) => {
+        point.renderIndex = nextRenderIndex - 1;
+        point.sizeFactor = sizeFactor;
         point.maxSize = point.hub ? 5.2 : 3.2;
-        const alphaScale = point.category === "dependencies" && !point.hub
-          ? DEPENDENCY_STAR_ALPHA_SCALE
-          : 1;
-        point.alphaBase = clamp(.14 + point.signal * .105, .12, point.hub ? .86 : .7) * alphaScale;
         point.screen = null;
-        points.push(point);
         if (interactive && interactiveMode) interactivePoints.push(point);
         if (point.hub) dependencyHubs.push(point);
         if (point.packageHub) packageHubs.push(point);
@@ -561,47 +585,59 @@
         const name = interactiveMode ? model.namespaceNames[index] : "";
         const category = row[3] === 1 ? "tests" : "core";
         const values = row.slice(4, 10);
-        const rubyCounts = row.slice(10, 14);
-        const point = { category, seed: row[0], position: category === "tests" ? testPosition(row[0]) : corePosition(row[0]), signal: weightedSignal(normalizedSignals(values), category), base: category === "core" ? .82 : .68 };
-        if (interactiveMode) Object.assign(point, { name, kind: row[2] === 0 ? "Class" : "Module", rubyCounts, instanceVariableCount: row[14] || 0, values });
-        if (showcaseDetails) {
-          const annotationKey = showcaseAnnotationKey(category, index);
-          if (showcaseAnnotationAnchors.has(annotationKey) || showcasePinnedNamespaceAnchors.has(index)) {
-            showcasePointsByAnchor.set(annotationKey, point);
-          }
-        }
-        addPoint(point, !name.startsWith(RSPEC_PROXY_PREFIX));
+        const position = category === "tests" ? testPosition(row[0]) : corePosition(row[0]);
+        const sizeFactor = writeScenePoint(category, position, weightedSignal(normalizedSignals(values), category), category === "core" ? .82 : .68, false, -1, -1);
+        const interactive = interactiveMode && !name.startsWith(RSPEC_PROXY_PREFIX);
+        const annotationKey = showcaseAnnotationKey(category, index);
+        const anchored = showcaseDetails && (showcaseAnnotationAnchors.has(annotationKey) || showcasePinnedNamespaceAnchors.has(index));
+        if (!interactive && !anchored) return;
+        const point = interactiveMode
+          ? { category, position, name, kind: row[2] === 0 ? "Class" : "Module", rubyCounts: row.slice(10, 14), instanceVariableCount: row[14] || 0, values }
+          : { category, position };
+        if (anchored) showcasePointsByAnchor.set(annotationKey, point);
+        addPoint(point, sizeFactor, interactive);
       });
       model.dependencyStars.forEach(row => {
         const values = row.slice(2, 8);
         const packageIndex = row[1];
-        addPoint({ category: "dependencies", packageIndex, systemIndex: Number(model.packages[packageIndex]?.[8] ?? -1), seed: row[0], position: dependencyPosition(row[0], packageIndex), signal: weightedSignal(normalizedSignals(values), "dependencies"), base: .45 }, false);
+        writeScenePoint(
+          "dependencies",
+          dependencyPosition(row[0], packageIndex),
+          weightedSignal(normalizedSignals(values), "dependencies"),
+          .45,
+          false,
+          packageIndex,
+          Number(model.packages[packageIndex]?.[8] ?? -1),
+        );
       });
       systemAnchors.forEach((anchor, index) => {
         const systemRow = dependencySystems[index];
         const aggregate = systemAggregates[index];
         const visualValues = [0, aggregate.declarationCount, 0, 0, 0, 0];
-        const point = { category: "dependencies", systemIndex: index, seed: systemRow[0], position: anchor.slice(0, 3), signal: weightedSignal(normalizedSignals(visualValues), "dependencies"), base: 2.15, hub: true, systemHub: true };
+        const position = anchor.slice(0, 3);
+        const sizeFactor = writeScenePoint("dependencies", position, weightedSignal(normalizedSignals(visualValues), "dependencies"), 2.15, true, -1, index);
+        const point = { category: "dependencies", position, systemIndex: index, hub: true, systemHub: true };
         if (interactiveMode) Object.assign(point, { name: model.packageNames[systemRow[1]], memberCount: systemMembers[index].length, directMemberCount: aggregate.directCount, rubyCounts: aggregate.rubyCounts });
-        addPoint(point);
+        addPoint(point, sizeFactor);
       });
       packageAnchors.forEach((anchor, index) => {
         const packageRow = model.packages[index];
         const systemIndex = Number(packageRow[8]);
         const rubyCounts = packageRow.slice(4, 8);
         const visualValues = [0, packageRow[3], 0, 0, 0, 0];
-        const point = { category: "dependencies", packageIndex: index, systemIndex, seed: packageRow[0], position: anchor.slice(0, 3), signal: weightedSignal(normalizedSignals(visualValues), "dependencies"), base: systemIndex >= 0 ? 1.55 : 1.8, hub: true, packageHub: true };
+        const position = anchor.slice(0, 3);
+        const sizeFactor = writeScenePoint("dependencies", position, weightedSignal(normalizedSignals(visualValues), "dependencies"), systemIndex >= 0 ? 1.55 : 1.8, true, index, systemIndex);
+        const point = { category: "dependencies", position, packageIndex: index, systemIndex, hub: true, packageHub: true };
         if (interactiveMode) Object.assign(point, { name: model.packageNames[index], packageRole: packageRow[1] === 0 ? "Direct dependency" : "Transitive dependency", packageLocation: packageRow[2] === 0 ? "Workspace package" : "External gem", rubyCounts, groupedMemberCount: systemIndex >= 0 ? systemMembers[systemIndex].length : 0 });
         if (showcaseDetails) {
           const annotationKey = showcaseAnnotationKey("dependencies", index);
           if (showcaseAnnotationAnchors.has(annotationKey)) showcasePointsByAnchor.set(annotationKey, point);
         }
-        addPoint(point);
+        addPoint(point, sizeFactor);
       });
-      return { points, interactivePoints, dependencyHubs, packageHubs, systemHubs };
+      return { sceneData, scenePointCount, interactivePoints, dependencyHubs, packageHubs, systemHubs };
     }
-    const { points, interactivePoints, dependencyHubs, packageHubs, systemHubs } = buildPoints();
-    const renderPoints = points;
+    const { sceneData, scenePointCount, interactivePoints, dependencyHubs, packageHubs, systemHubs } = buildPoints();
     const totals = model.totals || {
       namespaces: model.namespaces.length,
       packages: model.packages.length,
@@ -656,8 +692,8 @@
         return;
       }
       summary.textContent = showcaseMode
-        ? `${MORPHOLOGY_FAMILY_LABELS[morphology.family]} · ${renderPoints.length.toLocaleString("en-US")} ${renderPoints.length === 1 ? "scene point" : "scene points"}`
-        : `${MORPHOLOGY_FAMILY_LABELS[morphology.family]} - ${renderPoints.length.toLocaleString("en-US")} ${renderPoints.length === 1 ? "star" : "stars"}`;
+        ? `${MORPHOLOGY_FAMILY_LABELS[morphology.family]} · ${scenePointCount.toLocaleString("en-US")} ${scenePointCount === 1 ? "scene point" : "scene points"}`
+        : `${MORPHOLOGY_FAMILY_LABELS[morphology.family]} - ${scenePointCount.toLocaleString("en-US")} ${scenePointCount === 1 ? "star" : "stars"}`;
     }
 
     function disableExplorerControls() {
@@ -844,8 +880,7 @@
         layout(location = 4) in float a_maxSize;
         uniform vec2 u_resolution;
         uniform vec2 u_center;
-        uniform float u_yaw;
-        uniform float u_pitch;
+        uniform vec4 u_trig;
         uniform float u_zoom;
         uniform float u_cameraDistance;
         uniform float u_cameraFocalLength;
@@ -866,10 +901,10 @@
         }
 
         void main() {
-          float cy = cos(u_yaw);
-          float sy = sin(u_yaw);
-          float cp = cos(u_pitch);
-          float sp = sin(u_pitch);
+          float cy = u_trig.x;
+          float sy = u_trig.y;
+          float cp = u_trig.z;
+          float sp = u_trig.w;
           float x1 = a_position.x * cy - a_position.z * sy;
           float z1 = a_position.x * sy + a_position.z * cy;
           float y2 = a_position.y * cp - z1 * sp;
@@ -885,7 +920,8 @@
           }
 
           float size = clamp(a_sizeFactor * perspective, 0.35, a_maxSize);
-          float visibleAlpha = clamp(a_alpha * u_brightness / 100.0, 0.0, 1.0);
+          float starAlphaScale = a_category > 1.5 ? float(${SHOWCASE_DEPENDENCY_PRESET.starAlphaScale}) : 1.0;
+          float visibleAlpha = clamp(a_alpha * starAlphaScale * u_brightness / 100.0, 0.0, 1.0);
           float radius = size;
           float alpha = visibleAlpha;
           vec3 colour = a_category < 0.5
@@ -914,27 +950,12 @@
         }
       `, POINT_FRAGMENT_SOURCE);
 
-      const pointData = new Float32Array(renderPoints.length * 7);
-      const categoryIndex = { core: 0, tests: 1, dependencies: 2 };
-      renderPoints.forEach((point, index) => {
-        const offset = index * 7;
-        const dependencyPoint = point.category === "dependencies";
-        const alphaScale = dependencyPoint ? SHOWCASE_DEPENDENCY_PRESET.starAlphaScale : 1;
-        pointData[offset] = point.position[0];
-        pointData[offset + 1] = point.position[1];
-        pointData[offset + 2] = point.position[2];
-        pointData[offset + 3] = point.sizeFactor;
-        pointData[offset + 4] = point.alphaBase * alphaScale;
-        pointData[offset + 5] = categoryIndex[point.category];
-        pointData[offset + 6] = point.maxSize;
-      });
-
       const pointVao = gl.createVertexArray();
       const pointBuffer = gl.createBuffer();
       gl.bindVertexArray(pointVao);
       gl.bindBuffer(gl.ARRAY_BUFFER, pointBuffer);
-      gl.bufferData(gl.ARRAY_BUFFER, pointData, gl.STATIC_DRAW);
-      const stride = 7 * Float32Array.BYTES_PER_ELEMENT;
+      gl.bufferData(gl.ARRAY_BUFFER, sceneData, gl.STATIC_DRAW);
+      const stride = SCENE_POINT_STRIDE * Float32Array.BYTES_PER_ELEMENT;
       [[0, 3, 0], [1, 1, 3], [2, 1, 4], [3, 1, 5], [4, 1, 6]].forEach(([location, size, offset]) => {
         gl.enableVertexAttribArray(location);
         gl.vertexAttribPointer(location, size, gl.FLOAT, false, stride, offset * Float32Array.BYTES_PER_ELEMENT);
@@ -949,8 +970,7 @@
       const pointUniforms = {
         resolution: gl.getUniformLocation(pointProgram, "u_resolution"),
         center: gl.getUniformLocation(pointProgram, "u_center"),
-        yaw: gl.getUniformLocation(pointProgram, "u_yaw"),
-        pitch: gl.getUniformLocation(pointProgram, "u_pitch"),
+        trig: gl.getUniformLocation(pointProgram, "u_trig"),
         zoom: gl.getUniformLocation(pointProgram, "u_zoom"),
         cameraDistance: gl.getUniformLocation(pointProgram, "u_cameraDistance"),
         cameraFocalLength: gl.getUniformLocation(pointProgram, "u_cameraFocalLength"),
@@ -989,8 +1009,8 @@
           gl.bindVertexArray(pointVao);
           gl.uniform2f(pointUniforms.resolution, width, height);
           gl.uniform2f(pointUniforms.center, sceneCenterX, sceneCenterY);
-          gl.uniform1f(pointUniforms.yaw, yaw);
-          gl.uniform1f(pointUniforms.pitch, pitch);
+          const [cy, sy, cp, sp] = viewMatrix();
+          gl.uniform4f(pointUniforms.trig, cy, sy, cp, sp);
           gl.uniform1f(pointUniforms.zoom, zoom);
           gl.uniform1f(pointUniforms.cameraDistance, cameraDistance);
           gl.uniform1f(pointUniforms.cameraFocalLength, cameraFocalLength);
@@ -999,7 +1019,7 @@
           gl.uniform1f(pointUniforms.deepDetail, deepDetail);
           for (let pass = 0; pass < 3; pass += 1) {
             gl.uniform1i(pointUniforms.pass, pass);
-            gl.drawArrays(gl.POINTS, 0, renderPoints.length);
+            gl.drawArrays(gl.POINTS, 0, scenePointCount);
           }
           gl.bindVertexArray(null);
           gl.disable(gl.BLEND);
@@ -1019,7 +1039,7 @@
         document.documentElement.dataset.dependencySampling = String(embeddedDependencyDeclarations < exactDependencyDeclarations);
         document.documentElement.dataset.embeddedDependencySampling = String(embeddedDependencyDeclarations < exactDependencyDeclarations);
         document.documentElement.dataset.plottedDependencyDeclarations = String(embeddedDependencyDeclarations);
-        document.documentElement.dataset.plottedScenePoints = String(renderPoints.length);
+        document.documentElement.dataset.plottedScenePoints = String(scenePointCount);
       } else {
         markShowcaseUnavailable(
           document.documentElement.dataset.showcaseUnavailableReason || "webgl2-unavailable",
@@ -1083,8 +1103,7 @@
         uniform vec2 u_resolution;
         uniform vec2 u_center;
         uniform vec2 u_sceneBounds;
-        uniform float u_yaw;
-        uniform float u_pitch;
+        uniform vec4 u_trig;
         uniform float u_zoom;
         uniform float u_cameraDistance;
         uniform float u_cameraFocalLength;
@@ -1118,10 +1137,10 @@
           bool expandedPoint = (u_expandedPackage >= 0.0 && a_packageIndex == u_expandedPackage)
             || (u_expandedSystem >= 0.0 && a_systemIndex == u_expandedSystem);
           if (expandedPoint) position = u_expandedAnchor + (position - u_expandedAnchor) * u_expansion;
-          float cy = cos(u_yaw);
-          float sy = sin(u_yaw);
-          float cp = cos(u_pitch);
-          float sp = sin(u_pitch);
+          float cy = u_trig.x;
+          float sy = u_trig.y;
+          float cp = u_trig.z;
+          float sp = u_trig.w;
           float x1 = position.x * cy - position.z * sy;
           float z1 = position.x * sy + position.z * cy;
           float y2 = position.y * cp - z1 * sp;
@@ -1173,28 +1192,12 @@
         }
       `, POINT_FRAGMENT_SOURCE);
 
-      const pointData = new Float32Array(renderPoints.length * 9);
-      const categoryIndex = { core: 0, tests: 1, dependencies: 2 };
-      renderPoints.forEach((point, index) => {
-        const offset = index * 9;
-        point.renderIndex = index;
-        pointData[offset] = point.position[0];
-        pointData[offset + 1] = point.position[1];
-        pointData[offset + 2] = point.position[2];
-        pointData[offset + 3] = point.sizeFactor;
-        pointData[offset + 4] = point.alphaBase;
-        pointData[offset + 5] = categoryIndex[point.category];
-        pointData[offset + 6] = point.maxSize;
-        pointData[offset + 7] = point.packageIndex ?? -1;
-        pointData[offset + 8] = point.systemIndex ?? -1;
-      });
-
       const pointVao = gl.createVertexArray();
       const pointBuffer = gl.createBuffer();
       gl.bindVertexArray(pointVao);
       gl.bindBuffer(gl.ARRAY_BUFFER, pointBuffer);
-      gl.bufferData(gl.ARRAY_BUFFER, pointData, gl.STATIC_DRAW);
-      const stride = 9 * Float32Array.BYTES_PER_ELEMENT;
+      gl.bufferData(gl.ARRAY_BUFFER, sceneData, gl.STATIC_DRAW);
+      const stride = SCENE_POINT_STRIDE * Float32Array.BYTES_PER_ELEMENT;
       [[0, 3, 0], [1, 1, 3], [2, 1, 4], [3, 1, 5], [4, 1, 6], [5, 1, 7], [6, 1, 8]].forEach(([location, size, offset]) => {
         gl.enableVertexAttribArray(location);
         gl.vertexAttribPointer(location, size, gl.FLOAT, false, stride, offset * Float32Array.BYTES_PER_ELEMENT);
@@ -1206,7 +1209,7 @@
         center: gl.getUniformLocation(backgroundProgram, "u_center"),
       };
       const pointUniforms = Object.fromEntries([
-        "u_resolution", "u_center", "u_sceneBounds", "u_yaw", "u_pitch", "u_zoom",
+        "u_resolution", "u_center", "u_sceneBounds", "u_trig", "u_zoom",
         "u_cameraDistance", "u_cameraFocalLength", "u_exposure", "u_deepDetail", "u_dpr",
         "u_categoryVisible", "u_categoryEmphasis", "u_expandedPackage", "u_expandedSystem",
         "u_expandedAnchor", "u_expansion", "u_selectedIndex", "u_pass",
@@ -1255,8 +1258,8 @@
           gl.uniform2f(pointUniforms.resolution, width, height);
           gl.uniform2f(pointUniforms.center, centerX, centerY);
           gl.uniform2f(pointUniforms.sceneBounds, sceneRight, sceneBottom);
-          gl.uniform1f(pointUniforms.yaw, yaw);
-          gl.uniform1f(pointUniforms.pitch, pitch);
+          const [cy, sy, cp, sp] = viewMatrix();
+          gl.uniform4f(pointUniforms.trig, cy, sy, cp, sp);
           gl.uniform1f(pointUniforms.zoom, zoom);
           gl.uniform1f(pointUniforms.cameraDistance, cameraDistance);
           gl.uniform1f(pointUniforms.cameraFocalLength, cameraFocalLength);
@@ -1277,7 +1280,7 @@
           gl.uniform1i(pointUniforms.selectedIndex, selectedPoint ? selectedPoint.renderIndex : -1);
           for (let pass = 0; pass < 3; pass += 1) {
             gl.uniform1i(pointUniforms.pass, pass);
-            gl.drawArrays(gl.POINTS, 0, renderPoints.length);
+            gl.drawArrays(gl.POINTS, 0, scenePointCount);
           }
           gl.bindVertexArray(null);
           gl.disable(gl.BLEND);
@@ -1300,7 +1303,7 @@
         document.documentElement.dataset.dependencySampling = String(plottedDependencyDeclarations < exactDependencyDeclarations);
         document.documentElement.dataset.embeddedDependencySampling = String(embeddedDependencyDeclarations < exactDependencyDeclarations);
         document.documentElement.dataset.plottedDependencyDeclarations = String(plottedDependencyDeclarations);
-        document.documentElement.dataset.plottedScenePoints = String(renderPoints.length);
+        document.documentElement.dataset.plottedScenePoints = String(scenePointCount);
       } else {
         markExplorerUnavailable(
           document.documentElement.dataset.explorerUnavailableReason || "webgl2-unavailable",
@@ -1576,21 +1579,21 @@
 
     let hitScanRows = null;
     const HIT_SCAN_STRIDE = 8;
-    const categoryCodes = { core: 0, tests: 1, dependencies: 2 };
 
     function ensureHitScanRows() {
       if (hitScanRows) return hitScanRows;
       hitScanRows = new Float32Array(interactivePoints.length * HIT_SCAN_STRIDE);
       interactivePoints.forEach((point, index) => {
         const offset = index * HIT_SCAN_STRIDE;
-        hitScanRows[offset] = point.position[0];
-        hitScanRows[offset + 1] = point.position[1];
-        hitScanRows[offset + 2] = point.position[2];
-        hitScanRows[offset + 3] = point.sizeFactor;
-        hitScanRows[offset + 4] = point.maxSize;
-        hitScanRows[offset + 5] = categoryCodes[point.category];
-        hitScanRows[offset + 6] = point.packageIndex ?? -1;
-        hitScanRows[offset + 7] = point.systemIndex ?? -1;
+        const scene = point.renderIndex * SCENE_POINT_STRIDE;
+        hitScanRows[offset] = sceneData[scene];
+        hitScanRows[offset + 1] = sceneData[scene + 1];
+        hitScanRows[offset + 2] = sceneData[scene + 2];
+        hitScanRows[offset + 3] = sceneData[scene + 3];
+        hitScanRows[offset + 4] = sceneData[scene + 6];
+        hitScanRows[offset + 5] = sceneData[scene + 5];
+        hitScanRows[offset + 6] = sceneData[scene + 7];
+        hitScanRows[offset + 7] = sceneData[scene + 8];
       });
       return hitScanRows;
     }
@@ -1957,7 +1960,7 @@
           "Interactive rendering",
           1,
           [],
-          `This report requires WebGL2 to display its ${renderPoints.length.toLocaleString()}-point interactive scene. Exact dependency totals across ${totals.packages.toLocaleString()} ${totals.packages === 1 ? "gem" : "gems"} remain complete.`,
+          `This report requires WebGL2 to display its ${scenePointCount.toLocaleString()}-point interactive scene. Exact dependency totals across ${totals.packages.toLocaleString()} ${totals.packages === 1 ? "gem" : "gems"} remain complete.`,
           "Unavailable",
         );
       }

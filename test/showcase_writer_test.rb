@@ -25,7 +25,7 @@ class ShowcaseWriterTest < Minitest::Test
       assert_includes(html, 'data-rubylens-mode="showcase"')
       assert_includes(html, "const SHOWCASE_PRESET = Object.freeze")
       assert_includes(html, '"durationMs": 60000')
-      assert_includes(html, "const renderPoints = points")
+      assert_includes(html, "const { sceneData, scenePointCount, interactivePoints, dependencyHubs, packageHubs, systemHubs } = buildPoints()")
       assert_includes(html, 'class="showcase-stage"')
       assert_includes(html, 'id="showcase-status" role="status" aria-live="polite" hidden')
       assert_includes(html, 'dataset.showcaseRenderer = "webgl2"')
