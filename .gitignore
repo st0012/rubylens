@@ -3,3 +3,8 @@
 !/generated/.gitkeep
 /prototype/codebase-cosmos/node_modules/
 /prototype/codebase-cosmos/dist/
+/node_modules/
+/test-results/
+/playwright-report/
+/coverage/
+/test/browser/.fixtures/

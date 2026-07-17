@@ -1,0 +1,16 @@
+{
+  "name": "rubylens-js-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
+    "test:browser": "playwright test",
+    "test": "vitest run && playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1",
+    "happy-dom": "20.10.6",
+    "vitest": "4.1.10"
+  }
+}
