@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Four Ruby codebases rendered as galaxies by RubyLens.">
+<title>Ruby Galaxies</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: #03040a; color: #e9e4f4;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    -webkit-font-smoothing: antialiased;
+    background-image: radial-gradient(rgba(194, 179, 212, .07) 1px, transparent 1px);
+    background-size: 26px 26px;
+  }
+  a { color: inherit; }
+  .topbar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px clamp(18px, 3.5vw, 40px); font-size: 11px; letter-spacing: .14em;
+    color: #8e8799; text-transform: uppercase; border-bottom: 1px dashed #2a2340;
+  }
+  .topbar .id { color: #ffc36b; }
+  .topbar .id a { text-decoration: none; border: 0; color: inherit; }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 0 clamp(18px, 3.5vw, 40px); }
+  header.hero { padding: 92px 0 72px; }
+  .hero .tag { color: #ffc36b; font-size: 12px; letter-spacing: .2em; text-transform: uppercase; }
+  .hero h1 {
+    margin-top: 20px; font-size: clamp(38px, 6vw, 68px); font-weight: 500;
+    letter-spacing: -.01em; line-height: 1.08;
+  }
+  .hero h1 .dim { color: #5d5570; }
+  .hero p.lede { max-width: 640px; margin-top: 26px; color: #aaa0b8; font-size: 14.5px; line-height: 1.9; }
+  .hero p.lede strong { color: #e9e4f4; font-weight: 600; }
+  .hero .meta { margin-top: 30px; font-size: 12px; color: #8e8799; letter-spacing: .06em; }
+  .hero .meta a { color: #74d8ff; text-decoration: none; border-bottom: 1px dotted #74d8ff; }
+  .exhibit { margin: 0 0 96px; }
+  .exhibit .head {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 18px;
+    flex-wrap: wrap; padding: 0 2px 12px;
+  }
+  .head .left { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; }
+  .head .idx { color: #ffc36b; font-size: 13px; letter-spacing: .12em; }
+  .head h2 { font-size: clamp(24px, 3vw, 34px); font-weight: 600; letter-spacing: -.01em; }
+  .head .designation { color: #8e8799; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; }
+  .head .cta {
+    color: #74d8ff; font-size: 13px; text-decoration: none;
+    letter-spacing: .06em; border-bottom: 1px dotted #74d8ff; padding-bottom: 2px;
+  }
+  .head .cta:hover { color: #b7ecff; }
+  .stagebox { position: relative; padding: 12px; }
+  .stagebox::before, .stagebox::after,
+  .stagebox .tick::before, .stagebox .tick::after {
+    content: ""; position: absolute; width: 18px; height: 18px; border-color: #6f5f96;
+    border-style: solid; border-width: 0;
+  }
+  .stagebox::before { top: 0; left: 0; border-top-width: 1px; border-left-width: 1px; }
+  .stagebox::after { top: 0; right: 0; border-top-width: 1px; border-right-width: 1px; }
+  .stagebox .tick::before { bottom: 0; left: 0; border-bottom-width: 1px; border-left-width: 1px; }
+  .stagebox .tick::after { bottom: 0; right: 0; border-bottom-width: 1px; border-right-width: 1px; }
+  .stage { position: relative; height: min(78vh, 720px); min-height: 420px; background: #03040a; }
+  .stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; background: #03040a; }
+  .stage .hitarea { position: absolute; inset: 0; }
+  .exhibit .readout {
+    display: flex; gap: 28px; flex-wrap: wrap; padding: 14px 2px 0;
+    color: #8e8799; font-size: 11.5px; letter-spacing: .08em;
+  }
+  .readout b { color: #ddd4e8; font-weight: 600; }
+  footer {
+    padding: 40px clamp(18px, 3.5vw, 40px) 80px; text-align: center; color: #8e8799;
+    font-size: 12.5px; line-height: 2; border-top: 1px dashed #2a2340; margin-top: 20px;
+  }
+  footer a { color: #74d8ff; text-decoration: none; border-bottom: 1px dotted #74d8ff; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <span>ruby-galaxies · survey</span>
+    <span class="id"><a href="https://st0012.dev">st0012.dev</a> / 2026</span>
+  </div>
+  <div class="wrap">
+    <header class="hero">
+      <p class="tag">// a RubyLens field survey</p>
+      <h1>Ruby Galaxies <span class="dim">— 4 objects catalogued</span></h1>
+      <p class="lede">Every star is a class or module. Every outlying cloud is a
+        dependency. <strong>RubyLens</strong> maps Ruby codebases into galaxies — built
+        not to analyze your code, but to help you appreciate it.
+        Each galaxy below is alive; select one to open its interactive explorer.</p>
+      <p class="meta">instrument: <a href="https://github.com/st0012/rubylens">github.com/st0012/rubylens</a></p>
+    </header>
+
+    <section id="rubocop" class="exhibit">
+      <div class="head">
+        <div class="left">
+          <span class="idx">[01/04]</span>
+          <h2>RuboCop</h2>
+          <span class="designation">barred spiral</span>
+        </div>
+        <a class="cta" href="rubocop.html">open explorer ↗</a>
+      </div>
+      <div class="stagebox"><span class="tick"></span>
+        <div class="stage">
+          <iframe src="rubocop-showcase.html" loading="lazy" title="RuboCop as a rotating galaxy"></iframe>
+          <a class="hitarea" href="rubocop.html" aria-label="Open the RuboCop explorer"></a>
+        </div>
+      </div>
+      <div class="readout">
+        <span>role <b>linter · formatter</b></span>
+        <span>packages <b>54</b></span>
+        <span>generated <b>2026-07-18</b></span>
+      </div>
+    </section>
+
+    <section id="rails" class="exhibit">
+      <div class="head">
+        <div class="left">
+          <span class="idx">[02/04]</span>
+          <h2>Ruby on Rails</h2>
+          <span class="designation">spiral</span>
+        </div>
+        <a class="cta" href="rails.html">open explorer ↗</a>
+      </div>
+      <div class="stagebox"><span class="tick"></span>
+        <div class="stage">
+          <iframe src="rails-showcase.html" loading="lazy" title="Ruby on Rails as a rotating galaxy"></iframe>
+          <a class="hitarea" href="rails.html" aria-label="Open the Ruby on Rails explorer"></a>
+        </div>
+      </div>
+      <div class="readout">
+        <span>role <b>full-stack framework</b></span>
+        <span>packages <b>217</b></span>
+        <span>generated <b>2026-07-18</b></span>
+      </div>
+    </section>
+
+    <section id="discourse" class="exhibit">
+      <div class="head">
+        <div class="left">
+          <span class="idx">[03/04]</span>
+          <h2>Discourse</h2>
+          <span class="designation">spiral</span>
+        </div>
+        <a class="cta" href="discourse.html">open explorer ↗</a>
+      </div>
+      <div class="stagebox"><span class="tick"></span>
+        <div class="stage">
+          <iframe src="discourse-showcase.html" loading="lazy" title="Discourse as a rotating galaxy"></iframe>
+          <a class="hitarea" href="discourse.html" aria-label="Open the Discourse explorer"></a>
+        </div>
+      </div>
+      <div class="readout">
+        <span>role <b>discussion platform</b></span>
+        <span>packages <b>301</b></span>
+        <span>generated <b>2026-07-18</b></span>
+      </div>
+    </section>
+
+    <section id="rubygems-org" class="exhibit">
+      <div class="head">
+        <div class="left">
+          <span class="idx">[04/04]</span>
+          <h2>rubygems.org</h2>
+          <span class="designation">spiral</span>
+        </div>
+        <a class="cta" href="rubygems-org.html">open explorer ↗</a>
+      </div>
+      <div class="stagebox"><span class="tick"></span>
+        <div class="stage">
+          <iframe src="rubygems-org-showcase.html" loading="lazy" title="rubygems.org as a rotating galaxy"></iframe>
+          <a class="hitarea" href="rubygems-org.html" aria-label="Open the rubygems.org explorer"></a>
+        </div>
+      </div>
+      <div class="readout">
+        <span>role <b>gem host</b></span>
+        <span>packages <b>294</b></span>
+        <span>generated <b>2026-07-18</b></span>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    <p>made with <a href="https://github.com/st0012/rubylens">RubyLens</a> — turn your own codebase into a galaxy</p>
+    <p><a href="https://st0012.dev">st0012.dev</a></p>
+  </footer>
+
+  <script>
+  (function () {
+    if (!("IntersectionObserver" in window)) return;
+    var frames = document.querySelectorAll(".stage iframe");
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        var frame = entry.target;
+        if (entry.isIntersecting) {
+          if (frame.dataset.src && frame.getAttribute("src") !== frame.dataset.src) {
+            frame.src = frame.dataset.src;
+          }
+        } else {
+          if (!frame.dataset.src) frame.dataset.src = frame.getAttribute("src");
+          if (frame.getAttribute("src") !== "about:blank") frame.src = "about:blank";
+        }
+      });
+    }, { rootMargin: "150% 0px" });
+    frames.forEach(function (frame) { observer.observe(frame); });
+  })();
+  </script>
+</body>
+</html>
