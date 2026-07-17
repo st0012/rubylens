@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ruby Galaxies — C · Survey</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: #03040a; color: #e9e4f4;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    -webkit-font-smoothing: antialiased;
+    background-image: radial-gradient(rgba(194, 179, 212, .07) 1px, transparent 1px);
+    background-size: 26px 26px;
+  }
+  a { color: inherit; }
+  .topbar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px clamp(18px, 3.5vw, 40px); font-size: 11px; letter-spacing: .14em;
+    color: #8e8799; text-transform: uppercase; border-bottom: 1px dashed #2a2340;
+  }
+  .topbar .id { color: #ffc36b; }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 0 clamp(18px, 3.5vw, 40px); }
+  header.hero { padding: 92px 0 72px; }
+  .hero .tag { color: #ffc36b; font-size: 12px; letter-spacing: .2em; text-transform: uppercase; }
+  .hero h1 {
+    margin-top: 20px; font-size: clamp(38px, 6vw, 68px); font-weight: 500;
+    letter-spacing: -.01em; line-height: 1.08;
+  }
+  .hero h1 .dim { color: #5d5570; }
+  .hero p.lede { max-width: 640px; margin-top: 26px; color: #aaa0b8; font-size: 14.5px; line-height: 1.9; }
+  .hero p.lede strong { color: #e9e4f4; font-weight: 600; }
+  .hero .meta { margin-top: 30px; font-size: 12px; color: #8e8799; letter-spacing: .06em; }
+  .hero .meta a { color: #74d8ff; text-decoration: none; border-bottom: 1px dotted #74d8ff; }
+  .exhibit { margin: 0 0 96px; }
+  .exhibit .head {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 18px;
+    flex-wrap: wrap; padding: 0 2px 12px;
+  }
+  .head .left { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; }
+  .head .idx { color: #ffc36b; font-size: 13px; letter-spacing: .12em; }
+  .head h2 { font-size: clamp(24px, 3vw, 34px); font-weight: 600; letter-spacing: -.01em; }
+  .head .designation { color: #8e8799; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; }
+  .head .cta {
+    color: #74d8ff; font-size: 13px; text-decoration: none;
+    letter-spacing: .06em; border-bottom: 1px dotted #74d8ff; padding-bottom: 2px;
+  }
+  .head .cta:hover { color: #b7ecff; }
+  .stagebox { position: relative; padding: 12px; }
+  .stagebox::before, .stagebox::after,
+  .stagebox .tick::before, .stagebox .tick::after {
+    content: ""; position: absolute; width: 18px; height: 18px; border-color: #6f5f96;
+    border-style: solid; border-width: 0;
+  }
+  .stagebox::before { top: 0; left: 0; border-top-width: 1px; border-left-width: 1px; }
+  .stagebox::after { top: 0; right: 0; border-top-width: 1px; border-right-width: 1px; }
+  .stagebox .tick::before { bottom: 0; left: 0; border-bottom-width: 1px; border-left-width: 1px; }
+  .stagebox .tick::after { bottom: 0; right: 0; border-bottom-width: 1px; border-right-width: 1px; }
+  .stage { position: relative; height: min(64vh, 600px); min-height: 400px; background: #03040a; }
+  .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .stage .hitarea { position: absolute; inset: 0; }
+  .exhibit .readout {
+    display: flex; gap: 28px; flex-wrap: wrap; padding: 14px 2px 0;
+    color: #8e8799; font-size: 11.5px; letter-spacing: .08em;
+  }
+  .readout b { color: #ddd4e8; font-weight: 600; }
+  footer {
+    padding: 40px clamp(18px, 3.5vw, 40px) 80px; text-align: center; color: #8e8799;
+    font-size: 12.5px; line-height: 2; border-top: 1px dashed #2a2340; margin-top: 20px;
+  }
+  footer a { color: #74d8ff; text-decoration: none; border-bottom: 1px dotted #74d8ff; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <span>ruby-galaxies · survey</span>
+    <span class="id">st0012.dev / 2026</span>
+  </div>
+  <div class="wrap">
+    <header class="hero">
+      <p class="tag">// a RubyLens field survey</p>
+      <h1>Ruby Galaxies <span class="dim">— 4 objects catalogued</span></h1>
+      <p class="lede">Every star is a class or module. Every outlying cloud is a
+        dependency. <strong>RubyLens</strong> maps Ruby codebases into galaxies — built
+        not to analyze your code, but to help you appreciate it.
+        Select any object to open its interactive explorer.</p>
+      <p class="meta">instrument: <a href="https://github.com/st0012/rubylens">github.com/st0012/rubylens</a></p>
+    </header>
+
+    <section id="ex1" class="exhibit">
+      <div class="head">
+        <div class="left">
+          <span class="idx">[01/04]</span>
+          <h2>RuboCop</h2>
+          <span class="designation">RBL-E4 · elliptical</span>
+        </div>
+        <a class="cta" href="#">open explorer ↗</a>
+      </div>
+      <div class="stagebox"><span class="tick"></span>
+        <div class="stage">
+          <canvas data-galaxy='{"morph":"E4","seed":11,"palette":"violet","stars":5200,"deps":6,"scale":0.3}'></canvas>
+          <a class="hitarea" href="#" aria-label="Open the RuboCop explorer"></a>
+        </div>
+      </div>
+      <div class="readout">
+        <span>classes <b>1,847</b></span><span>modules <b>212</b></span>
+        <span>methods <b>9,326</b></span><span>gems <b>34</b></span>
+        <span>role <b>linter · formatter</b></span>
+      </div>
+    </section>
+
+    <section id="ex2" class="exhibit">
+      <div class="head">
+        <div class="left">
+          <span class="idx">[02/04]</span>
+          <h2>Ruby on Rails</h2>
+          <span class="designation">RBL-Sc · spiral</span>
+        </div>
+        <a class="cta" href="#">open explorer ↗</a>
+      </div>
+      <div class="stagebox"><span class="tick"></span>
+        <div class="stage">
+          <canvas data-galaxy='{"morph":"Sc","seed":29,"palette":"rose","stars":6400,"deps":9,"scale":0.3}'></canvas>
+          <a class="hitarea" href="#" aria-label="Open the Ruby on Rails explorer"></a>
+        </div>
+      </div>
+      <div class="readout">
+        <span>classes <b>3,412</b></span><span>modules <b>1,190</b></span>
+        <span>methods <b>24,708</b></span><span>gems <b>52</b></span>
+        <span>role <b>full-stack framework</b></span>
+      </div>
+    </section>
+
+    <section id="ex3" class="exhibit">
+      <div class="head">
+        <div class="left">
+          <span class="idx">[03/04]</span>
+          <h2>Discourse</h2>
+          <span class="designation">RBL-SBb · barred spiral</span>
+        </div>
+        <a class="cta" href="#">open explorer ↗</a>
+      </div>
+      <div class="stagebox"><span class="tick"></span>
+        <div class="stage">
+          <canvas data-galaxy='{"morph":"SBb","seed":47,"palette":"teal","stars":6200,"deps":9,"scale":0.28}'></canvas>
+          <a class="hitarea" href="#" aria-label="Open the Discourse explorer"></a>
+        </div>
+      </div>
+      <div class="readout">
+        <span>classes <b>4,105</b></span><span>modules <b>876</b></span>
+        <span>methods <b>31,442</b></span><span>gems <b>301</b></span>
+        <span>role <b>discussion platform</b></span>
+      </div>
+    </section>
+
+    <section id="ex4" class="exhibit">
+      <div class="head">
+        <div class="left">
+          <span class="idx">[04/04]</span>
+          <h2>rubygems.org</h2>
+          <span class="designation">RBL-Irr · irregular</span>
+        </div>
+        <a class="cta" href="#">open explorer ↗</a>
+      </div>
+      <div class="stagebox"><span class="tick"></span>
+        <div class="stage">
+          <canvas data-galaxy='{"morph":"Irr","seed":83,"palette":"gold","stars":5400,"deps":7,"scale":0.27}'></canvas>
+          <a class="hitarea" href="#" aria-label="Open the rubygems.org explorer"></a>
+        </div>
+      </div>
+      <div class="readout">
+        <span>classes <b>612</b></span><span>modules <b>148</b></span>
+        <span>methods <b>4,930</b></span><span>gems <b>118</b></span>
+        <span>role <b>gem host</b></span>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    <p>made with <a href="https://github.com/st0012/rubylens">RubyLens</a> — turn your own codebase into a galaxy</p>
+    <p><a href="https://st0012.dev">st0012.dev</a></p>
+  </footer>
+  <script>
+// Static 2D-canvas stand-in for a RubyLens Showcase frame. Deterministic, no animation.
+(function () {
+  function mulberry32(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function gauss(rnd) {
+    let u = 0, v = 0;
+    while (u === 0) u = rnd();
+    while (v === 0) v = rnd();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+
+  const PALETTES = {
+    violet: ['#f6f2ff', '#cfc4ec', '#b3a5e0', '#8f7fc9'],
+    rose: ['#fff3f4', '#f4c2cf', '#e79ab4', '#c9769c'],
+    teal: ['#effaff', '#bfe6f2', '#8fd0e6', '#5fa8c9'],
+    gold: ['#fff8ec', '#f2ddb3', '#e6c88f', '#c9a55f'],
+  };
+
+  function drawGalaxy(canvas, opts) {
+    const rnd = mulberry32(opts.seed || 1);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = Math.max(1, Math.round(w * dpr));
+    canvas.height = Math.max(1, Math.round(h * dpr));
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    ctx.fillStyle = '#03040a';
+    ctx.fillRect(0, 0, w, h);
+
+    const cx = w * (opts.cx || 0.5), cy = h * (opts.cy || 0.5);
+    const R = Math.min(w, h) * (opts.scale || 0.36);
+    const stars = PALETTES[opts.palette || 'violet'];
+    const tilt = (opts.tilt != null ? opts.tilt : 0.28) + rnd() * 0.1;
+    const rot = rnd() * Math.PI * 2;
+
+    function put(x, y, r, color, alpha) {
+      const ry = y * (1 - tilt);
+      const px = cx + (x * Math.cos(rot) - ry * Math.sin(rot));
+      const py = cy + (x * Math.sin(rot) + ry * Math.cos(rot));
+      if (px < -4 || px > w + 4 || py < -4 || py > h + 4) return;
+      ctx.fillStyle = color;
+      // Soft halo pass then bright core pass so stars stay visible at small sizes
+      ctx.globalAlpha = alpha * 0.35;
+      ctx.beginPath();
+      ctx.arc(px, py, r * 2.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = Math.min(1, alpha * 1.5);
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.globalCompositeOperation = 'source-over';
+    // Backdrop starfield
+    for (let i = 0; i < 260; i++) {
+      ctx.globalAlpha = 0.12 + rnd() * 0.4;
+      ctx.fillStyle = rnd() < 0.85 ? '#cfc9e2' : '#f6f2ff';
+      const sx = rnd() * w, sy = rnd() * h;
+      ctx.fillRect(sx, sy, rnd() < 0.12 ? 1.5 : 1, 1);
+    }
+
+    ctx.globalCompositeOperation = 'lighter';
+
+    const morph = opts.morph || 'Sc';
+    const N = opts.stars || 5200;
+
+    if (morph.startsWith('E')) {
+      const flat = 1 - (parseInt(morph[1] || '3', 10) / 10);
+      for (let i = 0; i < N; i++) {
+        const r = Math.abs(gauss(rnd)) * R * 0.55;
+        const th = rnd() * Math.PI * 2;
+        const x = Math.cos(th) * r;
+        const y = Math.sin(th) * r * flat;
+        const c = r < R * 0.18 ? stars[0] : stars[1 + Math.floor(rnd() * 3)];
+        put(x, y, rnd() < 0.04 ? 1.7 : 0.95, c, 0.3 + rnd() * 0.55);
+      }
+    } else if (morph === 'Irr') {
+      const clumps = 5 + Math.floor(rnd() * 3);
+      for (let k = 0; k < clumps; k++) {
+        const ox = (rnd() - 0.5) * R * 1.7, oy = (rnd() - 0.5) * R * 1.3;
+        const cr = R * (0.18 + rnd() * 0.3);
+        const n = Math.floor(N / clumps);
+        for (let i = 0; i < n; i++) {
+          const x = ox + gauss(rnd) * cr * 0.5;
+          const y = oy + gauss(rnd) * cr * 0.45;
+          const c = stars[Math.floor(rnd() * 4)];
+          put(x, y, rnd() < 0.05 ? 1.6 : 0.9, c, 0.28 + rnd() * 0.55);
+        }
+      }
+    } else {
+      // Spiral / barred spiral
+      const barred = morph.startsWith('SB');
+      const arms = 2 + (rnd() < 0.35 ? 1 : 0);
+      const bulge = Math.floor(N * (barred ? 0.16 : 0.2));
+      const barN = barred ? Math.floor(N * 0.16) : 0;
+      const armN = N - bulge - barN;
+      const barLen = R * 0.55, barAng = rnd() * Math.PI;
+      for (let i = 0; i < bulge; i++) {
+        const r = Math.abs(gauss(rnd)) * R * 0.13;
+        const th = rnd() * Math.PI * 2;
+        put(Math.cos(th) * r, Math.sin(th) * r * 0.85, rnd() < 0.06 ? 1.8 : 1, stars[0], 0.38 + rnd() * 0.5);
+      }
+      for (let i = 0; i < barN; i++) {
+        const t = (rnd() - 0.5) * 2;
+        const x = Math.cos(barAng) * t * barLen + gauss(rnd) * R * 0.05;
+        const y = Math.sin(barAng) * t * barLen * 0.35 + gauss(rnd) * R * 0.05;
+        put(x, y, 0.95, stars[1], 0.32 + rnd() * 0.5);
+      }
+      const wind = 0.24 + rnd() * 0.1;
+      for (let i = 0; i < armN; i++) {
+        const arm = i % arms;
+        const t = Math.pow(rnd(), 0.72);
+        const th0 = (barred ? barAng : rot) + arm * (Math.PI * 2 / arms);
+        const th = th0 + t * Math.PI * (barred ? 1.5 : 2.1);
+        const r = (barred ? barLen * 0.95 : R * 0.12) + t * R * 1.05;
+        const spread = R * 0.05 * (0.5 + t * 1.6);
+        const x = Math.cos(th) * r + gauss(rnd) * spread;
+        const y = Math.sin(th) * r + gauss(rnd) * spread;
+        const c = rnd() < 0.12 ? stars[0] : stars[1 + Math.floor(rnd() * 3)];
+        put(x * wind * 3.4, y * wind * 3.4, rnd() < 0.05 ? 1.6 : 0.9, c, 0.26 + rnd() * 0.5);
+      }
+    }
+
+    // Dependency clouds: small satellite clumps, amber + cyan accents like the real render
+    const deps = opts.deps != null ? opts.deps : 7;
+    const depColors = ['#ffc36b', '#74d8ff', '#e8ddc2'];
+    for (let k = 0; k < deps; k++) {
+      const ang = rnd() * Math.PI * 2;
+      const dist = R * (1.25 + rnd() * 0.75);
+      const ox = Math.cos(ang) * dist, oy = Math.sin(ang) * dist * 0.8;
+      const cr = R * (0.06 + rnd() * 0.09);
+      const n = 60 + Math.floor(rnd() * 140);
+      const c = depColors[Math.floor(rnd() * depColors.length)];
+      for (let i = 0; i < n; i++) {
+        put(ox + gauss(rnd) * cr, oy + gauss(rnd) * cr * 0.8, rnd() < 0.06 ? 1.35 : 0.8, c, 0.24 + rnd() * 0.45);
+      }
+    }
+
+    // Core glow
+    ctx.globalCompositeOperation = 'lighter';
+    if (morph !== 'Irr') {
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 0.5);
+      g.addColorStop(0, 'rgba(255, 246, 238, 0.34)');
+      g.addColorStop(0.35, 'rgba(190, 170, 220, 0.10)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+  }
+
+  function paintAll() {
+    document.querySelectorAll('canvas[data-galaxy]').forEach(function (c) {
+      drawGalaxy(c, JSON.parse(c.getAttribute('data-galaxy')));
+    });
+  }
+
+  window.addEventListener('resize', paintAll);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', paintAll);
+  } else {
+    paintAll();
+  }
+})();
+</script>
+</body>
+</html>
