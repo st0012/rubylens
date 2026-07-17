@@ -34,6 +34,8 @@
     let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedSystemIndex = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, showcaseRenderer = null, showcaseAnnotationSlot = -1, activeShowcaseAnnotation = null;
     const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35;
     const CORE_SCALE_BASELINE = 3_000;
+    const DEPENDENCY_CLOUD_THREASHOLD = 18;
+    const DEPENDENCY_STAR_ALPHA_SCALE = .85;
     const MORPHOLOGY_FAMILY = Object.freeze({ elliptical: 0, lenticular: 1, spiral: 2, barredSpiral: 3, irregular: 4 });
     const MORPHOLOGY_FAMILY_LABELS = Object.freeze(["Elliptical galaxy", "Lenticular galaxy", "Spiral galaxy", "Barred spiral galaxy", "Irregular galaxy"]);
     const LEGACY_MORPHOLOGY = Object.freeze({
@@ -110,8 +112,7 @@
     });
     let activeShowcaseLayout = SHOWCASE_DEFAULT_LAYOUT_PRESET;
     const SHOWCASE_DEPENDENCY_PRESET = Object.freeze({
-      "starSizeScale": 1.5,
-      "starAlphaScale": 1.2
+      "starAlphaScale": 0.3
     });
     const SHOWCASE_ANNOTATION_PRESET = Object.freeze({
       "limit": 200,
@@ -164,16 +165,25 @@
     const unit = (seed, channel) => hash(seed, channel) / 4294967296;
     const normal = (seed, channel) => Math.sqrt(-2 * Math.log(Math.max(unit(seed, channel), 1e-7))) * Math.cos(6.283185 * unit(seed, channel + 1));
     const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
-    function decodeMorphology(raw) {
+    function fallbackMorphology(phaseSeed = 0) {
+      const normalizedSeed = Number.isInteger(phaseSeed) && phaseSeed >= 0 && phaseSeed <= 0xffff_ffff ? phaseSeed >>> 0 : 0;
+      if (normalizedSeed === 0) return LEGACY_MORPHOLOGY;
+      return Object.freeze({
+        ...LEGACY_MORPHOLOGY,
+        phaseSeed: normalizedSeed,
+        phase: unit(normalizedSeed, 80) * Math.PI * 2,
+      });
+    }
+    function decodeMorphology(raw, fallbackPhaseSeed = 0) {
       const row = Array.isArray(raw)
         ? raw
         : raw && typeof raw === "object" && Array.isArray(raw.knobs)
           ? [raw.family, ...raw.knobs]
           : null;
-      if (!row || row.length !== 10 || !row.every(Number.isInteger)) return LEGACY_MORPHOLOGY;
+      if (!row || row.length !== 10 || !row.every(Number.isInteger)) return fallbackMorphology(fallbackPhaseSeed);
       const family = row[0];
-      if (family < MORPHOLOGY_FAMILY.elliptical || family > MORPHOLOGY_FAMILY.irregular) return LEGACY_MORPHOLOGY;
-      if (row[9] < 0 || row[9] > 0xffff_ffff) return LEGACY_MORPHOLOGY;
+      if (family < MORPHOLOGY_FAMILY.elliptical || family > MORPHOLOGY_FAMILY.irregular) return fallbackMorphology(fallbackPhaseSeed);
+      if (row[9] < 0 || row[9] > 0xffff_ffff) return fallbackMorphology(fallbackPhaseSeed);
       const legacy = family === MORPHOLOGY_FAMILY.spiral &&
         row.slice(1).every((value, index) => value === [0, 240, 3, 105, 380, 0, 0, 0, 0][index]);
       const phaseSeed = row[9] >>> 0;
@@ -408,6 +418,79 @@
       }
       return aggregate;
     });
+
+    function decodePackageMorphology(raw, packageIndex) {
+      const packageRow = model.packages[packageIndex] || [];
+      const phaseSeed = Number(packageRow[0]) >>> 0;
+      const declarationCount = Math.max(0, Number(packageRow[3]) || 0);
+      return Object.freeze({
+        ...decodeMorphology(raw, phaseSeed),
+        compact: declarationCount < DEPENDENCY_CLOUD_THREASHOLD,
+      });
+    }
+
+    const encodedPackageMorphologies = Array.isArray(model.packageMorphologies) ? model.packageMorphologies : [];
+    const packageMorphologies = model.packages.map((_row, index) => decodePackageMorphology(encodedPackageMorphologies[index], index));
+
+    function boundedDependencyOffset(x, y, z, radius) {
+      const distance = Math.hypot(x, y, z);
+      const scale = distance > radius ? radius / distance : 1;
+      return [x * scale, y * scale, z * scale];
+    }
+
+    function dependencyCloudOffset(seed, cloud, radius) {
+      if (cloud.compact || cloud.family === MORPHOLOGY_FAMILY.elliptical) {
+        const distance = radius * (cloud.compact ? .72 : .94) * Math.pow(unit(seed, 18), 1.45);
+        const polar = unit(seed, 19) * 2 - 1;
+        const equatorial = Math.sqrt(Math.max(0, 1 - polar * polar));
+        const theta = cloud.phase + unit(seed, 20) * Math.PI * 2;
+        return boundedDependencyOffset(
+          Math.cos(theta) * equatorial * distance,
+          polar * distance * (1 - cloud.ellipticity),
+          Math.sin(theta) * equatorial * distance,
+          radius,
+        );
+      }
+
+      if (cloud.family === MORPHOLOGY_FAMILY.irregular) {
+        const clump = Math.min(cloud.clumpCount - 1, Math.floor(unit(seed, 18) * cloud.clumpCount));
+        const clumpPhase = cloud.phase + clump * Math.PI * 2 / cloud.clumpCount;
+        const centerRadius = radius * cloud.clumpSpread * (.65 + unit(cloud.phaseSeed, 70 + clump) * .35);
+        const spread = radius * .16;
+        return boundedDependencyOffset(
+          Math.cos(clumpPhase) * centerRadius + clamp(normal(seed, 72), -2.2, 2.2) * spread,
+          clamp(normal(seed, 74), -2.2, 2.2) * spread * .55,
+          Math.sin(clumpPhase) * centerRadius + clamp(normal(seed, 76), -2.2, 2.2) * spread,
+          radius,
+        );
+      }
+
+      const bulge = unit(seed, 18) < cloud.bulgeShare;
+      const radial = bulge
+        ? radius * .36 * Math.pow(unit(seed, 19), 1.55)
+        : radius * (.2 + .72 * Math.sqrt(unit(seed, 19)));
+      const vertical = clamp(normal(seed, 20), -2.2, 2.2) * radius * (bulge ? .13 : .055);
+      if (cloud.family === MORPHOLOGY_FAMILY.barredSpiral && !bulge && radial < radius * cloud.barLength && unit(seed, 21) < .74) {
+        const along = (unit(seed, 22) * 2 - 1) * radius * cloud.barLength;
+        const across = clamp(normal(seed, 23), -2.2, 2.2) * radius * .055;
+        return boundedDependencyOffset(
+          Math.cos(cloud.phase) * along - Math.sin(cloud.phase) * across,
+          vertical,
+          Math.sin(cloud.phase) * along + Math.cos(cloud.phase) * across,
+          radius,
+        );
+      }
+
+      const armCount = Math.max(2, cloud.armCount);
+      const arm = Math.floor(unit(seed, 21) * armCount);
+      const armOrigin = cloud.family === MORPHOLOGY_FAMILY.barredSpiral ? arm % 2 * Math.PI : arm * Math.PI * 2 / armCount;
+      const inArm = unit(seed, 22) < cloud.armFraction;
+      const radialShare = radial / radius;
+      const theta = inArm
+        ? cloud.phase + armOrigin + radialShare * cloud.winding * 42 + normal(seed, 23) * .17
+        : cloud.phase + unit(seed, 23) * Math.PI * 2;
+      return boundedDependencyOffset(Math.cos(theta) * radial, vertical, Math.sin(theta) * radial, radius);
+    }
     const dependencyAnchor = (seed, declarationCount) => {
       const radius = layoutScale.dependencyInnerRadius + 72 * Math.sqrt(layoutScale.tests) * Math.pow(unit(seed, 14), .72);
       const theta = unit(seed, 15) * Math.PI * 2;
@@ -446,14 +529,11 @@
 
     function dependencyPosition(seed, packageIndex) {
       const anchor = packageAnchors[packageIndex] || [0, 0, 0, 2];
-      const radius = Math.min(anchor[3], -anchor[3] * .34 * Math.log(Math.max(1e-5, 1 - unit(seed, 18))));
-      const theta = unit(seed, 19) * Math.PI * 2;
-      const lift = normal(seed, 20) * anchor[3] * .17;
-      const tilt = (unit(model.packages[packageIndex]?.[0] || seed, 21) - .5) * .75;
+      const offset = dependencyCloudOffset(seed, packageMorphologies[packageIndex], anchor[3]);
       return [
-        anchor[0] + Math.cos(theta) * radius,
-        anchor[1] + lift + Math.sin(theta) * radius * tilt,
-        anchor[2] + Math.sin(theta) * radius * Math.cos(tilt),
+        anchor[0] + offset[0],
+        anchor[1] + offset[1],
+        anchor[2] + offset[2],
       ];
     }
 
@@ -466,7 +546,10 @@
       const addPoint = (point, interactive = true) => {
         point.sizeFactor = point.base * (.62 + point.signal * .46);
         point.maxSize = point.hub ? 5.2 : 3.2;
-        point.alphaBase = clamp(.14 + point.signal * .105, .12, point.hub ? .86 : .7);
+        const alphaScale = point.category === "dependencies" && !point.hub
+          ? DEPENDENCY_STAR_ALPHA_SCALE
+          : 1;
+        point.alphaBase = clamp(.14 + point.signal * .105, .12, point.hub ? .86 : .7) * alphaScale;
         point.screen = null;
         points.push(point);
         if (interactive && interactiveMode) interactivePoints.push(point);
@@ -835,14 +918,13 @@
       const categoryIndex = { core: 0, tests: 1, dependencies: 2 };
       renderPoints.forEach((point, index) => {
         const offset = index * 7;
-        const dependencyStar = point.category === "dependencies" && !point.hub;
-        const sizeScale = dependencyStar ? SHOWCASE_DEPENDENCY_PRESET.starSizeScale : 1;
-        const alphaScale = dependencyStar ? SHOWCASE_DEPENDENCY_PRESET.starAlphaScale : 1;
+        const dependencyPoint = point.category === "dependencies";
+        const alphaScale = dependencyPoint ? SHOWCASE_DEPENDENCY_PRESET.starAlphaScale : 1;
         pointData[offset] = point.position[0];
         pointData[offset + 1] = point.position[1];
         pointData[offset + 2] = point.position[2];
-        pointData[offset + 3] = point.sizeFactor * sizeScale;
-        pointData[offset + 4] = clamp(point.alphaBase * alphaScale, 0, 1);
+        pointData[offset + 3] = point.sizeFactor;
+        pointData[offset + 4] = point.alphaBase * alphaScale;
         pointData[offset + 5] = categoryIndex[point.category];
         pointData[offset + 6] = point.maxSize;
       });
@@ -1058,8 +1140,10 @@
 
           float size = clamp(a_sizeFactor * perspective, 0.35, a_maxSize);
           bool focusedDependencyPoint = expandedPoint && category == 2;
+          bool focusedDependencyHub = focusedDependencyPoint && a_maxSize > 4.0;
           float emphasis = focusedDependencyPoint || selected ? 1.0 : u_categoryEmphasis[category];
-          float visibleAlpha = (focusedDependencyPoint ? max(0.34, a_alpha) : a_alpha * emphasis) * u_exposure;
+          float focusedAlpha = max(focusedDependencyHub ? 0.34 : 0.289, a_alpha);
+          float visibleAlpha = (focusedDependencyPoint ? focusedAlpha : a_alpha * emphasis) * u_exposure;
           bool detailed = emphasis >= 0.1;
           float radius = size;
           float alpha = visibleAlpha;

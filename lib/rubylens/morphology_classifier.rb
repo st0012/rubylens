@@ -19,22 +19,31 @@ module RubyLens
 
     DEFAULT_KNOBS = [0, 240, 3, 105, 380, 0, 0, 0, 0].freeze
 
-    def initialize(snapshot)
+    def initialize(snapshot = nil, package: nil, phase_seed: nil)
+      raise ArgumentError, "provide a snapshot or package, not both" if snapshot && package
+
       @snapshot = snapshot
+      @package = package
+      @phase_seed = phase_seed
     end
 
     def call
-      inputs = classification_inputs
-      return fallback unless inputs
+      fallback_phase_seed = package_classification? && valid_phase_seed?(@phase_seed) ? @phase_seed : 0
+      inputs = package_classification? ? package_classification_inputs : project_classification_inputs
+      return fallback(phase_seed: fallback_phase_seed) unless inputs
 
       classify(**inputs)
     rescue KeyError, TypeError, ArgumentError
-      fallback
+      fallback(phase_seed: fallback_phase_seed)
     end
 
     private
 
-    def classification_inputs
+    def package_classification?
+      !@package.nil?
+    end
+
+    def project_classification_inputs
       return unless @snapshot.is_a?(Hash)
 
       rows = @snapshot.fetch("namespaces")
@@ -52,13 +61,46 @@ module RubyLens
       module_count = core_indexes.count { |index| rows[index][1] == 1 }
       dependency_count = packages.sum { |package| dependency_declaration_count(package) }
 
+      module_fraction = ratio(module_count, core_count)
+      test_share = ratio(test_count, rows.length)
+      dependency_share = ratio(dependency_count, dependency_count + core_count)
       {
-        project_name:,
         size: rows.length,
-        module_fraction: ratio(module_count, core_count),
-        test_share: ratio(test_count, rows.length),
-        dependency_share: ratio(dependency_count, dependency_count + core_count),
-        root_concentration: root_concentration(names, core_indexes, core_count),
+        module_fraction:,
+        structure: structure(test_share, module_fraction, dependency_share),
+        concentration: root_concentration(names, core_indexes, core_count),
+        irregularity: (module_fraction + test_share) / 2,
+        phase_seed: Digest::SHA256.digest(project_name).unpack1("N"),
+      }
+    end
+
+    def package_classification_inputs
+      return unless @package.is_a?(Hash) && valid_phase_seed?(@phase_seed)
+
+      size = @package.fetch("declaration_count")
+      counts = @package.fetch("ruby_counts")
+      return unless size.is_a?(Integer) && size >= 0
+      return unless counts.is_a?(Array) && counts.length == 4
+      return unless counts.all? { |count| count.is_a?(Integer) && count >= 0 }
+      return if counts.sum.zero?
+
+      class_count, module_count, method_count, constant_count = counts
+      construct_count = class_count + module_count + method_count + constant_count
+      type_count = class_count + module_count
+      module_fraction = ratio(module_count, type_count)
+      module_structure_signal = (module_count + 0.5) / (type_count + 1.0)
+      non_method_share = ratio(class_count + module_count + constant_count, construct_count)
+      constant_share = ratio(constant_count, construct_count)
+      smoothed_total = construct_count + 2.0
+      concentration = counts.sum { |count| ((count + 0.5) / smoothed_total)**2 }
+
+      {
+        size:,
+        module_fraction:,
+        structure: structure(non_method_share, module_structure_signal, constant_share),
+        concentration:,
+        irregularity: (module_structure_signal + non_method_share) / 2,
+        phase_seed: @phase_seed,
       }
     end
 
@@ -81,6 +123,14 @@ module RubyLens
       denominator.zero? ? 0.0 : numerator.fdiv(denominator)
     end
 
+    def structure(primary_share, module_fraction, tertiary_share)
+      [[0.45 * primary_share + 0.30 * module_fraction + 0.25 * tertiary_share, 0.0].max, 1.0].min
+    end
+
+    def valid_phase_seed?(value)
+      value.is_a?(Integer) && value.between?(0, 0xffff_ffff)
+    end
+
     def root_concentration(names, core_indexes, core_count)
       return 0.0 if core_count.zero?
 
@@ -88,19 +138,17 @@ module RubyLens
       counts.sum { |_root, count| ratio(count, core_count)**2 }
     end
 
-    def classify(project_name:, size:, module_fraction:, test_share:, dependency_share:, root_concentration:)
-      phase_seed = Digest::SHA256.digest(project_name).unpack1("N")
+    def classify(size:, module_fraction:, structure:, concentration:, irregularity:, phase_seed:)
       if size < IRREGULAR_SIZE_LIMIT
         return morphology(
           IRREGULAR,
           "Irr",
           clump_count: 2 + [[(size - 1) / 7, 0].max, 3].min,
-          clump_spread: scaled(0.50 + 0.30 * ((module_fraction + test_share) / 2)),
+          clump_spread: scaled(0.50 + 0.30 * irregularity),
           phase_seed:,
         )
       end
 
-      structure = 0.45 * test_share + 0.30 * module_fraction + 0.25 * dependency_share
       if structure < ELLIPTICAL_MAX
         ellipticity = [0.9 * module_fraction, 0.7].min
         return morphology(
@@ -121,7 +169,7 @@ module RubyLens
         )
       end
 
-      family = root_concentration >= BAR_CONCENTRATION ? BARRED_SPIRAL : SPIRAL
+      family = concentration >= BAR_CONCENTRATION ? BARRED_SPIRAL : SPIRAL
       stage = [[((structure - LENTICULAR_MAX) / SPIRAL_STAGE_WIDTH).floor, 0].max, 2].min
       designation = family == BARRED_SPIRAL ? "SB#{%w[a b c][stage]}" : "S#{%w[a b c][stage]}"
       progress = [[(structure - LENTICULAR_MAX) / SPIRAL_KNOB_RANGE, 0.0].max, 1.0].min
@@ -161,9 +209,9 @@ module RubyLens
       (value * 1000).round
     end
 
-    def fallback
+    def fallback(phase_seed: 0)
       morphology(SPIRAL, "Sb", bulge_share: DEFAULT_KNOBS[1], arm_count: DEFAULT_KNOBS[2],
-        winding: DEFAULT_KNOBS[3], arm_fraction: DEFAULT_KNOBS[4])
+        winding: DEFAULT_KNOBS[3], arm_fraction: DEFAULT_KNOBS[4], phase_seed:)
     end
   end
 end

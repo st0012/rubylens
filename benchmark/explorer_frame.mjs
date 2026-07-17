@@ -3,7 +3,7 @@
 //
 //   node benchmark/explorer_frame.mjs [output.html]
 //
-// The synthetic model matches rubylens.art.v9 as consumed by the runtime:
+// The synthetic model matches rubylens.art.v10 as consumed by the runtime:
 // NAMESPACES class/module rows (TEST_RATIO of them tests), DEPENDENCY_DECLARATIONS
 // embedded dependency declaration rows across PACKAGES gems, exact aggregate totals, and
 // signal domains derived from the generated rows. Defaults model a codebase
@@ -25,7 +25,7 @@ const NAMESPACES = Number(process.env.NAMESPACES || 100_000);
 const TEST_RATIO = Number(process.env.TEST_RATIO || 0.15);
 const PACKAGES = Number(process.env.PACKAGES || 400);
 const DEPENDENCY_DECLARATIONS = Number(process.env.DEPENDENCY_DECLARATIONS || process.env.DEPENDENCY_STARS || 164_000);
-// Multi-gem Git dependency systems (rubylens.art.v9): each groups three
+// Multi-gem Git dependency systems (rubylens.art.v10): each groups three
 // consecutive packages. Default 0 keeps published benchmark numbers stable.
 const DEPENDENCY_SYSTEMS = Number(process.env.DEPENDENCY_SYSTEMS || 0);
 const SYSTEM_SPAN = 3;
@@ -36,6 +36,13 @@ const OUTPUT = process.argv[2] || join(tmpdir(), "rubylens-explorer-frame-bench.
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const SIGNAL_FIELDS = ["ancestorDepth", "definitionSites", "reopenings", "descendants", "references", "members"];
+const PACKAGE_MORPHOLOGY_SHAPES = [
+  [0, 250, 0, 0, 0, 0, 0, 0, 0],
+  [1, 0, 350, 0, 0, 0, 0, 0, 0],
+  [2, 0, 260, 4, 110, 500, 0, 0, 0],
+  [3, 0, 230, 3, 100, 520, 360, 0, 0],
+  [4, 0, 0, 0, 0, 0, 0, 4, 600],
+];
 
 function mulberry32(seed) {
   let state = seed >>> 0;
@@ -118,6 +125,12 @@ function buildModel() {
   if (packageDependencyCount !== indexedDependencyCount) {
     throw new Error(`package dependency total ${packageDependencyCount} != embedded rows ${indexedDependencyCount}`);
   }
+  // Cycle valid family rows to exercise every renderer recipe. This is a
+  // runtime performance fixture, not a calibration of the synthetic counts.
+  const packageMorphologies = packages.map((packageRow, index) => [
+    ...PACKAGE_MORPHOLOGY_SHAPES[index % PACKAGE_MORPHOLOGY_SHAPES.length],
+    packageRow[0],
+  ]);
 
   const domains = Object.fromEntries(SIGNAL_FIELDS.map((field, at) => {
     let maximum = 0;
@@ -127,7 +140,7 @@ function buildModel() {
   }));
 
   return {
-    schema: "rubylens.art.v9",
+    schema: "rubylens.art.v10",
     projectName: "Synthetic Metropolis",
     morphology: {
       family: 2,
@@ -147,6 +160,7 @@ function buildModel() {
     namespaces,
     packageNames,
     packages,
+    packageMorphologies,
     dependencySystems,
     dependencyStars,
     dependencyWarnings: [],

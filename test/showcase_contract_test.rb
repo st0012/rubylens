@@ -54,8 +54,7 @@ class ShowcaseContractTest < Minitest::Test
     "mastheadWidth" => 420,
   }.freeze
   APPROVED_DEPENDENCY_PRESET = {
-    "starSizeScale" => 1.5,
-    "starAlphaScale" => 1.2,
+    "starAlphaScale" => 0.3,
   }.freeze
 
   def test_approved_showcase_preset_is_exact
@@ -157,13 +156,14 @@ class ShowcaseContractTest < Minitest::Test
     assert_includes(runtime, "Math.min(window.innerWidth / SHOWCASE_PRESET.stageWidth, window.innerHeight / SHOWCASE_PRESET.stageHeight)")
   end
 
-  def test_dependency_preset_only_amplifies_ordinary_showcase_stars
+  def test_dependency_preset_only_scales_showcase_dependency_alpha
     assert_equal(APPROVED_DEPENDENCY_PRESET, showcase_preset("SHOWCASE_DEPENDENCY_PRESET"))
 
     renderer = runtime_function("createShowcaseRenderer")
-    assert_includes(renderer, 'point.category === "dependencies" && !point.hub')
-    assert_includes(renderer, "SHOWCASE_DEPENDENCY_PRESET.starSizeScale")
-    assert_includes(renderer, "SHOWCASE_DEPENDENCY_PRESET.starAlphaScale")
+    assert_includes(renderer, 'const dependencyPoint = point.category === "dependencies"')
+    assert_includes(renderer, "const alphaScale = dependencyPoint ? SHOWCASE_DEPENDENCY_PRESET.starAlphaScale : 1")
+    assert_includes(renderer, "pointData[offset + 3] = point.sizeFactor")
+    assert_includes(renderer, "pointData[offset + 4] = point.alphaBase * alphaScale")
   end
 
   def test_showcase_renders_every_scene_point

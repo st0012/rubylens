@@ -23,11 +23,15 @@ module RubyLens
       package_order = (0...snapshot.fetch("packages").length).to_a.shuffle(random: random)
       package_index = package_order.each_with_index.to_h
       dependency_systems, dependency_system_index = build_dependency_systems(snapshot, package_index)
+      package_morphologies = []
       packages = package_order.map do |old_index|
         package = snapshot.fetch("packages").fetch(old_index)
         declaration_count = package.fetch("declaration_count")
+        package_seed = random.rand(0..0xffff_ffff)
+        package_morphology = MorphologyClassifier.new(package:, phase_seed: package_seed).call
+        package_morphologies << [package_morphology.fetch("family"), *package_morphology.fetch("knobs")]
         [
-          random.rand(0..0xffff_ffff),
+          package_seed,
           package.fetch("role"),
           package.fetch("location"),
           declaration_count,
@@ -52,7 +56,7 @@ module RubyLens
         end
       end
       {
-        "schema" => "rubylens.art.v9",
+        "schema" => "rubylens.art.v10",
         "projectName" => snapshot.fetch("project_name"),
         "morphology" => morphology,
         "totals" => {
@@ -68,6 +72,7 @@ module RubyLens
         "namespaces" => namespaces,
         "packageNames" => package_names,
         "packages" => packages,
+        "packageMorphologies" => package_morphologies,
         "dependencySystems" => dependency_systems,
         "dependencyStars" => dependencies,
         "dependencyWarnings" => snapshot.fetch("dependency_warnings", []).filter_map do |warning|
