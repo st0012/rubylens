@@ -87,11 +87,7 @@ class MorphologyRuntimeTest < Minitest::Test
     assert_equal(3, RUNTIME.scan("updateGalaxySummary();").length)
     assert_includes(
       RUNTIME,
-      '`${MORPHOLOGY_FAMILY_LABELS[morphology.family]} - ${scenePointCount.toLocaleString("en-US")} ${scenePointCount === 1 ? "star" : "stars"}`',
-    )
-    assert_includes(
-      RUNTIME,
-      '`${MORPHOLOGY_FAMILY_LABELS[morphology.family]} · ${scenePointCount.toLocaleString("en-US")} ${scenePointCount === 1 ? "scene point" : "scene points"}`',
+      '`${MORPHOLOGY_FAMILY_LABELS[morphology.family]} · ${scenePointCount.toLocaleString("en-US")} ${scenePointCount === 1 ? "star" : "stars"}`',
     )
   end
 

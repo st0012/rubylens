@@ -22,7 +22,7 @@ class ExplorerRuntimeTest < Minitest::Test
     assert_includes(RUNTIME, "const shownWarnings = uniqueWarnings.slice(0, WARNING_ROW_LIMIT)")
     assert_includes(RUNTIME, 'warning && typeof warning.name === "string"')
     assert_includes(RUNTIME, 'const key = `${warning.name}\\u0000${warning.reason}`')
-    assert_includes(RUNTIME, 'appendWarningGroup(container, "Ruby index", counts.index')
+    assert_includes(RUNTIME, 'appendWarningGroup(container, "Code analysis", counts.index')
     assert_includes(RUNTIME, 'appendWarningGroup(container, "Integrity checks", counts.integrity')
     assert_includes(STYLES, "max-height: min(360px, calc(100vh - 180px))")
     assert_includes(STYLES, "max-height: clamp(48px, calc(54vh - 220px), 240px)")
@@ -247,7 +247,6 @@ class ExplorerRuntimeTest < Minitest::Test
   end
 
   def test_explorer_requires_webgl2_across_every_unavailable_path
-    assert_includes(SHELL, '<p class="coverage" id="coverage" aria-live="polite"></p>')
     renderer = runtime_function("createExplorerRenderer")
     assert_includes(renderer, 'document.documentElement.dataset.explorerUnavailableReason = "webgl2-unavailable"')
     assert_includes(renderer, 'document.documentElement.dataset.explorerUnavailableReason = "webgl2-point-size-range"')
@@ -293,7 +292,7 @@ class ExplorerRuntimeTest < Minitest::Test
     assert_includes(disclosure, '"Unavailable"')
     assert_includes(disclosure, "sampling.summary")
     assert_includes(disclosure, "sampling.note")
-    assert_includes(disclosure, 'appendWarningGroup(container, "Ruby index", counts.index')
+    assert_includes(disclosure, 'appendWarningGroup(container, "Code analysis", counts.index')
     assert_includes(disclosure, 'appendWarningGroup(container, "Integrity checks", counts.integrity')
   end
 

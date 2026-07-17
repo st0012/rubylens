@@ -628,7 +628,7 @@
         const position = anchor.slice(0, 3);
         const sizeFactor = writeScenePoint("dependencies", position, weightedSignal(normalizedSignals(visualValues), "dependencies"), systemIndex >= 0 ? 1.55 : 1.8, true, index, systemIndex);
         const point = { category: "dependencies", position, packageIndex: index, systemIndex, hub: true, packageHub: true };
-        if (interactiveMode) Object.assign(point, { name: model.packageNames[index], packageRole: packageRow[1] === 0 ? "Direct dependency" : "Transitive dependency", packageLocation: packageRow[2] === 0 ? "Workspace package" : "External gem", rubyCounts, groupedMemberCount: systemIndex >= 0 ? systemMembers[systemIndex].length : 0 });
+        if (interactiveMode) Object.assign(point, { name: model.packageNames[index], packageRole: packageRow[1] === 0 ? "Direct dependency" : "Transitive dependency", packageLocation: packageRow[2] === 0 ? "Workspace gem" : "External gem", rubyCounts, groupedMemberCount: systemIndex >= 0 ? systemMembers[systemIndex].length : 0 });
         if (showcaseDetails) {
           const annotationKey = showcaseAnnotationKey("dependencies", index);
           if (showcaseAnnotationAnchors.has(annotationKey)) showcasePointsByAnchor.set(annotationKey, point);
@@ -647,39 +647,15 @@
     const exactDependencyDeclarations = Math.max(0, Number(totals.dependencyStars) || 0);
     const embeddedDependencyDeclarations = model.dependencyStars.length;
     let plottedDependencyDeclarations = embeddedDependencyDeclarations;
-    function dependencyCoverageText(plotted, embedded, exact, packageCount, rendererUnavailable = false) {
-      const formattedPlotted = plotted.toLocaleString();
-      const formattedEmbedded = embedded.toLocaleString();
-      const formattedExact = exact.toLocaleString();
-      const gems = `${packageCount.toLocaleString()} ${packageCount === 1 ? "gem" : "gems"}`;
-      if (rendererUnavailable) {
-        if (embedded < exact) {
-          return `WebGL2 is required to plot this report's ${formattedEmbedded} sampled dependency declarations (of ${formattedExact} across ${gems})`;
-        }
-        return `WebGL2 is required to plot ${formattedExact} dependency declaration${exact === 1 ? "" : "s"} across ${gems}`;
-      }
-      if (plotted < exact) {
-        return `${formattedPlotted} sampled dependency declarations plotted (of ${formattedExact} across ${gems})`;
-      }
-      return `${formattedPlotted} dependency declaration${plotted === 1 ? "" : "s"} plotted across ${gems}`;
-    }
-
     function dependencySamplingState(exact, embedded, packageCount) {
       if (embedded >= exact) return null;
       const gems = `${packageCount.toLocaleString()} ${packageCount === 1 ? "gem" : "gems"}`;
       return {
-        summary: "Dependency sampling",
+        summary: "Dependency stars sampled",
         title: "Report data",
         countLabel: `${embedded.toLocaleString()} embedded`,
-        note: `This report embeds ${embedded.toLocaleString()} sampled dependency declarations of ${exact.toLocaleString()}. Exact totals across ${gems} remain complete.`,
+        note: `This report embeds ${embedded.toLocaleString()} of ${exact.toLocaleString()} dependency stars. Exact totals across ${gems} remain complete.`,
       };
-    }
-
-    function updateDependencyCoverage() {
-      const coverage = document.getElementById("coverage");
-      if (!coverage) return;
-      const rendererUnavailable = document.documentElement.dataset.explorerRenderer === "unavailable";
-      coverage.textContent = dependencyCoverageText(plottedDependencyDeclarations, embeddedDependencyDeclarations, exactDependencyDeclarations, totals.packages, rendererUnavailable);
     }
 
     function updateGalaxySummary() {
@@ -691,9 +667,7 @@
         summary.textContent = `${MORPHOLOGY_FAMILY_LABELS[morphology.family]} · WebGL2 required`;
         return;
       }
-      summary.textContent = showcaseMode
-        ? `${MORPHOLOGY_FAMILY_LABELS[morphology.family]} · ${scenePointCount.toLocaleString("en-US")} ${scenePointCount === 1 ? "scene point" : "scene points"}`
-        : `${MORPHOLOGY_FAMILY_LABELS[morphology.family]} - ${scenePointCount.toLocaleString("en-US")} ${scenePointCount === 1 ? "star" : "stars"}`;
+      summary.textContent = `${MORPHOLOGY_FAMILY_LABELS[morphology.family]} · ${scenePointCount.toLocaleString("en-US")} ${scenePointCount === 1 ? "star" : "stars"}`;
     }
 
     function disableExplorerControls() {
@@ -742,7 +716,6 @@
       if (error) document.documentElement.dataset.explorerRendererError = error.message;
       canvas.setAttribute("aria-label", "Interactive artwork unavailable because WebGL2 is required.");
       disableExplorerControls();
-      updateDependencyCoverage();
       updateGalaxySummary();
       populateWarningDisclosure();
       if (hadInteractiveFocus) document.getElementById("warning-summary").focus({ preventScroll: true });
@@ -760,7 +733,7 @@
       canvas.hidden = true;
       canvas.setAttribute("aria-label", "Showcase artwork unavailable because WebGL2 is required.");
       if (showcaseStatus) {
-        showcaseStatus.textContent = "WebGL2 is required to render this complete Showcase.";
+        showcaseStatus.textContent = "WebGL2 is required to display this Showcase.";
         showcaseStatus.hidden = false;
       }
       document.documentElement.dataset.showcaseRenderer = "unavailable";
@@ -1501,14 +1474,14 @@
       tooltipName.textContent = point.name || "Unnamed Ruby item";
       if (parentSystem) {
         const expanded = expandedSystemIndex === point.systemIndex && expandedPackageIndex === null ? " · Expanded system · Escape to exit" : " · Double-click or F to expand";
-        const direct = point.directMemberCount === 1 ? "1 direct package" : `${point.directMemberCount.toLocaleString()} direct packages`;
-        tooltipContext.textContent = `${point.memberCount.toLocaleString()} package subclouds · ${direct}${expanded}`;
+        const direct = point.directMemberCount === 1 ? "1 direct gem" : `${point.directMemberCount.toLocaleString()} direct gems`;
+        tooltipContext.textContent = `${point.memberCount.toLocaleString()} gem clouds · ${direct}${expanded}`;
         addRubyMetrics(point.rubyCounts, allRubyMetricIndexes);
         return;
       }
       if (point.packageHub) {
         const expanded = expandedPackageIndex === point.packageIndex ? " · Expanded gem cloud · Escape to exit" : " · Double-click or F to expand";
-        const membership = point.groupedMemberCount > 1 ? ` · Member of ${point.groupedMemberCount.toLocaleString()}-package system` : "";
+        const membership = point.groupedMemberCount > 1 ? ` · Member of ${point.groupedMemberCount.toLocaleString()}-gem system` : "";
         tooltipContext.textContent = `${point.packageRole} · ${point.packageLocation}${membership}${expanded}`;
         addRubyMetrics(point.rubyCounts, allRubyMetricIndexes);
         return;
@@ -1946,11 +1919,11 @@
       details.hidden = !rendererUnavailable && !sampling && warningTotal === 0;
       if (details.hidden) return;
 
-      const partialIndexSummary = `${warningTotal.toLocaleString()} partial-index warning${warningTotal === 1 ? "" : "s"}`;
+      const analysisSummary = `${warningTotal.toLocaleString()} analysis warning${warningTotal === 1 ? "" : "s"}`;
       const statusSummaries = [];
       if (rendererUnavailable) statusSummaries.push("WebGL2 required");
       if (sampling) statusSummaries.push(sampling.summary);
-      if (warningTotal > 0) statusSummaries.push(partialIndexSummary);
+      if (warningTotal > 0) statusSummaries.push(analysisSummary);
       summary.textContent = statusSummaries.join(" · ");
 
       if (rendererUnavailable) {
@@ -1960,7 +1933,7 @@
           "Interactive rendering",
           1,
           [],
-          `This report requires WebGL2 to display its ${scenePointCount.toLocaleString()}-point interactive scene. Exact dependency totals across ${totals.packages.toLocaleString()} ${totals.packages === 1 ? "gem" : "gems"} remain complete.`,
+          `This report requires WebGL2 to display its ${scenePointCount.toLocaleString()}-star interactive scene. Exact dependency totals across ${totals.packages.toLocaleString()} ${totals.packages === 1 ? "gem" : "gems"} remain complete.`,
           "Unavailable",
         );
       }
@@ -1991,12 +1964,12 @@
       const duplicateCount = safeWarnings.length - uniqueWarnings.length;
       const omittedCount = uniqueWarnings.length - shownWarnings.length;
       if (duplicateCount > 0) dependencyNotes.push(`${duplicateCount.toLocaleString()} duplicate ${duplicateCount === 1 ? "entry" : "entries"} summarized.`);
-      if (omittedCount > 0) dependencyNotes.push(`${omittedCount.toLocaleString()} more ${omittedCount === 1 ? "package warning" : "package warnings"} not shown.`);
-      appendWarningGroup(container, "Dependency packages", safeWarnings.length, shownWarnings, dependencyNotes.join(" "));
+      if (omittedCount > 0) dependencyNotes.push(`${omittedCount.toLocaleString()} more ${omittedCount === 1 ? "gem warning" : "gem warnings"} not shown.`);
+      appendWarningGroup(container, "Dependency gems", safeWarnings.length, shownWarnings, dependencyNotes.join(" "));
 
       const undetailedManifestCount = Math.max(0, counts.manifest - safeWarnings.length);
-      appendWarningGroup(container, "Manifest", undetailedManifestCount, [], "Package-specific details are unavailable for these warnings.");
-      appendWarningGroup(container, "Ruby index", counts.index, [], "Only the aggregate count is included in this report.");
+      appendWarningGroup(container, "Dependency manifest", undetailedManifestCount, [], "Gem-specific details are unavailable for these warnings.");
+      appendWarningGroup(container, "Code analysis", counts.index, [], "Only the aggregate count is included in this report.");
       appendWarningGroup(container, "Integrity checks", counts.integrity, [], "Only the aggregate count is included in this report.");
     }
 
@@ -2836,7 +2809,7 @@
     updateGalaxySummary();
     if (showcaseMode) {
       document.title = `${model.projectName} · RubyLens showcase`;
-      const showcaseLabel = `Autonomous stellar artwork of ${model.projectName}, completing one slow rotation each minute.`;
+      const showcaseLabel = `Stellar artwork of ${model.projectName}, completing one slow rotation each minute.`;
       canvas.setAttribute("aria-label", showcaseLabel);
       populateShowcaseStats();
       reducedMotionQuery.addEventListener("change", startShowcase);
@@ -2845,9 +2818,8 @@
     } else {
       document.title = `RubyLens · ${model.projectName}`;
       if (explorerRenderer) {
-        canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class and module stars for Ruby code details, dependency systems, or gem package subclouds. Selections open a top-down view that keeps the selected target and Core visible. Double-click a dependency system or gem subcloud, press Enter or F on its selected marker, or tap that marker again to expand its stars. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, use arrow keys to move the view, Space to pause or resume drift, 0 to reset, slash to search, and question mark for the full shortcut list.`);
+        canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class or module stars, dependency systems, or gem clouds for details. Selections open a top-down view that keeps the selected target and Core visible. Double-click a dependency system or gem cloud, press Enter or F on its selected marker, or tap that marker again to expand it. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, use arrow keys to move the view, Space to pause or resume drift, 0 to reset, slash to search, and question mark for the full shortcut list.`);
       }
-      updateDependencyCoverage();
       populateWarningDisclosure();
       applyCameraTarget(DEFAULT_CAMERA);
       setDrifting(driftRequested);

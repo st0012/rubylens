@@ -31,7 +31,7 @@ const EXPORTS = `;return ({
   interactivePoints, dependencyHubs, packageHubs, systemHubs,
   ensureHitScanRows, hitTestProjected, ensureSearchIndex, searchRenderedPoints,
   project, viewMatrix, visibleCategories,
-  dependencyCoverageText, dependencySamplingState,
+  dependencySamplingState,
   DEPENDENCY_STAR_ALPHA_SCALE: 0.85,
   state: {
     get yaw() { return yaw; }, set yaw(v) { yaw = v; },

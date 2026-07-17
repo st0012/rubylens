@@ -10,12 +10,11 @@
 {{REPORT_STYLES}}  </style>
 </head>
 <body>
-  <canvas id="cosmos" tabindex="0" aria-label="Interactive three-dimensional stellar artwork. Hover class and module stars for Ruby code details, dependency systems, or gem package subclouds."></canvas>
+  <canvas id="cosmos" tabindex="0" aria-label="Interactive three-dimensional stellar artwork. Hover class or module stars, dependency systems, or gem clouds for details."></canvas>
   <header class="masthead">
     <p class="eyebrow">RubyLens · Explorer</p>
     <h1>Ruby project</h1>
     <p class="galaxy-summary" id="galaxy-summary"></p>
-    <p class="coverage" id="coverage" aria-live="polite"></p>
     <details class="warning-disclosure" id="status" hidden>
       <summary id="warning-summary"></summary>
       <div class="warning-details" id="warning-details"></div>
@@ -28,13 +27,13 @@
     </div>
     <div id="panel-body">
       <div class="explorer-search" id="explorer-search-region" role="search">
-        <label for="explorer-search">Search Ruby nodes and gems</label>
-        <input type="search" id="explorer-search" placeholder="Namespace or gem name" autocomplete="off" spellcheck="false" aria-controls="search-results" aria-describedby="search-status">
+        <label for="explorer-search">Search classes, modules, and gems</label>
+        <input type="search" id="explorer-search" placeholder="Class, module, or gem name" autocomplete="off" spellcheck="false" aria-controls="search-results" aria-describedby="search-status">
         <p class="search-status" id="search-status" role="status" aria-live="polite">Search Core, Tests, and Gems.</p>
         <div class="search-results" id="search-results" role="region" aria-label="Search results" hidden></div>
       </div>
       <div id="controls"></div>
-    <div class="foot">Double-click a dependency system or gem subcloud, press Enter or F on its selected marker, or tap that marker again to spread its stars. Escape exits spatial focus; Reset restores the default view. This owner-only report embeds class, module, and gem names for hover details; dependency stars remain anonymous. Source, comments, and paths are excluded. Do not share the HTML unless you intend to disclose codebase structure.</div></div>
+    <div class="foot">Double-click a dependency system or gem cloud, press Enter or F on its selected marker, or tap that marker again to expand it. Escape exits spatial focus; Reset restores the default view. This owner-only report embeds class, module, and gem names for hover details; dependency stars remain anonymous. Source, comments, and paths are excluded. Do not share the HTML unless you intend to disclose codebase structure.</div></div>
   </aside>
   <div class="toolbar"><button type="button" id="motion" aria-label="Pause drift" aria-keyshortcuts="Space" aria-pressed="false" title="Pause drift (Space)">Pause drift</button><button type="button" id="reset-view" aria-label="Reset to default view" aria-keyshortcuts="0" title="Reset view (0)">Reset</button><button type="button" id="pan-mode" aria-label="Pan mode" aria-keyshortcuts="P" aria-pressed="false" title="Pan mode (P)">Pan</button><button type="button" id="zoom-out" aria-label="Zoom out" aria-keyshortcuts="-" title="Zoom out (−)">−</button><output class="zoom-level" id="zoom-level" aria-label="Zoom level">200%</output><button type="button" id="zoom-in" aria-label="Zoom in" aria-keyshortcuts="+" title="Zoom in (+)">+</button><button type="button" id="help-open" aria-label="Keyboard shortcuts" aria-keyshortcuts="?" aria-haspopup="dialog" title="Keyboard shortcuts (?)">?</button></div>
   <div class="hint">Drag to orbit · scroll to zoom · press ? for all shortcuts</div>
@@ -50,7 +49,7 @@
             <div><dt>Shift-drag or right-drag</dt><dd>Move the view</dd></div>
             <div><dt>Scroll or pinch</dt><dd>Zoom at the cursor</dd></div>
             <div><dt>Click a star</dt><dd>Select and fly to it</dd></div>
-            <div><dt>Double-click a gem cloud</dt><dd>Spread its stars</dd></div>
+            <div><dt>Double-click a gem cloud</dt><dd>Expand its stars</dd></div>
             <div><dt>Double-click empty space</dt><dd>Zoom in · Shift zooms out</dd></div>
           </dl>
         </section>
@@ -62,7 +61,7 @@
             <div><dt>0</dt><dd>Reset the view</dd></div>
             <div><dt>P</dt><dd>Toggle pan mode</dd></div>
             <div><dt>Space</dt><dd>Pause or resume drift</dd></div>
-            <div><dt>Enter / F</dt><dd>Spread the selected gem cloud</dd></div>
+            <div><dt>Enter / F</dt><dd>Expand the selected gem cloud</dd></div>
             <div><dt>/</dt><dd>Search</dd></div>
             <div><dt>Esc</dt><dd>Exit focus and fly back</dd></div>
             <div><dt>?</dt><dd>Show or hide this list</dd></div>

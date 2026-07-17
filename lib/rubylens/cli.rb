@@ -109,8 +109,8 @@ module RubyLens
         TARGET defaults to the current working directory.
 
         Commands:
-          report [OPTIONS] [TARGET]     Generate a private, interactive stellar report
-          showcase [OPTIONS] [TARGET]   Generate an autonomous, shareable stellar showcase
+          report [OPTIONS] [TARGET]     Generate a private, interactive galaxy report
+          showcase [OPTIONS] [TARGET]   Generate a shareable, cinematic galaxy showcase
           version                       Print the RubyLens version
 
         Run `rubylens report --help` or `rubylens showcase --help` for options.

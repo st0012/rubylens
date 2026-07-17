@@ -30,7 +30,7 @@ class ShowcaseWriterTest < Minitest::Test
       assert_includes(html, 'id="showcase-status" role="status" aria-live="polite" hidden')
       assert_includes(html, 'dataset.showcaseRenderer = "webgl2"')
       assert_includes(html, 'dataset.showcaseRenderer = "unavailable"')
-      assert_includes(html, 'WebGL2 is required to render this complete Showcase.')
+      assert_includes(html, 'WebGL2 is required to display this Showcase.')
       assert_includes(html, "function renderShowcase(timestamp)")
       assert_includes(html, 'dataset.showcaseReady = "true"')
       assert_includes(html, 'dataset.showcaseMotion = "reduced"')

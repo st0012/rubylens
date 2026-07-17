@@ -6,10 +6,10 @@ Gem::Specification.new do |specification|
   specification.name = "rubylens"
   specification.version = RubyLens::VERSION
   specification.authors = ["RubyLens contributors"]
-  specification.summary = "Turn a Ruby codebase into self-contained stellar HTML"
+  specification.summary = "Turn a Ruby codebase into a self-contained interactive galaxy in one HTML file"
   specification.description = <<~DESCRIPTION.strip
-    RubyLens uses Rubydex to index Ruby semantics and generate private, local-first
-    data for local interactive reports and autonomous visual showcases.
+    RubyLens uses Rubydex to map Ruby code and generate private, local-first
+    data for local interactive reports and cinematic visual showcases.
   DESCRIPTION
   specification.homepage = "https://st0012.dev/rails-galaxy/"
   specification.license = "MIT"
