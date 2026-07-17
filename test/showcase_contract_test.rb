@@ -160,16 +160,15 @@ class ShowcaseContractTest < Minitest::Test
     assert_equal(APPROVED_DEPENDENCY_PRESET, showcase_preset("SHOWCASE_DEPENDENCY_PRESET"))
 
     renderer = runtime_function("createShowcaseRenderer")
-    assert_includes(renderer, 'const dependencyPoint = point.category === "dependencies"')
-    assert_includes(renderer, "const alphaScale = dependencyPoint ? SHOWCASE_DEPENDENCY_PRESET.starAlphaScale : 1")
-    assert_includes(renderer, "pointData[offset + 3] = point.sizeFactor")
-    assert_includes(renderer, "pointData[offset + 4] = point.alphaBase * alphaScale")
+    assert_includes(renderer, "float starAlphaScale = a_category > 1.5 ? float(${SHOWCASE_DEPENDENCY_PRESET.starAlphaScale}) : 1.0;")
+    assert_includes(renderer, "clamp(a_alpha * starAlphaScale * u_brightness / 100.0, 0.0, 1.0)")
   end
 
   def test_showcase_renders_every_scene_point
     runtime = File.read(RUNTIME_PATH)
-    assert_includes(runtime, "const renderPoints = points")
-    assert_includes(runtime_function("createShowcaseRenderer"), "new Float32Array(renderPoints.length * 7)")
+    assert_includes(runtime, "const { sceneData, scenePointCount, interactivePoints, dependencyHubs, packageHubs, systemHubs } = buildPoints()")
+    assert_includes(runtime_function("createShowcaseRenderer"), "gl.bufferData(gl.ARRAY_BUFFER, sceneData, gl.STATIC_DRAW)")
+    assert_includes(runtime_function("createShowcaseRenderer"), "gl.drawArrays(gl.POINTS, 0, scenePointCount)")
     assert_includes(runtime_function("updateGalaxySummary"), '"scene points"')
   end
 

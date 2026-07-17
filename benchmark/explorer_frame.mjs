@@ -196,7 +196,7 @@ function benchmarkScript() {
         };
       };
       // The runtime is a classic top-level script, so its bindings (render,
-      // context, renderPoints, drifting, ...) share this global scope.
+      // context, scenePointCount, drifting, ...) share this global scope.
       const forcedSync = () => {
         const webglExplorer = document.getElementById("explorer-cosmos");
         const gl = webglExplorer && webglExplorer.getContext("webgl2");
@@ -278,7 +278,7 @@ function benchmarkScript() {
         const result = {
           status: "done",
           renderer: document.documentElement.dataset.explorerRenderer || "canvas2d",
-          points: renderPoints.length,
+          points: scenePointCount,
           driven,
           raf,
         };
