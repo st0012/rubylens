@@ -8,3 +8,4 @@
 /playwright-report/
 /coverage/
 /test/browser/.fixtures/
+/gallery/dist/
