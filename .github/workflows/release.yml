@@ -1,0 +1,58 @@
+name: Release gem
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: rubygems-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publish to RubyGems.org
+    if: github.repository == 'st0012/rubylens' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release
+
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: main
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@003a5c4d8d6321bd302e38f6f0ec593f77f06600 # v1.319.0
+        with:
+          bundler-cache: true
+
+      - name: Verify release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_SHA" != "$(git rev-parse HEAD)" ]]; then
+            echo "::error::main changed after this release was requested; run the workflow again."
+            exit 1
+          fi
+
+          version="$(bundle exec ruby -Ilib -rrubylens/version -e 'print RubyLens::VERSION')"
+          if git rev-parse --quiet --verify "refs/tags/v${version}" >/dev/null; then
+            echo "::error::v${version} already exists; bump RubyLens::VERSION before releasing."
+            exit 1
+          fi
+
+          bundle exec rake test
+
+      - name: Publish gem
+        uses: rubygems/release-gem@052cc82692552de3ef2b81fd670e41d13cba8092 # v1.4.0
+        with:
+          attestations: false
+          await-release: false
