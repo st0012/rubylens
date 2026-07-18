@@ -93,6 +93,26 @@ rescue JSON::ParserError, ArgumentError
   nil
 end
 
+# Matches RubyLens::INDEXABLE_EXTENSIONS: the file types that can enter the
+# index manifest and therefore leak into published artifacts.
+INDEXABLE_EXTENSIONS = %w[.rb .rake .rbs .ru].freeze
+
+# The gallery publishes artifacts, so target checkouts must not contribute
+# unofficial sources: any tracked change fails, and untracked files fail when
+# they could enter the index manifest. Untracked junk (.DS_Store etc.) passes.
+def dirty_entries(path)
+  out, _err, status = Open3.capture3("git", "-C", path, "status", "--porcelain", "-uall")
+  return ["git status failed for #{path}"] unless status.success?
+
+  out.lines.map(&:chomp).select do |line|
+    if line.start_with?("??")
+      INDEXABLE_EXTENSIONS.include?(File.extname(line.delete_prefix("?? ").strip))
+    else
+      true
+    end
+  end
+end
+
 # The page's per-project facts are hand-maintained; fail the build when they
 # drift from the freshly generated artifacts instead of publishing stale copy.
 def index_fact_mismatches(index_path, facts)
@@ -130,6 +150,13 @@ PROJECTS.each do |slug, path|
   unless File.exist?(File.join(path, "Gemfile.lock"))
     failures << slug
     warn "#{slug}: #{path} has no Gemfile.lock — run `bundle install` there first"
+    next
+  end
+  dirty = dirty_entries(path)
+  unless dirty.empty?
+    failures << slug
+    warn "#{slug}: checkout at #{path} is not clean — the gallery publishes only official sources:"
+    dirty.first(10).each { |line| warn "  #{line}" }
     next
   end
 
