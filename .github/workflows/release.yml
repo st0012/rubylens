@@ -10,8 +10,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  verify:
-    name: Verify release
+  verify_ruby:
+    name: Verify Ruby ${{ matrix.ruby }}
+    if: github.repository == 'st0012/rubylens' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby: ["3.2", "3.3", "3.4", "4.0"]
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - uses: ruby/setup-ruby@003a5c4d8d6321bd302e38f6f0ec593f77f06600 # v1.319.0
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+
+      - run: bundle exec rake test
+
+  verify_assets:
+    name: Verify release metadata and browser assets
     if: github.repository == 'st0012/rubylens' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -32,7 +59,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@003a5c4d8d6321bd302e38f6f0ec593f77f06600 # v1.319.0
         with:
-          bundler-cache: true
+          ruby-version: "4.0"
 
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
@@ -45,7 +72,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          version="$(bundle exec ruby -Ilib -rrubylens/version -e 'print RubyLens::VERSION')"
+          version="$(ruby -Ilib -rrubylens/version -e 'print RubyLens::VERSION')"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
           if git rev-parse --quiet --verify "refs/tags/v${version}" >/dev/null; then
@@ -68,7 +95,6 @@ jobs:
               ;;
           esac
 
-      - run: bundle exec rake test
       - run: npm ci
       - run: npx vitest run
       - run: npx playwright install chromium --with-deps
@@ -76,7 +102,7 @@ jobs:
 
   release:
     name: Publish to RubyGems.org
-    needs: verify
+    needs: [verify_ruby, verify_assets]
     if: github.repository == 'st0012/rubylens' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -96,7 +122,7 @@ jobs:
       - name: Recheck release metadata
         shell: bash
         env:
-          VERSION: ${{ needs.verify.outputs.version }}
+          VERSION: ${{ needs.verify_assets.outputs.version }}
         run: |
           set -euo pipefail
 
