@@ -12,6 +12,7 @@
 require "fileutils"
 require "json"
 require "open3"
+require "rbconfig"
 
 ROOT = File.expand_path("..", __dir__)
 DIST = File.join(ROOT, "gallery", "dist")
@@ -38,14 +39,18 @@ EXPECTED_WARNINGS = {
 # RubyLens supports exactly the Rubydex version pinned in the gemspec; outside
 # Bundler, `require "rubydex"` would activate whatever version GEM_PATH finds.
 RUBYDEX_REQUIREMENT =
-  File.read(File.join(ROOT, "rubylens.gemspec"))[/add_dependency "rubydex", "([^"]+)"/, 1] ||
+  File.read(File.join(ROOT, "rubylens.gemspec"), encoding: "UTF-8")[/add_dependency "rubydex", "([^"]+)"/, 1] ||
   abort("could not read the rubydex pin from rubylens.gemspec")
 
 # Bundler would restrict gem resolution to rubylens' own lockfile and silently
 # skip every target gem, so rubylens runs without it. Targets bundled under a
 # different Ruby (e.g. Discourse under 3.4) need their gem dirs on GEM_PATH.
 def augmented_gem_path
-  candidates = Dir[File.expand_path("~/.gem/ruby/*")] +
+  # Start from this interpreter's own gem search path (defaults included) so
+  # setting GEM_PATH in the child never drops directories RubyGems would have
+  # used anyway; then add cross-Ruby candidates for targets bundled elsewhere.
+  candidates = Gem.path +
+               Dir[File.expand_path("~/.gem/ruby/*")] +
                Dir[File.expand_path("~/.rubies/*/lib/ruby/gems/*")]
   ([ENV["GEM_PATH"]] + candidates).compact.reject(&:empty?).uniq.join(":")
 end
@@ -59,10 +64,13 @@ def run_rubylens(command, target, output, extra)
   env.merge!(
     "RUBYOPT" => nil, "RUBYLIB" => nil,
     "GEM_PATH" => augmented_gem_path,
-    "LC_ALL" => "en_US.UTF-8",
   )
   bootstrap = "gem 'rubydex', '#{RUBYDEX_REQUIREMENT}'; load '#{File.join(ROOT, "exe", "rubylens")}'"
-  cmd = ["ruby", "-I#{File.join(ROOT, "lib")}", "-e", bootstrap, "--",
+  # RbConfig.ruby: the child must run under the same interpreter as this
+  # script, not whatever `ruby` PATH resolves to. -EUTF-8: the runtime assets
+  # contain UTF-8; force the default external encoding instead of depending
+  # on a locale that may not exist on the host.
+  cmd = [RbConfig.ruby, "-EUTF-8", "-I#{File.join(ROOT, "lib")}", "-e", bootstrap, "--",
          command, *extra, "-o", output, target]
   stdout, stderr, status = Open3.capture3(env, *cmd)
   [status.success?, stdout, stderr]
