@@ -11,6 +11,7 @@
 
 require "fileutils"
 require "json"
+require "open3"
 
 ROOT = File.expand_path("..", __dir__)
 DIST = File.join(ROOT, "gallery", "dist")
@@ -22,6 +23,20 @@ PROJECTS = {
   "rubygems-org" => File.expand_path("~/projects/rubygems.org"),
 }.freeze
 
+# Dependency warnings that are expected and unavoidable for a project (e.g.
+# license-gated commercial gems that cannot be installed). Any warning not
+# matched here marks the project as failed: the artifact would silently miss
+# dependency clouds and report wrong package counts.
+EXPECTED_WARNINGS = {
+  "rubygems-org" => [/\ASkipped avo-/, /\ASkipped ransack /].freeze,
+}.freeze
+
+# RubyLens supports exactly the Rubydex version pinned in the gemspec; outside
+# Bundler, `require "rubydex"` would activate whatever version GEM_PATH finds.
+RUBYDEX_REQUIREMENT =
+  File.read(File.join(ROOT, "rubylens.gemspec"))[/add_dependency "rubydex", "([^"]+)"/, 1] ||
+  abort("could not read the rubydex pin from rubylens.gemspec")
+
 # Bundler would restrict gem resolution to rubylens' own lockfile and silently
 # skip every target gem, so rubylens runs without it. Targets bundled under a
 # different Ruby (e.g. Discourse under 3.4) need their gem dirs on GEM_PATH.
@@ -32,11 +47,21 @@ def augmented_gem_path
 end
 
 def run_rubylens(command, target, output, extra)
-  env = { "GEM_PATH" => augmented_gem_path, "LC_ALL" => "en_US.UTF-8" }
-  cmd = ["ruby", "-I#{File.join(ROOT, "lib")}", File.join(ROOT, "exe", "rubylens"),
+  # Clear every Bundler variable so the child stays unbundled even when
+  # build.rb itself was launched under `bundle exec`. A fixed key list is not
+  # enough: RubyGems auto-requires $BUNDLER_SETUP at startup, which would
+  # re-bundlerize the child and hide every target gem.
+  env = ENV.keys.grep(/\A(BUNDLE_|BUNDLER_)/).to_h { |key| [key, nil] }
+  env.merge!(
+    "RUBYOPT" => nil, "RUBYLIB" => nil,
+    "GEM_PATH" => augmented_gem_path,
+    "LC_ALL" => "en_US.UTF-8",
+  )
+  bootstrap = "gem 'rubydex', '#{RUBYDEX_REQUIREMENT}'; load '#{File.join(ROOT, "exe", "rubylens")}'"
+  cmd = ["ruby", "-I#{File.join(ROOT, "lib")}", "-e", bootstrap, "--",
          command, *extra, "-o", output, target]
-  out = IO.popen(env, cmd, err: [:child, :out], &:read)
-  [Process.last_status.success?, out]
+  stdout, stderr, status = Open3.capture3(env, *cmd)
+  [status.success?, stdout, stderr]
 end
 
 # Matches MORPHOLOGY_FAMILY in assets/runtime/report.js.
@@ -76,24 +101,38 @@ PROJECTS.each do |slug, path|
     "showcase" => [File.join(DIST, "#{slug}-showcase.html"), ["--details"]],
   }.each do |command, (output, extra)|
     FileUtils.rm_f(output)
-    ok, out = run_rubylens(command, path, output, extra)
+    ok, stdout, stderr = run_rubylens(command, path, output, extra)
     unless ok && File.exist?(output)
       failures << slug
-      warn "#{slug} #{command}: FAILED\n#{out}"
+      warn "#{slug} #{command}: FAILED\n#{stdout}#{stderr}"
       next
     end
-    json_line = out.lines.find { |line| line.start_with?("{") }
+    json_line = stdout.lines.find { |line| line.start_with?("{") }
     info = json_line ? JSON.parse(json_line) : {}
+    warnings = Array(info["warnings"])
+    unexpected = warnings.reject do |warning|
+      Array(EXPECTED_WARNINGS[slug]).any? { |pattern| pattern.match?(warning) }
+    end
+    unless unexpected.empty?
+      failures << slug
+      warn "#{slug} #{command}: FAILED — artifact has unexpected dependency gaps:"
+      unexpected.each { |warning| warn "  #{warning}" }
+      next
+    end
+    # RubyLens writes outputs owner-only (0600); the gallery artifacts are for
+    # publishing, so make them world-readable for mode-preserving deploys.
+    File.chmod(0o644, output)
     family = morphology_family(output)
     puts "#{slug} #{command}: counts=#{info["counts"].inspect} morphology=#{family} " \
-         "warnings=#{Array(info["warnings"]).length}"
-    Array(info["warnings"]).each { |warning| puts "  warning: #{warning}" }
+         "warnings=#{warnings.length}"
+    warnings.each { |warning| puts "  expected warning: #{warning}" }
   end
 end
 
 index = File.join(ROOT, "gallery", "index.html")
 if File.exist?(index)
   FileUtils.cp(index, File.join(DIST, "index.html"))
+  File.chmod(0o644, File.join(DIST, "index.html"))
 else
   puts "note: gallery/index.html does not exist yet; dist has artifacts only"
 end
