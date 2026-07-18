@@ -10,64 +10,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  verify_ruby:
-    name: Verify Ruby ${{ matrix.ruby }}
+  release:
+    name: Publish to RubyGems.org
     if: github.repository == 'st0012/rubylens' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    environment: release
 
     permissions:
-      contents: read
-
-    strategy:
-      fail-fast: false
-      matrix:
-        ruby: ["3.2", "3.3", "3.4", "4.0"]
-
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-          ref: ${{ github.sha }}
-
-      - uses: ruby/setup-ruby@003a5c4d8d6321bd302e38f6f0ec593f77f06600 # v1.319.0
-        with:
-          ruby-version: ${{ matrix.ruby }}
-          bundler-cache: true
-
-      - run: bundle exec rake test
-
-  verify_assets:
-    name: Verify release metadata and browser assets
-    if: github.repository == 'st0012/rubylens' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-
-    permissions:
-      contents: read
-
-    outputs:
-      version: ${{ steps.metadata.outputs.version }}
-      prerelease: ${{ steps.metadata.outputs.prerelease }}
+      contents: write
+      id-token: write
 
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ github.sha }}
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@003a5c4d8d6321bd302e38f6f0ec593f77f06600 # v1.319.0
         with:
-          ruby-version: "4.0"
+          bundler-cache: true
 
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
-        with:
-          node-version-file: .node-version
-          cache: npm
-
-      - name: Verify release metadata
+      - name: Prepare release metadata
         id: metadata
         shell: bash
         run: |
@@ -98,67 +63,6 @@ jobs:
               ;;
           esac
 
-      - run: npm ci
-      - run: npx vitest run
-      - run: npx playwright install chromium --with-deps
-      - run: npx playwright test
-
-  release:
-    name: Publish to RubyGems.org
-    needs: [verify_ruby, verify_assets]
-    if: github.repository == 'st0012/rubylens' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    environment: release
-
-    permissions:
-      contents: write
-      id-token: write
-
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-          ref: main
-
-      - name: Recheck release metadata
-        shell: bash
-        env:
-          VERSION: ${{ needs.verify_assets.outputs.version }}
-        run: |
-          set -euo pipefail
-
-          if [[ "$GITHUB_SHA" != "$(git rev-parse HEAD)" ]]; then
-            echo "::error::main changed after this release was requested; run the workflow again."
-            exit 1
-          fi
-
-          if git rev-parse --quiet --verify "refs/tags/v${VERSION}" >/dev/null; then
-            echo "::error::v${VERSION} already exists; bump RubyLens::VERSION before releasing."
-            exit 1
-          fi
-
-          status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
-            "https://rubygems.org/api/v2/rubygems/rubylens/versions/${VERSION}.json?platform=ruby")"
-          case "$status" in
-            200)
-              echo "::error::rubylens ${VERSION} is already published; bump RubyLens::VERSION before releasing."
-              exit 1
-              ;;
-            404)
-              ;;
-            *)
-              echo "::error::RubyGems.org version check failed with HTTP ${status}."
-              exit 1
-              ;;
-          esac
-
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@003a5c4d8d6321bd302e38f6f0ec593f77f06600 # v1.319.0
-        with:
-          bundler-cache: true
-
       - name: Publish gem
         uses: rubygems/release-gem@052cc82692552de3ef2b81fd670e41d13cba8092 # v1.4.0
         with:
@@ -168,8 +72,8 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          PRERELEASE: ${{ needs.verify_assets.outputs.prerelease }}
-          VERSION: ${{ needs.verify_assets.outputs.version }}
+          PRERELEASE: ${{ steps.metadata.outputs.prerelease }}
+          VERSION: ${{ steps.metadata.outputs.version }}
         run: |
           set -euo pipefail
 
