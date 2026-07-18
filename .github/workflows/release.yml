@@ -10,8 +10,73 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verify:
+    name: Verify release
+    if: github.repository == 'st0012/rubylens' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    permissions:
+      contents: read
+
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@003a5c4d8d6321bd302e38f6f0ec593f77f06600 # v1.319.0
+        with:
+          bundler-cache: true
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Verify release metadata
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="$(bundle exec ruby -Ilib -rrubylens/version -e 'print RubyLens::VERSION')"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+          if git rev-parse --quiet --verify "refs/tags/v${version}" >/dev/null; then
+            echo "::error::v${version} already exists; bump RubyLens::VERSION before releasing."
+            exit 1
+          fi
+
+          status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            "https://rubygems.org/api/v2/rubygems/rubylens/versions/${version}.json?platform=ruby")"
+          case "$status" in
+            200)
+              echo "::error::rubylens ${version} is already published; bump RubyLens::VERSION before releasing."
+              exit 1
+              ;;
+            404)
+              ;;
+            *)
+              echo "::error::RubyGems.org version check failed with HTTP ${status}."
+              exit 1
+              ;;
+          esac
+
+      - run: bundle exec rake test
+      - run: npm ci
+      - run: npx vitest run
+      - run: npx playwright install chromium --with-deps
+      - run: npx playwright test
+
   release:
     name: Publish to RubyGems.org
+    needs: verify
     if: github.repository == 'st0012/rubylens' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -28,13 +93,10 @@ jobs:
           persist-credentials: false
           ref: main
 
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@003a5c4d8d6321bd302e38f6f0ec593f77f06600 # v1.319.0
-        with:
-          bundler-cache: true
-
-      - name: Verify release
+      - name: Recheck release metadata
         shell: bash
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
         run: |
           set -euo pipefail
 
@@ -43,13 +105,30 @@ jobs:
             exit 1
           fi
 
-          version="$(bundle exec ruby -Ilib -rrubylens/version -e 'print RubyLens::VERSION')"
-          if git rev-parse --quiet --verify "refs/tags/v${version}" >/dev/null; then
-            echo "::error::v${version} already exists; bump RubyLens::VERSION before releasing."
+          if git rev-parse --quiet --verify "refs/tags/v${VERSION}" >/dev/null; then
+            echo "::error::v${VERSION} already exists; bump RubyLens::VERSION before releasing."
             exit 1
           fi
 
-          bundle exec rake test
+          status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            "https://rubygems.org/api/v2/rubygems/rubylens/versions/${VERSION}.json?platform=ruby")"
+          case "$status" in
+            200)
+              echo "::error::rubylens ${VERSION} is already published; bump RubyLens::VERSION before releasing."
+              exit 1
+              ;;
+            404)
+              ;;
+            *)
+              echo "::error::RubyGems.org version check failed with HTTP ${status}."
+              exit 1
+              ;;
+          esac
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@003a5c4d8d6321bd302e38f6f0ec593f77f06600 # v1.319.0
+        with:
+          bundler-cache: true
 
       - name: Publish gem
         uses: rubygems/release-gem@052cc82692552de3ef2b81fd670e41d13cba8092 # v1.4.0
