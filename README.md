@@ -7,16 +7,16 @@ RubyLens turns a Ruby codebase into an interactive galaxy in one self-contained 
 *Five galaxy families rendered from the same synthetic codebase data.*
 
 > [!NOTE]
-> RubyLens is an early prerelease. Version 0.1 supports Ruby 3.2 through 4.0. It pins [Rubydex 0.2.9](https://rubygems.org/gems/rubydex/versions/0.2.9) because Rubydex's API is still pre-1.0.
+> RubyLens 0.1 is an early release. It supports Ruby 3.2 through 4.0 and pins [Rubydex 0.2.9](https://rubygems.org/gems/rubydex/versions/0.2.9) because Rubydex's API is still pre-1.0.
 
 ## Quick start
 
 RubyLens works from inside an existing Ruby project's bundle. The project must be inside a Git repository.
 
-Add the current prerelease to the project's `Gemfile`:
+Add RubyLens to the project's `Gemfile`:
 
 ```ruby
-gem "rubylens", "0.1.0.pre.1", require: false
+gem "rubylens", require: false
 ```
 
 Install the bundle, then generate an Explorer:

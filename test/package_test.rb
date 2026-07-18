@@ -38,10 +38,9 @@ class PackageTest < Minitest::Test
     refute(specification.required_ruby_version.satisfied_by?(Gem::Version.new("4.1.0")))
   end
 
-  def test_prerelease_metadata_protects_future_pushes
+  def test_gem_metadata_protects_future_pushes
     specification = Gem::Specification.load(File.expand_path("../rubylens.gemspec", __dir__))
 
-    assert(specification.version.prerelease?)
     assert_equal("MIT", specification.license)
     assert_equal("https://st0012.dev/rails-galaxy/", specification.homepage)
     assert_equal("https://rubygems.org", specification.metadata["allowed_push_host"])

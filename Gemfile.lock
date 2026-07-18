@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    rubylens (0.1.0.pre.1)
+    rubylens (0.1.0)
       base64 (>= 0.2)
       rubydex (= 0.2.9)
 
@@ -50,7 +50,7 @@ CHECKSUMS
   rubydex (0.2.9-arm64-darwin) sha256=1c014e3c244102739914d528202b1d0f54bdc3d1f85667b81b65ea22aabfa560
   rubydex (0.2.9-x86_64-darwin) sha256=000df1723b090d9176dbceb8e291b72f93931cc3c7782f32287e0db6c20c1dd7
   rubydex (0.2.9-x86_64-linux) sha256=f500e843d285def8fc799e0f9a989b9ba2b01b9372bde6ab0a6831738b3f6956
-  rubylens (0.1.0.pre.1)
+  rubylens (0.1.0)
 
 BUNDLED WITH
   4.0.10
