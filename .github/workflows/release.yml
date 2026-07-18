@@ -1,0 +1,88 @@
+name: Release gem
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: rubygems-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publish to RubyGems.org
+    if: github.repository == 'st0012/rubylens' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release
+
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@003a5c4d8d6321bd302e38f6f0ec593f77f06600 # v1.319.0
+        with:
+          bundler-cache: true
+
+      - name: Prepare release metadata
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="$(ruby -Ilib -rrubylens/version -e 'print RubyLens::VERSION')"
+          prerelease="$(ruby -rrubygems/version -e 'print Gem::Version.new(ARGV.fetch(0)).prerelease?' "$version")"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "prerelease=${prerelease}" >> "$GITHUB_OUTPUT"
+
+          if git rev-parse --quiet --verify "refs/tags/v${version}" >/dev/null; then
+            echo "::error::v${version} already exists; bump RubyLens::VERSION before releasing."
+            exit 1
+          fi
+
+          status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            "https://rubygems.org/api/v2/rubygems/rubylens/versions/${version}.json?platform=ruby")"
+          case "$status" in
+            200)
+              echo "::error::rubylens ${version} is already published; bump RubyLens::VERSION before releasing."
+              exit 1
+              ;;
+            404)
+              ;;
+            *)
+              echo "::error::RubyGems.org version check failed with HTTP ${status}."
+              exit 1
+              ;;
+          esac
+
+      - name: Publish gem
+        uses: rubygems/release-gem@052cc82692552de3ef2b81fd670e41d13cba8092 # v1.4.0
+        with:
+          attestations: false
+          await-release: false
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ steps.metadata.outputs.prerelease }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          tag="v${VERSION}"
+          release_args=(--verify-tag --generate-notes)
+          if previous_tag="$(git describe --tags --abbrev=0 --match 'v*' "${tag}^" 2>/dev/null)"; then
+            release_args+=(--notes-start-tag "$previous_tag")
+          fi
+          if [[ "$PRERELEASE" == "true" ]]; then
+            release_args+=(--prerelease)
+          fi
+          gh release create "$tag" "${release_args[@]}"

@@ -1,0 +1,172 @@
+[
+  {
+    "label": "irregular-tiny",
+    "family": 4,
+    "designation": "Irr",
+    "row": [
+      4,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      5,
+      500,
+      1250263674
+    ]
+  },
+  {
+    "label": "elliptical-plain",
+    "family": 0,
+    "designation": "E0",
+    "row": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1250263674
+    ]
+  },
+  {
+    "label": "lenticular-dependencies",
+    "family": 1,
+    "designation": "S0",
+    "row": [
+      1,
+      0,
+      407,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1250263674
+    ]
+  },
+  {
+    "label": "spiral-spread-roots",
+    "family": 2,
+    "designation": "Sb",
+    "row": [
+      2,
+      0,
+      281,
+      3,
+      139,
+      489,
+      0,
+      0,
+      0,
+      1250263674
+    ]
+  },
+  {
+    "label": "barred-concentrated-root",
+    "family": 3,
+    "designation": "SBb",
+    "row": [
+      3,
+      0,
+      281,
+      3,
+      139,
+      489,
+      359,
+      0,
+      0,
+      1250263674
+    ]
+  },
+  {
+    "label": "package-elliptical",
+    "family": 0,
+    "designation": "E0",
+    "row": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1234
+    ]
+  },
+  {
+    "label": "package-lenticular",
+    "family": 1,
+    "designation": "S0",
+    "row": [
+      1,
+      0,
+      380,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1234
+    ]
+  },
+  {
+    "label": "package-spiral",
+    "family": 2,
+    "designation": "Sc",
+    "row": [
+      2,
+      0,
+      234,
+      4,
+      114,
+      513,
+      0,
+      0,
+      0,
+      4321
+    ]
+  },
+  {
+    "label": "package-irregular-small",
+    "family": 4,
+    "designation": "Irr",
+    "row": [
+      4,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      3,
+      568,
+      77
+    ]
+  },
+  {
+    "label": "package-fallback",
+    "family": 2,
+    "designation": "Sb",
+    "row": [
+      2,
+      0,
+      240,
+      3,
+      105,
+      380,
+      0,
+      0,
+      0,
+      999
+    ]
+  }
+]
