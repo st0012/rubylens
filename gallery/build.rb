@@ -101,16 +101,29 @@ INDEXABLE_EXTENSIONS = %w[.rb .rake .rbs .ru].freeze
 # unofficial sources: any tracked change fails, and untracked files fail when
 # they could enter the index manifest. Untracked junk (.DS_Store etc.) passes.
 def dirty_entries(path)
-  out, _err, status = Open3.capture3("git", "-C", path, "status", "--porcelain", "-uall")
+  # -z: NUL-delimited raw paths, so quoted/non-ASCII names can't slip past the
+  # extension check the way core.quotePath-mangled porcelain lines could.
+  out, _err, status = Open3.capture3("git", "-C", path, "status", "--porcelain", "-z", "-uall")
   return ["git status failed for #{path}"] unless status.success?
 
-  out.lines.map(&:chomp).select do |line|
-    if line.start_with?("??")
-      INDEXABLE_EXTENSIONS.include?(File.extname(line.delete_prefix("?? ").strip))
+  entries = []
+  # Git emits raw path bytes; treat them as binary so non-ASCII names can't
+  # crash parsing under an ASCII default encoding.
+  tokens = out.force_encoding(Encoding::BINARY).split("\0")
+  until tokens.empty?
+    entry = tokens.shift
+    next if entry.nil? || entry.length < 3
+
+    state = entry[0, 2]
+    file = entry[3..]
+    tokens.shift if state.start_with?("R", "C") # rename/copy carries an origin path token
+    if state == "??"
+      entries << "?? #{file}" if INDEXABLE_EXTENSIONS.include?(File.extname(file))
     else
-      true
+      entries << "#{state} #{file}"
     end
   end
+  entries
 end
 
 # The page's per-project facts are hand-maintained; fail the build when they
@@ -158,6 +171,10 @@ PROJECTS.each do |slug, path|
     warn "#{slug}: checkout at #{path} is not clean — the gallery publishes only official sources:"
     dirty.first(10).each { |line| warn "  #{line}" }
     next
+  end
+  unless Open3.capture3("git", "-C", path, "ls-files", "--error-unmatch", "Gemfile.lock")[2].success?
+    warn "#{slug}: note — Gemfile.lock is not tracked upstream, so dependency clouds " \
+         "reflect this machine's bundle resolution of the official Gemfile"
   end
 
   {
