@@ -16,6 +16,8 @@ require "rbconfig"
 
 ROOT = File.expand_path("..", __dir__)
 DIST = File.join(ROOT, "gallery", "dist")
+SOCIAL_PREVIEW = File.join(ROOT, "gallery", "ruby-galaxies-social-preview.png")
+SOCIAL_PREVIEW_NAME = File.basename(SOCIAL_PREVIEW)
 
 PROJECTS = {
   "rubocop" => File.expand_path("~/projects/rubocop"),
@@ -90,6 +92,20 @@ def morphology_family(output)
   index = morphology.is_a?(Hash) ? morphology["family"] : Array(morphology).first
   FAMILY_NAMES[index] if index.is_a?(Integer)
 rescue JSON::ParserError, ArgumentError
+  nil
+end
+
+# Social cards need a broadly supported raster format. Keep the editable SVG
+# beside this checked-in PNG, and reject an export with the wrong dimensions,
+# bit depth, or alpha channel before it enters the publishable folder.
+def png_properties(path)
+  header = File.binread(path, 26)
+  signature = "\x89PNG\r\n\x1a\n".b
+  return unless header.start_with?(signature) && header.byteslice(12, 4) == "IHDR"
+
+  width, height = header.byteslice(16, 8).unpack("NN")
+  [width, height, header.getbyte(24), header.getbyte(25)]
+rescue SystemCallError
   nil
 end
 
@@ -225,6 +241,15 @@ if File.exist?(index)
 else
   puts "note: gallery/index.html does not exist yet; dist has artifacts only"
 end
+
+if png_properties(SOCIAL_PREVIEW) == [1200, 630, 8, 2]
+  FileUtils.cp(SOCIAL_PREVIEW, File.join(DIST, SOCIAL_PREVIEW_NAME))
+  File.chmod(0o644, File.join(DIST, SOCIAL_PREVIEW_NAME))
+else
+  failures << "social-preview"
+  warn "#{SOCIAL_PREVIEW}: expected a 1200x630 8-bit RGB PNG"
+end
+
 puts "dist ready: #{DIST}"
 
 unless failures.empty?
