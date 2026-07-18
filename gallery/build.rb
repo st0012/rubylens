@@ -16,8 +16,6 @@ require "rbconfig"
 
 ROOT = File.expand_path("..", __dir__)
 DIST = File.join(ROOT, "gallery", "dist")
-SOCIAL_PREVIEW = File.join(ROOT, "gallery", "ruby-galaxies-social-preview.png")
-SOCIAL_PREVIEW_NAME = File.basename(SOCIAL_PREVIEW)
 
 PROJECTS = {
   "rubocop" => File.expand_path("~/projects/rubocop"),
@@ -95,9 +93,9 @@ rescue JSON::ParserError, ArgumentError
   nil
 end
 
-# Social cards need a broadly supported raster format. Keep the editable SVG
-# beside this checked-in PNG, and reject an export with the wrong dimensions,
-# bit depth, or alpha channel before it enters the publishable folder.
+# Social cards need a broadly supported raster format. Reject a regenerated
+# card with the wrong dimensions, bit depth, or alpha channel before it
+# enters the publishable folder.
 def png_properties(path)
   header = File.binread(path, 26)
   signature = "\x89PNG\r\n\x1a\n".b
@@ -227,6 +225,15 @@ PROJECTS.each do |slug, path|
   end
 end
 
+social = File.join(ROOT, "gallery", "social-preview.png")
+if png_properties(social) == [1200, 630, 8, 2]
+  FileUtils.cp(social, File.join(DIST, "social-preview.png"))
+  File.chmod(0o644, File.join(DIST, "social-preview.png"))
+else
+  failures << "social-preview"
+  warn "#{social}: expected a 1200x630 8-bit RGB PNG (regenerate with `node gallery/social_preview.mjs`)"
+end
+
 index = File.join(ROOT, "gallery", "index.html")
 if File.exist?(index)
   mismatches = index_fact_mismatches(index, facts)
@@ -240,14 +247,6 @@ if File.exist?(index)
   end
 else
   puts "note: gallery/index.html does not exist yet; dist has artifacts only"
-end
-
-if png_properties(SOCIAL_PREVIEW) == [1200, 630, 8, 2]
-  FileUtils.cp(SOCIAL_PREVIEW, File.join(DIST, SOCIAL_PREVIEW_NAME))
-  File.chmod(0o644, File.join(DIST, SOCIAL_PREVIEW_NAME))
-else
-  failures << "social-preview"
-  warn "#{SOCIAL_PREVIEW}: expected a 1200x630 8-bit RGB PNG"
 end
 
 puts "dist ready: #{DIST}"

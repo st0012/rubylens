@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ruby Galaxies social card</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    background: #03040a; color: #e9e4f4;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    -webkit-font-smoothing: antialiased;
+    background-image: radial-gradient(rgba(194, 179, 212, .07) 1px, transparent 1px);
+    background-size: 26px 26px;
+    position: relative;
+  }
+  .frame { position: absolute; inset: 22px; }
+  .frame::before, .frame::after, .frame .tick::before, .frame .tick::after {
+    content: ""; position: absolute; width: 22px; height: 22px; border-color: #6f5f96;
+    border-style: solid; border-width: 0;
+  }
+  .frame::before { top: 0; left: 0; border-top-width: 1px; border-left-width: 1px; }
+  .frame::after { top: 0; right: 0; border-top-width: 1px; border-right-width: 1px; }
+  .frame .tick::before { bottom: 0; left: 0; border-bottom-width: 1px; border-left-width: 1px; }
+  .frame .tick::after { bottom: 0; right: 0; border-bottom-width: 1px; border-right-width: 1px; }
+  .card { position: absolute; inset: 0; display: flex; align-items: center; gap: 44px; padding: 56px 60px; }
+  .left { width: 420px; flex-shrink: 0; }
+  .left .tag { color: #ffc36b; font-size: 17px; letter-spacing: .2em; text-transform: uppercase; }
+  .left h1 { margin-top: 20px; font-size: 74px; font-weight: 600; letter-spacing: -.01em; line-height: 1.04; }
+  .left .sub { margin-top: 22px; color: #aaa0b8; font-size: 19px; line-height: 1.65; }
+  .left .site { margin-top: 30px; color: #74d8ff; font-size: 16px; letter-spacing: .06em; }
+  .grid { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .tile { border: 1px solid #241d33; background: #03040a; }
+  .tile img { display: block; width: 100%; height: 176px; object-fit: cover; }
+  .tile .cap {
+    display: flex; justify-content: space-between; padding: 8px 10px;
+    color: #8e8799; font-size: 11.5px; letter-spacing: .08em;
+  }
+  .tile .cap b { color: #ddd4e8; font-weight: 600; }
+  .tile .cap .idx { color: #ffc36b; }
+</style>
+</head>
+<body>
+  <div class="frame"><span class="tick"></span></div>
+  <div class="card">
+    <div class="left">
+      <p class="tag">// a field survey</p>
+      <h1>Ruby Galaxies</h1>
+      <p class="sub">Visualize your Ruby project like it&rsquo;s a galaxy. Four familiar codebases, catalogued.</p>
+      <p class="site">st0012.dev/ruby-galaxies</p>
+    </div>
+    <div class="grid">
+      <div class="tile">
+        <img src="social-tiles/rubocop.png" alt="">
+        <div class="cap"><span><span class="idx">[01]</span> <b>RuboCop</b></span><span>barred spiral</span></div>
+      </div>
+      <div class="tile">
+        <img src="social-tiles/rails.png" alt="">
+        <div class="cap"><span><span class="idx">[02]</span> <b>Rails</b></span><span>spiral</span></div>
+      </div>
+      <div class="tile">
+        <img src="social-tiles/discourse.png" alt="">
+        <div class="cap"><span><span class="idx">[03]</span> <b>Discourse</b></span><span>spiral</span></div>
+      </div>
+      <div class="tile">
+        <img src="social-tiles/rubygems-org.png" alt="">
+        <div class="cap"><span><span class="idx">[04]</span> <b>rubygems.org</b></span><span>spiral</span></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
