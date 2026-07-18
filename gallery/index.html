@@ -101,7 +101,8 @@
       </div>
       <div class="stagebox"><span class="tick"></span>
         <div class="stage">
-          <iframe src="rubocop-showcase.html" loading="lazy" title="RuboCop as a rotating galaxy"></iframe>
+          <iframe data-src="rubocop-showcase.html" loading="lazy" title="RuboCop as a rotating galaxy"></iframe>
+          <noscript><iframe src="rubocop-showcase.html" loading="lazy" title="RuboCop as a rotating galaxy"></iframe></noscript>
           <a class="hitarea" href="rubocop.html" aria-label="Open the RuboCop explorer"></a>
         </div>
       </div>
@@ -123,7 +124,8 @@
       </div>
       <div class="stagebox"><span class="tick"></span>
         <div class="stage">
-          <iframe src="rails-showcase.html" loading="lazy" title="Ruby on Rails as a rotating galaxy"></iframe>
+          <iframe data-src="rails-showcase.html" loading="lazy" title="Ruby on Rails as a rotating galaxy"></iframe>
+          <noscript><iframe src="rails-showcase.html" loading="lazy" title="Ruby on Rails as a rotating galaxy"></iframe></noscript>
           <a class="hitarea" href="rails.html" aria-label="Open the Ruby on Rails explorer"></a>
         </div>
       </div>
@@ -145,7 +147,8 @@
       </div>
       <div class="stagebox"><span class="tick"></span>
         <div class="stage">
-          <iframe src="discourse-showcase.html" loading="lazy" title="Discourse as a rotating galaxy"></iframe>
+          <iframe data-src="discourse-showcase.html" loading="lazy" title="Discourse as a rotating galaxy"></iframe>
+          <noscript><iframe src="discourse-showcase.html" loading="lazy" title="Discourse as a rotating galaxy"></iframe></noscript>
           <a class="hitarea" href="discourse.html" aria-label="Open the Discourse explorer"></a>
         </div>
       </div>
@@ -167,7 +170,8 @@
       </div>
       <div class="stagebox"><span class="tick"></span>
         <div class="stage">
-          <iframe src="rubygems-org-showcase.html" loading="lazy" title="rubygems.org as a rotating galaxy"></iframe>
+          <iframe data-src="rubygems-org-showcase.html" loading="lazy" title="rubygems.org as a rotating galaxy"></iframe>
+          <noscript><iframe src="rubygems-org-showcase.html" loading="lazy" title="rubygems.org as a rotating galaxy"></iframe></noscript>
           <a class="hitarea" href="rubygems-org.html" aria-label="Open the rubygems.org explorer"></a>
         </div>
       </div>
@@ -186,18 +190,18 @@
 
   <script>
   (function () {
-    if (!("IntersectionObserver" in window)) return;
-    var frames = document.querySelectorAll(".stage iframe");
+    var frames = Array.prototype.slice.call(document.querySelectorAll(".stage iframe[data-src]"));
+    if (!("IntersectionObserver" in window)) {
+      frames.forEach(function (frame) { frame.src = frame.dataset.src; });
+      return;
+    }
     var observer = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
         var frame = entry.target;
         if (entry.isIntersecting) {
-          if (frame.dataset.src && frame.getAttribute("src") !== frame.dataset.src) {
-            frame.src = frame.dataset.src;
-          }
-        } else {
-          if (!frame.dataset.src) frame.dataset.src = frame.getAttribute("src");
-          if (frame.getAttribute("src") !== "about:blank") frame.src = "about:blank";
+          if (frame.getAttribute("src") !== frame.dataset.src) frame.src = frame.dataset.src;
+        } else if (frame.getAttribute("src") && frame.getAttribute("src") !== "about:blank") {
+          frame.src = "about:blank";
         }
       });
     }, { rootMargin: "150% 0px" });

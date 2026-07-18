@@ -26,9 +26,13 @@ PROJECTS = {
 # Dependency warnings that are expected and unavoidable for a project (e.g.
 # license-gated commercial gems that cannot be installed). Any warning not
 # matched here marks the project as failed: the artifact would silently miss
-# dependency clouds and report wrong package counts.
+# dependency clouds and report wrong package counts. Patterns pin the exact
+# skip reason so the same gems failing differently still fail the build.
 EXPECTED_WARNINGS = {
-  "rubygems-org" => [/\ASkipped avo-/, /\ASkipped ransack /].freeze,
+  "rubygems-org" => [
+    /\ASkipped avo-[a-z_]+ [\w.]+: exact installed gem not found\.\z/,
+    /\ASkipped ransack [\w.]+: exact installed gem not found\.\z/,
+  ].freeze,
 }.freeze
 
 # RubyLens supports exactly the Rubydex version pinned in the gemspec; outside
@@ -81,8 +85,33 @@ rescue JSON::ParserError, ArgumentError
   nil
 end
 
+# The page's per-project facts are hand-maintained; fail the build when they
+# drift from the freshly generated artifacts instead of publishing stale copy.
+def index_fact_mismatches(index_path, facts)
+  html = File.read(index_path, encoding: "UTF-8")
+  facts.flat_map do |slug, expected|
+    section = html[/<section id="#{Regexp.escape(slug)}".*?<\/section>/m]
+    next ["#{slug}: no <section id=\"#{slug}\"> in index.html"] unless section
+
+    mismatches = []
+    packages = section[/packages <b>(\d+)<\/b>/, 1]
+    unless packages && Integer(packages) == expected.fetch(:packages)
+      mismatches << "#{slug}: index.html says packages #{packages.inspect}, artifacts say #{expected.fetch(:packages)}"
+    end
+    designation = section[/<span class="designation">([^<]+)<\/span>/, 1]
+    unless designation == expected.fetch(:family)
+      mismatches << "#{slug}: index.html designation #{designation.inspect}, artifacts say #{expected.fetch(:family).inspect}"
+    end
+    mismatches
+  end
+end
+
 failures = []
+facts = {}
 FileUtils.mkdir_p(DIST)
+# Explicit directory mode: under a restrictive umask mkdir_p would create
+# 0700, and mode-preserving deploys of dist/ would 403 on traversal.
+File.chmod(0o755, DIST)
 
 PROJECTS.each do |slug, path|
   unless File.directory?(path)
@@ -123,6 +152,7 @@ PROJECTS.each do |slug, path|
     # publishing, so make them world-readable for mode-preserving deploys.
     File.chmod(0o644, output)
     family = morphology_family(output)
+    facts[slug] = { packages: Integer(info.dig("counts", "packages")), family: family } if command == "report"
     puts "#{slug} #{command}: counts=#{info["counts"].inspect} morphology=#{family} " \
          "warnings=#{warnings.length}"
     warnings.each { |warning| puts "  expected warning: #{warning}" }
@@ -131,8 +161,15 @@ end
 
 index = File.join(ROOT, "gallery", "index.html")
 if File.exist?(index)
-  FileUtils.cp(index, File.join(DIST, "index.html"))
-  File.chmod(0o644, File.join(DIST, "index.html"))
+  mismatches = index_fact_mismatches(index, facts)
+  if mismatches.empty?
+    FileUtils.cp(index, File.join(DIST, "index.html"))
+    File.chmod(0o644, File.join(DIST, "index.html"))
+  else
+    failures << "index"
+    warn "index.html facts are stale — update the hand-written rows:"
+    mismatches.each { |mismatch| warn "  #{mismatch}" }
+  end
 else
   puts "note: gallery/index.html does not exist yet; dist has artifacts only"
 end
