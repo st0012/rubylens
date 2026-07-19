@@ -36,24 +36,6 @@ installed. The script clones and installs nothing; it reports what is missing.
 - **Valid social preview.** The checked-in preview must be a 1200×630 8-bit
   RGB PNG. The build copies it into `dist/` only after validating that format.
 
-## Social preview
-
-`ruby-galaxies-social-preview.svg` is the editable source and
-`ruby-galaxies-social-preview.png` is the publishable export. Both live beside
-this README so the public card remains deterministic and reviewable.
-
-On macOS, regenerate the PNG after editing the SVG:
-
-```sh
-sips -s format png gallery/ruby-galaxies-social-preview.svg \
-  --out gallery/ruby-galaxies-social-preview.png
-magick gallery/ruby-galaxies-social-preview.png \
-  -background '#03040a' -alpha remove -alpha off -strip \
-  PNG24:gallery/ruby-galaxies-social-preview-rgb.png
-mv gallery/ruby-galaxies-social-preview-rgb.png \
-  gallery/ruby-galaxies-social-preview.png
-```
-
 ## Common changes
 
 - **Refresh a project:** `git pull` in its checkout, `bundle install` if the
@@ -63,6 +45,12 @@ mv gallery/ruby-galaxies-social-preview-rgb.png \
 - **Add a project:** add an entry to `PROJECTS` in `build.rb` and a
   `<section>` block in `index.html`; add `EXPECTED_WARNINGS` patterns only if
   the project has unavoidable skips.
+- **Refresh the social preview:** run `node gallery/social_preview.mjs` after
+  a build (`npm ci` once for Playwright; macOS `sips` does the final
+  downscale). It recaptures each galaxy from `dist/`, composes
+  `social-card.html`, and rewrites the committed `social-preview.png`, which
+  the build copies into `dist/`. Recapture when the rendering changes
+  meaningfully.
 
 RubyLens rendering improvements need no gallery changes: artifacts are
 regenerated from the current code on every build.
