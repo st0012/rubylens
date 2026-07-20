@@ -136,6 +136,19 @@ class ClipGeneratorTest < Minitest::Test
     end
   end
 
+  def test_custom_output_guard_sees_through_unexpanded_paths
+    with_repository do |directory|
+      File.write(File.join(directory, "movie.html"), "someone's page")
+
+      error = Dir.chdir(directory) do
+        assert_raises(RubyLens::Error) { generate(path: directory, output: "movie.mp4", renderer: FakeRenderer.new) }
+      end
+
+      assert_includes(error.message, "clip companion path")
+      assert_equal("someone's page", File.read(File.join(directory, "movie.html")))
+    end
+  end
+
   private
 
   def with_repository

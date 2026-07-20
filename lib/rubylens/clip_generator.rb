@@ -81,12 +81,15 @@ module RubyLens
         return [default, nil]
       end
 
-      companion = showcase_companion_path(@output)
+      # Expanded once here so the guard, the writer, and the reported result
+      # all refer to the same real paths.
+      output = File.expand_path(@output)
+      companion = showcase_companion_path(output)
       if File.exist?(companion) && !ShowcaseWriter.new.rubylens_showcase?(companion)
         raise Error, "clip companion path #{companion} already exists and is not a RubyLens showcase"
       end
 
-      [@output, companion]
+      [output, companion]
     end
 
     def showcase_companion_path(output)
