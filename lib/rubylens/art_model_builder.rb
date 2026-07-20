@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "dependency_warning"
+require_relative "errors"
 require_relative "morphology_classifier"
 
 module RubyLens
@@ -26,7 +27,6 @@ module RubyLens
       package_morphologies = []
       packages = package_order.map do |old_index|
         package = snapshot.fetch("packages").fetch(old_index)
-        declaration_count = package.fetch("declaration_count")
         package_seed = random.rand(0..0xffff_ffff)
         package_morphology = MorphologyClassifier.new(package:, phase_seed: package_seed).call
         package_morphologies << [package_morphology.fetch("family"), *package_morphology.fetch("knobs")]
@@ -34,15 +34,12 @@ module RubyLens
           package_seed,
           package.fetch("role"),
           package.fetch("location"),
-          declaration_count,
+          package.fetch("declarations").length,
           *package.fetch("ruby_counts"),
           dependency_system_index.fetch(old_index, -1),
         ]
       end
       package_names = package_order.map { |old_index| snapshot.fetch("packages").fetch(old_index).fetch("name") }
-      indexed_dependency_count = snapshot.fetch("packages").sum do |package|
-        package.fetch("declaration_count")
-      end
       dependencies = []
       package_order.each do |old_index|
         package = snapshot.fetch("packages").fetch(old_index)
@@ -56,17 +53,15 @@ module RubyLens
         end
       end
       {
-        "schema" => "rubylens.art.v10",
+        "schema" => "rubylens.art.v11",
         "projectName" => snapshot.fetch("project_name"),
-        "morphology" => morphology,
+        "morphology" => [morphology.fetch("family"), *morphology.fetch("knobs")],
         "totals" => {
           "namespaces" => namespaces.length,
           "packages" => packages.length,
-          "dependencyStars" => indexed_dependency_count,
-          "renderedDependencyStars" => dependencies.length,
+          "dependencyStars" => dependencies.length,
         },
         "domains" => signal_domains(namespaces, snapshot.fetch("dependency_signal_maxima")),
-        "componentCounts" => snapshot.fetch("components"),
         "categoryStats" => snapshot.fetch("category_stats"),
         "namespaceNames" => namespace_names,
         "namespaces" => namespaces,
@@ -105,7 +100,7 @@ module RubyLens
     end
 
     def signal_domains(namespaces, dependency_maxima)
-      namespace_columns = [4, 5, 6, 7, 8, 9]
+      namespace_columns = [3, 4, 5, 6, 7, 8]
       namespace_domains = namespace_columns.map { |column| maximum(namespaces, column) }
       SIGNAL_FIELDS.each_with_index.to_h do |field, index|
         [field, [namespace_domains[index], dependency_maxima[index]].max]

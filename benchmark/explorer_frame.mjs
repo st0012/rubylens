@@ -3,7 +3,7 @@
 //
 //   node benchmark/explorer_frame.mjs [output.html]
 //
-// The synthetic model matches rubylens.art.v10 as consumed by the runtime:
+// The synthetic model matches rubylens.art.v11 as consumed by the runtime:
 // NAMESPACES class/module rows (TEST_RATIO of them tests), DEPENDENCY_DECLARATIONS
 // embedded dependency declaration rows across PACKAGES gems, exact aggregate totals, and
 // signal domains derived from the generated rows. Defaults model a codebase
@@ -25,7 +25,7 @@ const NAMESPACES = Number(process.env.NAMESPACES || 100_000);
 const TEST_RATIO = Number(process.env.TEST_RATIO || 0.15);
 const PACKAGES = Number(process.env.PACKAGES || 400);
 const DEPENDENCY_DECLARATIONS = Number(process.env.DEPENDENCY_DECLARATIONS || process.env.DEPENDENCY_STARS || 164_000);
-// Multi-gem Git dependency systems (rubylens.art.v10): each groups three
+// Multi-gem Git dependency systems (rubylens.art.v11): each groups three
 // consecutive packages. Default 0 keeps published benchmark numbers stable.
 const DEPENDENCY_SYSTEMS = Number(process.env.DEPENDENCY_SYSTEMS || 0);
 const SYSTEM_SPAN = 3;
@@ -83,7 +83,7 @@ function buildModel() {
     namespaceNames.push(test === 1
       ? `Spec::Suite${String(index % 320).padStart(3, "0")}::Case${String(index).padStart(6, "0")}`
       : `Domain::Area${String(index % 240).padStart(3, "0")}::Node${String(index).padStart(6, "0")}`);
-    namespaces.push([randomSeed(), 0, kind, test, ...signalValues(), ...rubyCounts, heavyTail(12, 3)]);
+    namespaces.push([randomSeed(), kind, test, ...signalValues(), ...rubyCounts, heavyTail(12, 3)]);
   }
 
   const packageNames = [];
@@ -134,27 +134,21 @@ function buildModel() {
 
   const domains = Object.fromEntries(SIGNAL_FIELDS.map((field, at) => {
     let maximum = 0;
-    for (const row of namespaces) maximum = Math.max(maximum, row[4 + at]);
+    for (const row of namespaces) maximum = Math.max(maximum, row[3 + at]);
     for (const row of dependencyStars) maximum = Math.max(maximum, row[2 + at]);
     return [field, maximum];
   }));
 
   return {
-    schema: "rubylens.art.v10",
+    schema: "rubylens.art.v11",
     projectName: "Synthetic Metropolis",
-    morphology: {
-      family: 2,
-      designation: "Sb",
-      knobs: [0, 210, 4, 100, 600, 0, 0, 0, 0x51a7e11a],
-    },
+    morphology: [2, 0, 210, 4, 100, 600, 0, 0, 0, 0x51a7e11a],
     totals: {
       namespaces: namespaces.length,
       packages: packages.length,
       dependencyStars: indexedDependencyCount,
-      renderedDependencyStars: dependencyStars.length,
     },
     domains,
-    componentCounts: { core: 1, tests: 1 },
     categoryStats,
     namespaceNames,
     namespaces,
@@ -313,6 +307,6 @@ const totalDeclarations = model.totals.namespaces
   + model.categoryStats.tests[2] + model.categoryStats.tests[3]
   + model.totals.dependencyStars;
 console.log(`wrote ${OUTPUT} (${(html.length / 1024 / 1024).toFixed(1)} MiB)`);
-console.log(`namespaces ${model.totals.namespaces.toLocaleString()} · packages ${model.totals.packages.toLocaleString()} · embedded dependency declarations ${model.totals.renderedDependencyStars.toLocaleString()}`);
-console.log(`scene points embedded ${(model.totals.namespaces + model.totals.renderedDependencyStars + model.totals.packages + model.dependencySystems.length).toLocaleString()} · exact declarations represented ${totalDeclarations.toLocaleString()}`);
+console.log(`namespaces ${model.totals.namespaces.toLocaleString()} · packages ${model.totals.packages.toLocaleString()} · embedded dependency declarations ${model.dependencyStars.length.toLocaleString()}`);
+console.log(`scene points embedded ${(model.totals.namespaces + model.dependencyStars.length + model.totals.packages + model.dependencySystems.length).toLocaleString()} · exact declarations represented ${totalDeclarations.toLocaleString()}`);
 console.log(`open the file in a browser; results appear in the overlay, title, and window.__RUBYLENS_BENCH__ (${WARMUP_FRAMES}+${MEASURE_FRAMES} driven frames, then ${MEASURE_MS / 1000}s of rAF sampling when visible)`);

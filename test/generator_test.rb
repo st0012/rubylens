@@ -7,7 +7,7 @@ class GeneratorTest < Minitest::Test
     with_repository do |directory|
       model, warnings = RubyLens::GenerationPipeline.new(root: directory).call
 
-      assert_equal("rubylens.art.v10", model.fetch("schema"))
+      assert_equal("rubylens.art.v11", model.fetch("schema"))
       assert_equal(0, model.dig("totals", "namespaces"))
       assert_equal(["No Gemfile.lock found; dependency systems were omitted."], warnings)
       assert_predicate(warnings, :frozen?)

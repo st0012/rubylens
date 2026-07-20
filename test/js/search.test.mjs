@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { loadRuntime, minimalModel } from "./helpers/runtime.mjs";
 
 function modelWithNames(names) {
-  const row = seed => [seed, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 0, 0];
+  const row = seed => [seed, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 0, 0];
   return minimalModel({
-    totals: { namespaces: names.length, packages: 0, dependencyStars: 0, renderedDependencyStars: 0 },
+    totals: { namespaces: names.length, packages: 0, dependencyStars: 0 },
     namespaceNames: names,
     namespaces: names.map((_, index) => row(index + 1)),
   });

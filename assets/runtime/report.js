@@ -38,20 +38,7 @@
     const DEPENDENCY_STAR_ALPHA_SCALE = .85;
     const MORPHOLOGY_FAMILY = Object.freeze({ elliptical: 0, lenticular: 1, spiral: 2, barredSpiral: 3, irregular: 4 });
     const MORPHOLOGY_FAMILY_LABELS = Object.freeze(["Elliptical galaxy", "Lenticular galaxy", "Spiral galaxy", "Barred spiral galaxy", "Irregular galaxy"]);
-    const LEGACY_MORPHOLOGY = Object.freeze({
-      legacy: true,
-      family: MORPHOLOGY_FAMILY.spiral,
-      ellipticity: 0,
-      bulgeShare: .24,
-      armCount: 3,
-      winding: .105,
-      armFraction: .38,
-      barLength: 0,
-      clumpCount: 0,
-      clumpSpread: 0,
-      phaseSeed: 0,
-      phase: 0,
-    });
+    const FALLBACK_MORPHOLOGY_ROW = Object.freeze([MORPHOLOGY_FAMILY.spiral, 0, 240, 3, 105, 380, 0, 0, 0, 0]);
     const RSPEC_PROXY_PREFIX = "RSpec example group #";
     const DEFAULT_CAMERA = Object.freeze({ yaw: -.36, pitch: .34, zoom: 2, panX: 0, panY: 0 });
     const DEFAULT_ROTATION_DIRECTION = "clockwise";
@@ -167,28 +154,15 @@
     const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
     function fallbackMorphology(phaseSeed = 0) {
       const normalizedSeed = Number.isInteger(phaseSeed) && phaseSeed >= 0 && phaseSeed <= 0xffff_ffff ? phaseSeed >>> 0 : 0;
-      if (normalizedSeed === 0) return LEGACY_MORPHOLOGY;
-      return Object.freeze({
-        ...LEGACY_MORPHOLOGY,
-        phaseSeed: normalizedSeed,
-        phase: unit(normalizedSeed, 80) * Math.PI * 2,
-      });
+      return decodeMorphology([...FALLBACK_MORPHOLOGY_ROW.slice(0, 9), normalizedSeed]);
     }
-    function decodeMorphology(raw, fallbackPhaseSeed = 0) {
-      const row = Array.isArray(raw)
-        ? raw
-        : raw && typeof raw === "object" && Array.isArray(raw.knobs)
-          ? [raw.family, ...raw.knobs]
-          : null;
-      if (!row || row.length !== 10 || !row.every(Number.isInteger)) return fallbackMorphology(fallbackPhaseSeed);
+    function decodeMorphology(row, fallbackPhaseSeed = 0) {
+      if (!Array.isArray(row) || row.length !== 10 || !row.every(Number.isInteger)) return fallbackMorphology(fallbackPhaseSeed);
       const family = row[0];
       if (family < MORPHOLOGY_FAMILY.elliptical || family > MORPHOLOGY_FAMILY.irregular) return fallbackMorphology(fallbackPhaseSeed);
       if (row[9] < 0 || row[9] > 0xffff_ffff) return fallbackMorphology(fallbackPhaseSeed);
-      const legacy = family === MORPHOLOGY_FAMILY.spiral &&
-        row.slice(1).every((value, index) => value === [0, 240, 3, 105, 380, 0, 0, 0, 0][index]);
       const phaseSeed = row[9] >>> 0;
       return Object.freeze({
-        legacy,
         family,
         ellipticity: family === MORPHOLOGY_FAMILY.elliptical ? clamp(row[1], 0, 700) / 1000 : 0,
         bulgeShare: [MORPHOLOGY_FAMILY.lenticular, MORPHOLOGY_FAMILY.spiral, MORPHOLOGY_FAMILY.barredSpiral].includes(family)
@@ -234,19 +208,17 @@
       const cameraScale = Math.pow(tests, .8);
       let coreExtent = 42;
       let testExtent = 62;
-      if (!activeMorphology.legacy) {
-        if (activeMorphology.family === MORPHOLOGY_FAMILY.elliptical) {
-          coreExtent = 36;
-          testExtent = 52;
-        } else if (activeMorphology.family === MORPHOLOGY_FAMILY.lenticular) {
-          const discProgress = clamp((.42 - activeMorphology.bulgeShare) / .08, 0, 1);
-          coreExtent = 42 + 2 * discProgress;
-          testExtent = 54 + 4 * discProgress;
-        } else if (activeMorphology.family === MORPHOLOGY_FAMILY.irregular) {
-          const centerSpread = 12 + 18 * activeMorphology.clumpSpread;
-          coreExtent = centerSpread + 24;
-          testExtent = centerSpread + 32;
-        }
+      if (activeMorphology.family === MORPHOLOGY_FAMILY.elliptical) {
+        coreExtent = 36;
+        testExtent = 52;
+      } else if (activeMorphology.family === MORPHOLOGY_FAMILY.lenticular) {
+        const discProgress = clamp((.42 - activeMorphology.bulgeShare) / .08, 0, 1);
+        coreExtent = 42 + 2 * discProgress;
+        testExtent = 54 + 4 * discProgress;
+      } else if (activeMorphology.family === MORPHOLOGY_FAMILY.irregular) {
+        const centerSpread = 12 + 18 * activeMorphology.clumpSpread;
+        coreExtent = centerSpread + 24;
+        testExtent = centerSpread + 32;
       }
       return Object.freeze({
         disk,
@@ -261,12 +233,12 @@
       });
     }
 
-    const coreCount = model.namespaces.reduce((count, row) => count + (row[3] === 1 ? 0 : 1), 0);
+    const coreCount = model.namespaces.reduce((count, row) => count + (row[2] === 1 ? 0 : 1), 0);
     const layoutScale = layoutMetricsForCoreCount(coreCount, morphology);
     const cameraDistance = layoutScale.cameraDistance;
     const cameraFocalLength = layoutScale.cameraFocalLength;
 
-    const irregularClumpCenters = morphology.family === MORPHOLOGY_FAMILY.irregular && !morphology.legacy
+    const irregularClumpCenters = morphology.family === MORPHOLOGY_FAMILY.irregular
       ? Array.from({ length: morphology.clumpCount }, (_, index) => {
           const centerSpread = 12 + 18 * morphology.clumpSpread;
           const angle = morphology.phase + index * Math.PI * 2 / morphology.clumpCount + (unit(morphology.phaseSeed, 90 + index * 3) - .5) * .8;
@@ -348,14 +320,6 @@
     }
 
     function corePosition(seed) {
-      if (morphology.legacy) {
-        const bulge = unit(seed, 2) < .24;
-        const radial = bulge ? 17 * Math.pow(unit(seed, 3), 1.75) : Math.min(42, -10 * Math.log(Math.max(1e-5, 1 - unit(seed, 3))));
-        const theta = unit(seed, 4) * Math.PI * 2 + radial * .04;
-        const vertical = normal(seed, 5) * (bulge ? 5.8 : 1.4 + radial * .025);
-        const scale = bulge ? layoutScale.bulge : layoutScale.disk;
-        return [Math.cos(theta) * radial * scale, vertical * scale, Math.sin(theta) * radial * scale];
-      }
       if (morphology.family === MORPHOLOGY_FAMILY.elliptical) return spheroidPosition(seed, false);
       if (morphology.family === MORPHOLOGY_FAMILY.irregular) return irregularPosition(seed, false);
 
@@ -375,16 +339,6 @@
     }
 
     function testPosition(seed) {
-      if (morphology.legacy) {
-        const radial = 17 + Math.min(45, -14 * Math.log(Math.max(1e-5, 1 - unit(seed, 7))));
-        const arm = Math.floor(unit(seed, 8) * 3);
-        const inArm = unit(seed, 9) < .38;
-        const theta = inArm
-          ? arm * (Math.PI * 2 / 3) + radial * .105 + normal(seed, 10) * .22
-          : unit(seed, 10) * Math.PI * 2;
-        const vertical = normal(seed, 11) * (1.4 + radial * .035);
-        return [Math.cos(theta) * radial * layoutScale.tests, vertical * layoutScale.tests, Math.sin(theta) * radial * layoutScale.tests];
-      }
       if (morphology.family === MORPHOLOGY_FAMILY.elliptical) return spheroidPosition(seed, true);
       if (morphology.family === MORPHOLOGY_FAMILY.irregular) return irregularPosition(seed, true);
 
@@ -583,8 +537,8 @@
       };
       model.namespaces.forEach((row, index) => {
         const name = interactiveMode ? model.namespaceNames[index] : "";
-        const category = row[3] === 1 ? "tests" : "core";
-        const values = row.slice(4, 10);
+        const category = row[2] === 1 ? "tests" : "core";
+        const values = row.slice(3, 9);
         const position = category === "tests" ? testPosition(row[0]) : corePosition(row[0]);
         const sizeFactor = writeScenePoint(category, position, weightedSignal(normalizedSignals(values), category), category === "core" ? .82 : .68, false, -1, -1);
         const interactive = interactiveMode && !name.startsWith(RSPEC_PROXY_PREFIX);
@@ -592,7 +546,7 @@
         const anchored = showcaseDetails && (showcaseAnnotationAnchors.has(annotationKey) || showcasePinnedNamespaceAnchors.has(index));
         if (!interactive && !anchored) return;
         const point = interactiveMode
-          ? { category, position, name, kind: row[2] === 0 ? "Class" : "Module", rubyCounts: row.slice(10, 14), instanceVariableCount: row[14] || 0, values }
+          ? { category, position, name, kind: row[1] === 0 ? "Class" : "Module", rubyCounts: row.slice(9, 13), instanceVariableCount: row[13] || 0, values }
           : { category, position };
         if (anchored) showcasePointsByAnchor.set(annotationKey, point);
         addPoint(point, sizeFactor, interactive);
@@ -638,25 +592,9 @@
       return { sceneData, scenePointCount, interactivePoints, dependencyHubs, packageHubs, systemHubs };
     }
     const { sceneData, scenePointCount, interactivePoints, dependencyHubs, packageHubs, systemHubs } = buildPoints();
-    const totals = model.totals || {
-      namespaces: model.namespaces.length,
-      packages: model.packages.length,
-      dependencyStars: model.dependencyStars.length,
-      renderedDependencyStars: model.dependencyStars.length,
-    };
-    const exactDependencyDeclarations = Math.max(0, Number(totals.dependencyStars) || 0);
+    const packageCount = model.packages.length;
     const embeddedDependencyDeclarations = model.dependencyStars.length;
     let plottedDependencyDeclarations = embeddedDependencyDeclarations;
-    function dependencySamplingState(exact, embedded, packageCount) {
-      if (embedded >= exact) return null;
-      const gems = `${packageCount.toLocaleString()} ${packageCount === 1 ? "gem" : "gems"}`;
-      return {
-        summary: "Dependency stars sampled",
-        title: "Report data",
-        countLabel: `${embedded.toLocaleString()} embedded`,
-        note: `This report embeds ${embedded.toLocaleString()} of ${exact.toLocaleString()} dependency stars. Exact totals across ${gems} remain complete.`,
-      };
-    }
 
     function updateGalaxySummary() {
       const summary = document.getElementById("galaxy-summary");
@@ -709,8 +647,6 @@
       plottedDependencyDeclarations = 0;
       document.documentElement.dataset.explorerRenderer = "unavailable";
       document.documentElement.dataset.explorerUnavailableReason = reason;
-      document.documentElement.dataset.dependencySampling = String(embeddedDependencyDeclarations < exactDependencyDeclarations);
-      document.documentElement.dataset.embeddedDependencySampling = String(embeddedDependencyDeclarations < exactDependencyDeclarations);
       document.documentElement.dataset.plottedDependencyDeclarations = String(plottedDependencyDeclarations);
       document.documentElement.dataset.plottedScenePoints = "0";
       if (error) document.documentElement.dataset.explorerRendererError = error.message;
@@ -1009,8 +945,6 @@
         document.documentElement.dataset.showcaseUnavailableReason = "webgl2-initialization-error";
       }
       if (showcaseRenderer) {
-        document.documentElement.dataset.dependencySampling = String(embeddedDependencyDeclarations < exactDependencyDeclarations);
-        document.documentElement.dataset.embeddedDependencySampling = String(embeddedDependencyDeclarations < exactDependencyDeclarations);
         document.documentElement.dataset.plottedDependencyDeclarations = String(embeddedDependencyDeclarations);
         document.documentElement.dataset.plottedScenePoints = String(scenePointCount);
       } else {
@@ -1273,8 +1207,6 @@
         document.documentElement.dataset.explorerUnavailableReason = "webgl2-initialization-error";
       }
       if (explorerRenderer) {
-        document.documentElement.dataset.dependencySampling = String(plottedDependencyDeclarations < exactDependencyDeclarations);
-        document.documentElement.dataset.embeddedDependencySampling = String(embeddedDependencyDeclarations < exactDependencyDeclarations);
         document.documentElement.dataset.plottedDependencyDeclarations = String(plottedDependencyDeclarations);
         document.documentElement.dataset.plottedScenePoints = String(scenePointCount);
       } else {
@@ -1286,7 +1218,7 @@
     }
     const context = interactiveMode ? canvas.getContext("2d", { alpha: Boolean(explorerRenderer) }) : null;
     const directGemCount = model.packages.filter(row => row[1] === 0).length;
-    const transitiveGemCount = totals.packages - directGemCount;
+    const transitiveGemCount = packageCount - directGemCount;
     const allRubyMetricIndexes = [0, 1, 2, 3];
     const testRubyMetricIndexes = [0, 2];
     const dependencyRubyCounts = model.packages.reduce(
@@ -1296,7 +1228,7 @@
     const categoryMeta = {
       core: { title: "Core code", rubyCounts: model.categoryStats?.core || [0, 0, 0, 0], metricIndexes: allRubyMetricIndexes, focusZoom: 2.8 },
       tests: { title: "Tests", rubyCounts: model.categoryStats?.tests || [0, 0, 0, 0], metricIndexes: testRubyMetricIndexes, focusZoom: 1.35 },
-      dependencies: { title: "Gems", summary: `${totals.packages.toLocaleString()} dependency gems`, rubyCounts: dependencyRubyCounts, metricIndexes: allRubyMetricIndexes, note: `${directGemCount.toLocaleString()} direct · ${transitiveGemCount.toLocaleString()} transitive`, focusZoom: .72 },
+      dependencies: { title: "Gems", summary: `${packageCount.toLocaleString()} dependency gems`, rubyCounts: dependencyRubyCounts, metricIndexes: allRubyMetricIndexes, note: `${directGemCount.toLocaleString()} direct · ${transitiveGemCount.toLocaleString()} transitive`, focusZoom: .72 },
     };
     model.namespaces = [];
     model.packages = [];
@@ -1912,17 +1844,13 @@
       const counts = Object.fromEntries(["manifest", "index", "integrity"].map(category => [category, Math.max(0, Number(model.warningCounts?.[category]) || 0)]));
       const warningTotal = Object.values(counts).reduce((sum, count) => sum + count, 0);
       const rendererUnavailable = interactiveMode && document.documentElement.dataset.explorerRenderer === "unavailable";
-      const sampling = interactiveMode
-        ? dependencySamplingState(exactDependencyDeclarations, embeddedDependencyDeclarations, totals.packages)
-        : null;
       container.textContent = "";
-      details.hidden = !rendererUnavailable && !sampling && warningTotal === 0;
+      details.hidden = !rendererUnavailable && warningTotal === 0;
       if (details.hidden) return;
 
       const analysisSummary = `${warningTotal.toLocaleString()} analysis warning${warningTotal === 1 ? "" : "s"}`;
       const statusSummaries = [];
       if (rendererUnavailable) statusSummaries.push("WebGL2 required");
-      if (sampling) statusSummaries.push(sampling.summary);
       if (warningTotal > 0) statusSummaries.push(analysisSummary);
       summary.textContent = statusSummaries.join(" · ");
 
@@ -1933,19 +1861,8 @@
           "Interactive rendering",
           1,
           [],
-          `This report requires WebGL2 to display its ${scenePointCount.toLocaleString()}-star interactive scene. Exact dependency totals across ${totals.packages.toLocaleString()} ${totals.packages === 1 ? "gem" : "gems"} remain complete.`,
+          `This report requires WebGL2 to display its ${scenePointCount.toLocaleString()}-star interactive scene. Exact dependency totals across ${packageCount.toLocaleString()} ${packageCount === 1 ? "gem" : "gems"} remain complete.`,
           "Unavailable",
-        );
-      }
-
-      if (sampling) {
-        appendWarningGroup(
-          container,
-          sampling.title,
-          1,
-          [],
-          sampling.note,
-          sampling.countLabel,
         );
       }
 
@@ -2604,7 +2521,7 @@
       });
       const stats = document.querySelector(".cinema-stats");
       const secondary = document.getElementById("cinema-secondary");
-      secondary.textContent = `Tests · ${counted(tests[0], "class", "classes")} · ${counted(tests[2], "method", "methods")}   ·   ${counted(totals.packages, "dependency gem", "dependency gems")} in orbit`;
+      secondary.textContent = `Tests · ${counted(tests[0], "class", "classes")} · ${counted(tests[2], "method", "methods")}   ·   ${counted(packageCount, "dependency gem", "dependency gems")} in orbit`;
       stats.hidden = false;
       secondary.hidden = false;
     }

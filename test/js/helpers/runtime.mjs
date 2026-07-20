@@ -31,7 +31,6 @@ const EXPORTS = `;return ({
   interactivePoints, dependencyHubs, packageHubs, systemHubs,
   ensureHitScanRows, hitTestProjected, ensureSearchIndex, searchRenderedPoints,
   project, viewMatrix, visibleCategories,
-  dependencySamplingState,
   DEPENDENCY_STAR_ALPHA_SCALE: 0.85,
   state: {
     get yaw() { return yaw; }, set yaw(v) { yaw = v; },
@@ -59,12 +58,11 @@ const CONTEXT_2D_STUB = {
 
 export function minimalModel(overrides = {}) {
   return {
-    schema: "rubylens.art.v10",
+    schema: "rubylens.art.v11",
     projectName: "Fixture",
-    morphology: { family: 2, designation: "Sb", knobs: [0, 240, 3, 105, 380, 0, 0, 0, 7] },
-    totals: { namespaces: 0, packages: 0, dependencyStars: 0, renderedDependencyStars: 0 },
+    morphology: [2, 0, 240, 3, 105, 380, 0, 0, 0, 7],
+    totals: { namespaces: 0, packages: 0, dependencyStars: 0 },
     domains: { ancestorDepth: 8, definitionSites: 4, reopenings: 3, descendants: 40, references: 90, members: 30 },
-    componentCounts: [1],
     categoryStats: { core: [0, 0, 0, 0], tests: [0, 0, 0, 0] },
     namespaceNames: [],
     namespaces: [],

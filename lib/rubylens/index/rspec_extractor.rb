@@ -11,7 +11,6 @@ module RubyLens
       SPEC_SEGMENTS = Set.new(%w[spec specs]).freeze
       PROXY_NAME_PREFIX = "RSpec example group #"
 
-      Group = Data.define(:name, :component)
       Result = Data.define(:groups, :method_count)
 
       def initialize(graph:, manifest:, package_document_paths: Set.new)
@@ -24,15 +23,11 @@ module RubyLens
         groups = []
         method_count = 0
 
-        spec_documents.each do |document, relative|
+        spec_documents.each do |document, _relative|
           group_count, example_count = reference_counts(document.method_references)
           method_count += example_count
-          component = SourcePath.component_for(relative)
           group_count.times do
-            groups << Group.new(
-              format("%s%06d", PROXY_NAME_PREFIX, groups.length + 1),
-              component,
-            )
+            groups << format("%s%06d", PROXY_NAME_PREFIX, groups.length + 1)
           end
         end
 

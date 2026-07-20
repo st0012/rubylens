@@ -26,9 +26,9 @@ const MORPHOLOGY_ROWS = [
 function hostModel(hostFamily) {
   return minimalModel({
     morphology: hostFamily === 0
-      ? { family: 0, designation: "E4", knobs: [350, 0, 0, 0, 0, 0, 0, 0, 909] }
-      : { family: 3, designation: "SBb", knobs: [0, 240, 2, 100, 520, 450, 0, 0, 909] },
-    totals: { namespaces: 0, packages: PACKAGES.length, dependencyStars: 0, renderedDependencyStars: 0 },
+      ? [0, 350, 0, 0, 0, 0, 0, 0, 0, 909]
+      : [3, 0, 240, 2, 100, 520, 450, 0, 0, 909],
+    totals: { namespaces: 0, packages: PACKAGES.length, dependencyStars: 0 },
     packageNames: PACKAGES.map((_, index) => `gem-${index}`),
     packages: PACKAGES,
     packageMorphologies: MORPHOLOGY_ROWS,

@@ -481,8 +481,8 @@ class IndexManifestTest < Minitest::Test
       snapshot = RubyLens::Index::RubydexAdapter.new(manifest).index
       inner = snapshot.fetch("packages").find { |package| package.fetch("name") == "inner-gem" }
       outer = snapshot.fetch("packages").find { |package| package.fetch("name") == "outer-gem" }
-      assert_equal(1, inner.fetch("declaration_count"))
-      assert_equal(1, outer.fetch("declaration_count"))
+      assert_equal(1, inner.fetch("declarations").length)
+      assert_equal(1, outer.fetch("declarations").length)
     end
   end
 
@@ -536,13 +536,12 @@ class IndexManifestTest < Minitest::Test
       showcase = RubyLens::ShowcaseModel.new(model).call
       payloads = [snapshot, model, showcase].map { |payload| JSON.generate(payload) }
 
-      assert_equal(0, snapshot_packages.fetch("system-meta").fetch("declaration_count"))
-      assert_equal(1, snapshot_packages.fetch("system-implementation").fetch("declaration_count"))
+      assert_equal(0, snapshot_packages.fetch("system-meta").fetch("declarations").length)
+      assert_equal(1, snapshot_packages.fetch("system-implementation").fetch("declarations").length)
       assert_equal(0, snapshot_packages.fetch("system-meta").fetch("role"))
       assert_equal(1, snapshot_packages.fetch("system-implementation").fetch("role"))
       assert_equal(2, model.dig("totals", "packages"))
       assert_equal(1, model.dig("totals", "dependencyStars"))
-      assert_equal(1, model.dig("totals", "renderedDependencyStars"))
       assert_equal(1, model.fetch("dependencySystems").length)
       assert(showcase.fetch("packages").all? { |row| row.all?(Integer) })
       assert(showcase.fetch("dependencySystems").flatten.all?(Integer))

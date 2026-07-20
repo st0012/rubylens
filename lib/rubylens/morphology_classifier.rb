@@ -55,10 +55,10 @@ module RubyLens
       return if rows.empty?
       return unless rows.each_with_index.all? { |row, index| valid_namespace?(row, names[index]) }
 
-      core_indexes = rows.each_index.reject { |index| rows[index][2] == 1 }
+      core_indexes = rows.each_index.reject { |index| rows[index][1] == 1 }
       core_count = core_indexes.length
       test_count = rows.length - core_count
-      module_count = core_indexes.count { |index| rows[index][1] == 1 }
+      module_count = core_indexes.count { |index| rows[index][0] == 1 }
       dependency_count = packages.sum { |package| dependency_declaration_count(package) }
 
       module_fraction = ratio(module_count, core_count)
@@ -77,10 +77,12 @@ module RubyLens
     def package_classification_inputs
       return unless @package.is_a?(Hash) && valid_phase_seed?(@phase_seed)
 
-      size = @package.fetch("declaration_count")
+      declarations = @package.fetch("declarations")
       counts = @package.fetch("ruby_counts")
-      return unless size.is_a?(Integer) && size >= 0
+      return unless declarations.is_a?(Array)
       return unless counts.is_a?(Array) && counts.length == 4
+
+      size = declarations.length
       return unless counts.all? { |count| count.is_a?(Integer) && count >= 0 }
       return if counts.sum.zero?
 
@@ -105,18 +107,18 @@ module RubyLens
     end
 
     def valid_namespace?(row, name)
-      row.is_a?(Array) && row.length >= 3 &&
-        [0, 1].include?(row[1]) && [0, 1, 2].include?(row[2]) &&
+      row.is_a?(Array) && row.length >= 2 &&
+        [0, 1].include?(row[0]) && [0, 1, 2].include?(row[1]) &&
         name.is_a?(String) && !name.empty?
     end
 
     def dependency_declaration_count(package)
       raise TypeError unless package.is_a?(Hash)
 
-      count = package.fetch("declaration_count")
-      raise TypeError unless count.is_a?(Integer) && count >= 0
+      declarations = package.fetch("declarations")
+      raise TypeError unless declarations.is_a?(Array)
 
-      count
+      declarations.length
     end
 
     def ratio(numerator, denominator)

@@ -52,7 +52,7 @@ class ShowcaseGeneratorTest < Minitest::Test
       model = JSON.parse(Base64.strict_decode64(encoded))
 
       assert_equal(true, model.fetch("details"))
-      assert_equal("rubylens.showcase.v4", model.fetch("schema"))
+      assert_equal("rubylens.showcase.v5", model.fetch("schema"))
       assert_equal(10, model.fetch("morphology").length)
       assert_equal(model.fetch("packages").length, model.fetch("packageMorphologies").length)
       assert(model.key?("totals"))

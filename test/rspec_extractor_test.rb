@@ -46,11 +46,7 @@ class RSpecExtractorTest < Minitest::Test
 
       assert_equal(
         (1..3).map { |index| format("RSpec example group #%06d", index) },
-        result.groups.map(&:name),
-      )
-      assert_equal(
-        ["spec/a_spec.rb", "spec/a_spec.rb", "specs/z_spec.rb"],
-        result.groups.map(&:component),
+        result.groups,
       )
       assert_equal(2, result.method_count)
     end

@@ -54,11 +54,11 @@ class MorphologyContractFixtureTest < Minitest::Test
 
   def package_cases
     [
-      ["package-elliptical", { "declaration_count" => 30, "ruby_counts" => [0, 0, 30, 0] }, 1234],
-      ["package-lenticular", { "declaration_count" => 30, "ruby_counts" => [0, 1, 30, 0] }, 1234],
-      ["package-spiral", { "declaration_count" => 100, "ruby_counts" => [0, 0, 20, 20] }, 4321],
-      ["package-irregular-small", { "declaration_count" => 12, "ruby_counts" => [1, 0, 8, 1] }, 77],
-      ["package-fallback", { "declaration_count" => 100, "ruby_counts" => [0, 0, 0, 0] }, 999],
+      ["package-elliptical", { "ruby_counts" => [0, 0, 30, 0], "declarations" => Array.new(30) { [0, 0, 0, 0, 0, 0, 0] } }, 1234],
+      ["package-lenticular", { "ruby_counts" => [0, 1, 30, 0], "declarations" => Array.new(30) { [0, 0, 0, 0, 0, 0, 0] } }, 1234],
+      ["package-spiral", { "ruby_counts" => [0, 0, 20, 20], "declarations" => Array.new(100) { [0, 0, 0, 0, 0, 0, 0] } }, 4321],
+      ["package-irregular-small", { "ruby_counts" => [1, 0, 8, 1], "declarations" => Array.new(12) { [0, 0, 0, 0, 0, 0, 0] } }, 77],
+      ["package-fallback", { "ruby_counts" => [0, 0, 0, 0], "declarations" => Array.new(100) { [0, 0, 0, 0, 0, 0, 0] } }, 999],
     ]
   end
 
@@ -69,12 +69,12 @@ class MorphologyContractFixtureTest < Minitest::Test
     names = root_counts.each_with_index.flat_map do |count, root|
       Array.new(count) { |index| "Root#{root}::Node#{index}" }
     end.first(core)
-    core_rows = Array.new(core) { |index| [0, index < modules ? 1 : 0, 0, *Array.new(11, 0)] }
-    test_rows = Array.new(tests) { [0, 0, 1, *Array.new(11, 0)] }
+    core_rows = Array.new(core) { |index| [index < modules ? 1 : 0, 0, *Array.new(11, 0)] }
+    test_rows = Array.new(tests) { [0, 1, *Array.new(11, 0)] }
     {
       "namespaces" => core_rows + test_rows,
       "namespace_names" => names + Array.new(tests) { |index| "Spec::Case#{index}" },
-      "packages" => [{ "declaration_count" => dependencies }],
+      "packages" => [{ "declarations" => Array.new(dependencies) { [0, 0, 0, 0, 0, 0, 0] } }],
       "project_name" => "Synthetic",
     }
   end

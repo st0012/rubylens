@@ -17,7 +17,7 @@ class DependencyAggregationTest < Minitest::Test
     add_rows(aggregation, rows)
 
     packages = aggregation.packages
-    assert_equal([2, 1], packages.map { |package| package.fetch(:declaration_count) })
+    assert_equal([2, 1], packages.map { |package| package.fetch(:declarations).length })
     assert_equal([rows[0][1], rows[2][1]], packages[0].fetch(:declarations))
     assert_equal([rows[1][1]], packages[1].fetch(:declarations))
     assert_equal([1, 0, 1, 0], packages[0].fetch(:ruby_counts))
@@ -37,7 +37,7 @@ class DependencyAggregationTest < Minitest::Test
     aggregation = RubyLens::Model::DependencyAggregation.new(package_count: 3)
     first = aggregation.packages
 
-    assert_equal([0, 0, 0], first.map { |package| package.fetch(:declaration_count) })
+    assert_equal([0, 0, 0], first.map { |package| package.fetch(:declarations).length })
     assert(first.all? { |package| package.fetch(:declarations).empty? })
     assert(first.all? { |package| package.fetch(:ruby_counts) == [0, 0, 0, 0] })
 
@@ -47,8 +47,8 @@ class DependencyAggregationTest < Minitest::Test
       construct_index: nil,
     )
 
-    assert_equal([0, 0, 0], first.map { |package| package.fetch(:declaration_count) })
-    assert_equal([0, 0, 1], aggregation.packages.map { |package| package.fetch(:declaration_count) })
+    assert_equal([0, 0, 0], first.map { |package| package.fetch(:declarations).length })
+    assert_equal([0, 0, 1], aggregation.packages.map { |package| package.fetch(:declarations).length })
     assert_equal([4, 3, 2, 1, 0, 5], aggregation.signal_maxima)
     assert_predicate(aggregation.signal_maxima, :frozen?)
     refute_same(aggregation.signal_maxima, aggregation.signal_maxima)

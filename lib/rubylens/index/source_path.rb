@@ -6,8 +6,6 @@ module RubyLens
   module Index
     # Maps Rubydex document and location URIs back to workspace source paths.
     module SourcePath
-      COMPONENT_ROOTS = %w[lib app test tests spec specs].freeze
-
       module_function
 
       # Rubydex 0.2.9 percent-encodes file URIs and Location#to_file_path
@@ -23,16 +21,6 @@ module RubyLens
         path
       rescue URI::InvalidURIError
         nil
-      end
-
-      def component_for(relative)
-        segments = relative.split(File::SEPARATOR)
-        first = segments.first || "root"
-        if COMPONENT_ROOTS.include?(first)
-          "#{first}/#{segments[1] || "root"}"
-        else
-          first
-        end
       end
     end
   end

@@ -47,9 +47,8 @@ module RubyLens
         category_stats.fetch("tests")[2] += rspec.method_count
 
         {
-          "schema" => "rubylens.snapshot.v6",
+          "schema" => "rubylens.snapshot.v8",
           "project_name" => project_name,
-          "components" => workspace.fetch(:component_counts),
           "namespace_names" => workspace.fetch(:namespace_names),
           "namespaces" => build_workspace_rows(workspace, inbound_references),
           "category_stats" => category_stats,
@@ -81,7 +80,6 @@ module RubyLens
               declaration,
               summary.canonical_site_keys.uniq.length,
               scope_from(summary.canonical_relatives),
-              component_from(summary.canonical_relatives),
             ]
           end
           collect_category_stat(category_stats, declaration, summary)
@@ -124,24 +122,16 @@ module RubyLens
       end
 
       def workspace_namespaces(records, rspec_groups)
-        ordinal_by_name = records.each_with_index.to_h { |(declaration, *), index| [declaration.name, index] }
-        components = records.map { |_declaration, _sites, _scope, component| component }
-        all_components = components + rspec_groups.map(&:component)
-        component_ids = all_components.uniq.sort.each_with_index.to_h
-
         {
           records: records,
           rspec_groups: rspec_groups,
-          namespace_names: records.map { |declaration, *| declaration.name } + rspec_groups.map(&:name),
-          ordinal_by_name: ordinal_by_name,
-          component_ids: component_ids,
-          components: components,
-          component_counts: all_components.tally.sort_by { |name, _count| component_ids.fetch(name) }.map(&:last),
+          namespace_names: records.map { |declaration, *| declaration.name } + rspec_groups,
+          ordinal_by_name: records.each_with_index.to_h { |(declaration, *), index| [declaration.name, index] },
         }
       end
 
       def build_workspace_rows(workspace, inbound_references)
-        rows = workspace.fetch(:records).each_with_index.map do |(declaration, sites, scope, component), index|
+        rows = workspace.fetch(:records).each_with_index.map do |(declaration, sites, scope), index|
           descendants = declaration.descendants.count do |descendant|
             descendant.name != declaration.name && workspace.fetch(:ordinal_by_name).key?(descendant.name)
           end
@@ -150,7 +140,6 @@ module RubyLens
             count_instance_variables: declaration.is_a?(Rubydex::Class) && scope != 1,
           )
           [
-            workspace.fetch(:component_ids).fetch(component),
             declaration.is_a?(Rubydex::Class) ? 0 : 1,
             scope,
             [declaration.ancestors.count - 1, 0].max,
@@ -163,16 +152,11 @@ module RubyLens
             instance_variable_count,
           ]
         end
-        rows.concat(workspace.fetch(:rspec_groups).map { |group| build_rspec_row(group, workspace) })
+        rows.concat(workspace.fetch(:rspec_groups).map { build_rspec_row })
       end
 
-      def build_rspec_row(group, workspace)
-        [
-          workspace.fetch(:component_ids).fetch(group.component),
-          0,
-          1,
-          *Array.new(11, 0),
-        ]
+      def build_rspec_row
+        [0, 1, *Array.new(11, 0)]
       end
 
       def build_package_rows(aggregation)
@@ -183,7 +167,6 @@ module RubyLens
             "name" => package.name,
             "role" => package.role == "direct" ? 0 : 1,
             "location" => package.location == "workspace" ? 0 : 1,
-            "declaration_count" => aggregate.fetch(:declaration_count),
             "ruby_counts" => aggregate.fetch(:ruby_counts),
             "declarations" => aggregate.fetch(:declarations),
           }
@@ -303,11 +286,6 @@ module RubyLens
         @workspace_location_cache[uri] = path ? @manifest.workspace_path?(path) : false
       rescue StandardError
         false
-      end
-
-      def component_from(relatives)
-        candidates = relatives.map { |relative| SourcePath.component_for(relative) }
-        candidates.tally.max_by { |name, count| [count, name] }&.first || "root"
       end
 
       def scope_from(relatives)
