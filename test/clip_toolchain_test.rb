@@ -25,7 +25,7 @@ class ClipToolchainTest < Minitest::Test
 
   def test_path_discovery_finds_a_browser_command
     with_fake_tool("chromium") do |path|
-      with_environment("PATH" => File.dirname(path), "PLAYWRIGHT_BROWSERS_PATH" => "/nonexistent") do
+      with_environment("PATH" => File.dirname(path), "PLAYWRIGHT_BROWSERS_PATH" => "/nonexistent", "RUBYLENS_CHROME" => nil) do
         assert_equal(path, RubyLens::Clip::Toolchain.chrome_path)
       end
     end

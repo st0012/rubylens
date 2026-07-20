@@ -61,7 +61,11 @@ module RubyLens
           "width" => width, "height" => height, "deviceScaleFactor" => 1, "mobile" => false
         }, timeout: 30)
       rescue Errno::ENOENT => error
+        abort_start
         raise Error, "could not launch Chrome at #{executable}: #{error.message}"
+      rescue StandardError
+        abort_start
+        raise
       end
 
       def evaluate(expression, await: false, timeout: 30)
@@ -96,6 +100,19 @@ module RubyLens
       end
 
       private
+
+      # A failed start never reaches ChromePage.open's ensure, so the spawned
+      # browser and throwaway profile must be cleaned up before re-raising.
+      def abort_start
+        terminate if @pid
+        begin
+          Process.wait(@pid) if @pid
+        rescue Errno::ECHILD
+          nil
+        end
+        @channel&.close
+        FileUtils.remove_entry(@profile) if @profile && File.directory?(@profile)
+      end
 
       def terminate
         Process.kill("KILL", @pid)
@@ -138,9 +155,13 @@ module RubyLens
       def page_target_path(port)
         deadline = DeadlineIO.deadline(LAUNCH_TIMEOUT_SECONDS)
         while DeadlineIO.monotonic < deadline
-          target = JSON.parse(http_get(port, "/json/list")).find { |info| info["type"] == "page" }
-          if (socket_url = target&.fetch("webSocketDebuggerUrl", nil))
-            return URI(socket_url).path
+          begin
+            target = JSON.parse(http_get(port, "/json/list")).find { |info| info["type"] == "page" }
+            if (socket_url = target&.fetch("webSocketDebuggerUrl", nil))
+              return URI(socket_url).path
+            end
+          rescue Error, SystemCallError, JSON::ParserError
+            # The HTTP endpoint can lag DevToolsActivePort; retry until the deadline.
           end
           sleep 0.05
         end
