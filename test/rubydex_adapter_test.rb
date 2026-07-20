@@ -31,7 +31,7 @@ class RubydexAdapterTest < Minitest::Test
     packages = aggregation.packages
 
     assert_equal(30, packages.sum { |package| package.fetch(:declarations).length })
-    assert_equal([15, 15], packages.map { |package| package.fetch(:declaration_count) })
+    assert_equal([15, 15], packages.map { |package| package.fetch(:declarations).length })
     assert_equal([0, 1, 0, 0, 6, 0], aggregation.signal_maxima)
   end
 
@@ -40,7 +40,7 @@ class RubydexAdapterTest < Minitest::Test
     snapshot = RubyLens::Index::RubydexAdapter.new(manifest).index
     serialized = JSON.generate(snapshot)
 
-    assert_equal("rubylens.snapshot.v7", snapshot.fetch("schema"))
+    assert_equal("rubylens.snapshot.v8", snapshot.fetch("schema"))
     assert_equal("Tiny Repo", snapshot.fetch("project_name"))
     assert_equal(9, snapshot.fetch("namespaces").length)
     assert_equal(9, snapshot.fetch("namespace_names").length)
@@ -256,7 +256,7 @@ class RubydexAdapterTest < Minitest::Test
 
       assert_equal(["RSpec example group #000001"], snapshot.fetch("namespace_names"))
       assert_equal(1, snapshot.fetch("category_stats").fetch("tests").fetch(2))
-      assert_equal(1, package_row.fetch("declaration_count"))
+      assert_equal(1, package_row.fetch("declarations").length)
       refute_empty(package_row.fetch("declarations"))
     end
   end
@@ -291,7 +291,6 @@ class RubydexAdapterTest < Minitest::Test
       package = snapshot.fetch("packages").find { |row| row.fetch("name") == "minitest" }
 
       assert(package)
-      assert_equal(package.fetch("declarations").length, package.fetch("declaration_count"))
       refute_empty(package.fetch("declarations"))
       assert(package.fetch("declarations").all? { |row| row.length == 7 && row.all?(Integer) })
       refute_includes(JSON.generate(snapshot), directory)

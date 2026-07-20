@@ -27,11 +27,6 @@ module RubyLens
       package_morphologies = []
       packages = package_order.map do |old_index|
         package = snapshot.fetch("packages").fetch(old_index)
-        declaration_count = package.fetch("declaration_count")
-        unless package.fetch("declarations").length == declaration_count
-          raise Error, "package declaration rows must equal declaration_count; dependency snapshots are complete-only"
-        end
-
         package_seed = random.rand(0..0xffff_ffff)
         package_morphology = MorphologyClassifier.new(package:, phase_seed: package_seed).call
         package_morphologies << [package_morphology.fetch("family"), *package_morphology.fetch("knobs")]
@@ -39,15 +34,12 @@ module RubyLens
           package_seed,
           package.fetch("role"),
           package.fetch("location"),
-          declaration_count,
+          package.fetch("declarations").length,
           *package.fetch("ruby_counts"),
           dependency_system_index.fetch(old_index, -1),
         ]
       end
       package_names = package_order.map { |old_index| snapshot.fetch("packages").fetch(old_index).fetch("name") }
-      indexed_dependency_count = snapshot.fetch("packages").sum do |package|
-        package.fetch("declaration_count")
-      end
       dependencies = []
       package_order.each do |old_index|
         package = snapshot.fetch("packages").fetch(old_index)
@@ -67,7 +59,7 @@ module RubyLens
         "totals" => {
           "namespaces" => namespaces.length,
           "packages" => packages.length,
-          "dependencyStars" => indexed_dependency_count,
+          "dependencyStars" => dependencies.length,
         },
         "domains" => signal_domains(namespaces, snapshot.fetch("dependency_signal_maxima")),
         "categoryStats" => snapshot.fetch("category_stats"),

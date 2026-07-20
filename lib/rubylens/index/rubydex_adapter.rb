@@ -47,7 +47,7 @@ module RubyLens
         category_stats.fetch("tests")[2] += rspec.method_count
 
         {
-          "schema" => "rubylens.snapshot.v7",
+          "schema" => "rubylens.snapshot.v8",
           "project_name" => project_name,
           "namespace_names" => workspace.fetch(:namespace_names),
           "namespaces" => build_workspace_rows(workspace, inbound_references),
@@ -167,7 +167,6 @@ module RubyLens
             "name" => package.name,
             "role" => package.role == "direct" ? 0 : 1,
             "location" => package.location == "workspace" ? 0 : 1,
-            "declaration_count" => aggregate.fetch(:declaration_count),
             "ruby_counts" => aggregate.fetch(:ruby_counts),
             "declarations" => aggregate.fetch(:declarations),
           }

@@ -19,7 +19,6 @@ class ArtModelBuilderTest < Minitest::Test
           "name" => "example-gem",
           "role" => 0,
           "location" => 1,
-          "declaration_count" => 1,
           "ruby_counts" => [2, 1, 4, 3],
           "declarations" => [[0, 2, 1, 0, 1, 3, 4]],
         },
@@ -93,7 +92,6 @@ class ArtModelBuilderTest < Minitest::Test
           "name" => "example-gem",
           "role" => 0,
           "location" => 1,
-          "declaration_count" => 2,
           "ruby_counts" => [4, 5, 6, 7],
           "declarations" => [
             [0, 2, 3, 1, 4, 5, 6],
@@ -118,7 +116,7 @@ class ArtModelBuilderTest < Minitest::Test
       "dependency_signal_maxima" => [1, 0, 0, 0, 0, 0],
       "packages" => [{
         "name" => "independent-gem", "role" => 1, "location" => 1,
-        "declaration_count" => 100, "ruby_counts" => [0, 0, 20, 20],
+        "ruby_counts" => [0, 0, 20, 20],
         "declarations" => Array.new(100) { [2, 0, 1, 0, 0, 0, 0] },
       }],
       "warning_counts" => { "manifest" => 0, "index" => 0, "integrity" => 0 },
@@ -142,7 +140,7 @@ class ArtModelBuilderTest < Minitest::Test
       "namespaces" => [],
       "category_stats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
       "dependency_signal_maxima" => [1, 0, 0, 0, 0, 0],
-      "packages" => [{ "name" => "large-gem", "role" => 1, "location" => 1, "declaration_count" => 18_020, "ruby_counts" => [1, 1, 18_020, 100], "declarations" => declarations }],
+      "packages" => [{ "name" => "large-gem", "role" => 1, "location" => 1, "ruby_counts" => [1, 1, 18_020, 100], "declarations" => declarations }],
       "warning_counts" => { "manifest" => 0, "index" => 0, "integrity" => 0 },
     }
 
@@ -165,7 +163,6 @@ class ArtModelBuilderTest < Minitest::Test
         "name" => "stable-gem",
         "role" => 1,
         "location" => 1,
-        "declaration_count" => 3,
         "ruby_counts" => [1, 1, 2, 0],
         "declarations" => [[1, 5, 1, 0, 0, 8, 3], [0, 1, 1, 0, 0, 2, 4], [0, 1, 1, 0, 0, 2, 4]],
       }],
@@ -184,9 +181,9 @@ class ArtModelBuilderTest < Minitest::Test
     assert_equal(original, snapshot)
   end
 
-  def test_uses_dependency_domain_maxima_and_rejects_bounded_snapshot_rows
+  def test_uses_dependency_domain_maxima_from_the_snapshot
     snapshot = {
-      "schema" => "rubylens.snapshot.v7",
+      "schema" => "rubylens.snapshot.v8",
       "project_name" => "Domain Demo",
       "namespace_names" => [],
       "namespaces" => [],
@@ -196,7 +193,6 @@ class ArtModelBuilderTest < Minitest::Test
         "name" => "domain-gem",
         "role" => 1,
         "location" => 1,
-        "declaration_count" => 2,
         "ruby_counts" => [1, 2, 3, 4],
         "declarations" => [[0, 1, 1, 0, 0, 0, 0], [1, 2, 1, 0, 0, 0, 0]],
       }],
@@ -213,15 +209,6 @@ class ArtModelBuilderTest < Minitest::Test
       model.fetch("domains")
     )
 
-    bounded = Marshal.load(Marshal.dump(snapshot))
-    bounded.fetch("packages").first["declaration_count"] = 1_000_000
-
-    error = assert_raises(RubyLens::Error) { RubyLens::ArtModelBuilder.new(seed: 12).build(bounded) }
-
-    assert_equal(
-      "package declaration rows must equal declaration_count; dependency snapshots are complete-only",
-      error.message,
-    )
   end
 
 
@@ -233,11 +220,11 @@ class ArtModelBuilderTest < Minitest::Test
       "category_stats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
       "dependency_signal_maxima" => [1, 0, 0, 0, 0, 0],
       "packages" => [
-        { "name" => "system-meta", "role" => 0, "location" => 1, "declaration_count" => 0,
+        { "name" => "system-meta", "role" => 0, "location" => 1,
           "ruby_counts" => [0, 0, 0, 0], "declarations" => [] },
-        { "name" => "system-implementation", "role" => 1, "location" => 1, "declaration_count" => 2,
+        { "name" => "system-implementation", "role" => 1, "location" => 1,
           "ruby_counts" => [1, 0, 1, 0], "declarations" => [[0, 1, 1, 0, 0, 0, 0], [2, 0, 1, 0, 0, 0, 0]] },
-        { "name" => "ordinary-gem", "role" => 1, "location" => 1, "declaration_count" => 1,
+        { "name" => "ordinary-gem", "role" => 1, "location" => 1,
           "ruby_counts" => [0, 1, 0, 0], "declarations" => [[1, 0, 1, 0, 0, 0, 0]] },
       ],
       "dependency_systems" => [

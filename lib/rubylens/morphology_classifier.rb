@@ -77,10 +77,12 @@ module RubyLens
     def package_classification_inputs
       return unless @package.is_a?(Hash) && valid_phase_seed?(@phase_seed)
 
-      size = @package.fetch("declaration_count")
+      declarations = @package.fetch("declarations")
       counts = @package.fetch("ruby_counts")
-      return unless size.is_a?(Integer) && size >= 0
+      return unless declarations.is_a?(Array)
       return unless counts.is_a?(Array) && counts.length == 4
+
+      size = declarations.length
       return unless counts.all? { |count| count.is_a?(Integer) && count >= 0 }
       return if counts.sum.zero?
 
@@ -113,10 +115,10 @@ module RubyLens
     def dependency_declaration_count(package)
       raise TypeError unless package.is_a?(Hash)
 
-      count = package.fetch("declaration_count")
-      raise TypeError unless count.is_a?(Integer) && count >= 0
+      declarations = package.fetch("declarations")
+      raise TypeError unless declarations.is_a?(Array)
 
-      count
+      declarations.length
     end
 
     def ratio(numerator, denominator)

@@ -10,7 +10,7 @@ Project morphology classification reads only the snapshot's existing namespace r
 
 Dependency aggregation retains every eligible declaration row by package while computing exact package totals, Ruby construct counts, and signal maxima. This complete-only policy makes memory and snapshot size O(eligible dependency declarations) for every caller; there is no lower-volume sampled mode, and the runtime carries no sampled-data presentation state. Art-model construction sorts package rows before deterministic seeded layout, so persisted output does not depend on index stream order.
 
-`totals.dependencyStars` is the exact eligible declaration total, which under the complete-only policy equals the number of declaration rows embedded in the artifact; `ArtModelBuilder` rejects a snapshot whose per-package counts and rows disagree rather than persist a silently bounded payload. Explorer and Showcase runtime state expose the full embedded count as plotted under WebGL2 and zero when rendering is unavailable.
+`totals.dependencyStars` is the exact eligible declaration total. The snapshot carries no separate per-package declaration count — every consumer derives counts from the retained `declarations` rows themselves, so a payload that advertises more stars than it embeds cannot be expressed. Explorer and Showcase runtime state expose the full embedded count as plotted under WebGL2 and zero when rendering is unavailable.
 
 Run the synthetic benchmark with the project Ruby activated:
 
@@ -20,11 +20,10 @@ bundle exec ruby benchmark/dependency_aggregation.rb
 
 The default aggregation benchmark feeds 200,000 synthetic declaration rows across 250 packages. That is deliberately above the public 164,000-row proof scale while keeping the complete-retention benchmark practical to run locally. It reports:
 
-- exact indexed and per-package declaration totals;
 - retained row cardinality and retention ratio;
 - serialized aggregate bytes and live-heap slot delta;
 - elapsed time and a deterministic SHA-256 digest.
 
-On Ruby 4.0.5 for arm64 macOS, two default runs retained all 200,000 rows and preserved the exact declaration total. The package payload serialized to 3,896,777 bytes with `Marshal`; before that projection, the accumulator retained 200,012 additional live heap slots after garbage collection. Aggregation completed in 0.126 and 0.128 seconds, and both runs produced the same `6da3c91d...f2653ca` digest. These figures prove complete retention and provide a local comparison baseline; they are not end-to-end Rubydex or peak-RSS measurements.
+On Ruby 4.0.5 for arm64 macOS against the pre-v8 payload shape, two default runs retained all 200,000 rows and preserved the exact declaration total: the package payload serialized to 3,896,777 bytes with `Marshal`, the accumulator retained 200,012 additional live heap slots after garbage collection, aggregation completed in 0.126 and 0.128 seconds, and both runs produced the same digest. The v8 snapshot dropped the redundant per-package `declaration_count` field, so absolute bytes and digests differ slightly today; the complete-retention property and determinism assertion are unchanged. These figures are a local comparison baseline, not end-to-end Rubydex or peak-RSS measurements.
 
-Set `DECLARATIONS` or `PACKAGES` to compare other complete shapes. Repeated runs with the same Ruby implementation and inputs must produce the same digest; the benchmark asserts that retained rows and exact totals both equal the configured declaration count. Complete aggregation intentionally scales with the eligible dependency declaration count and must be evaluated with standalone HTML size/load and WebGL2 performance, not inferred from this accumulator benchmark alone. The benchmark uses synthetic integer rows and does not inspect source files, repository paths, or network state.
+Set `DECLARATIONS` or `PACKAGES` to compare other complete shapes. Repeated runs with the same Ruby implementation and inputs must produce the same digest; the benchmark asserts that the retained rows equal the configured declaration count. Complete aggregation intentionally scales with the eligible dependency declaration count and must be evaluated with standalone HTML size/load and WebGL2 performance, not inferred from this accumulator benchmark alone. The benchmark uses synthetic integer rows and does not inspect source files, repository paths, or network state.

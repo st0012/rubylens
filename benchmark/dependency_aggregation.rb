@@ -23,8 +23,6 @@ heap_live_slot_delta = GC.stat(:heap_live_slots) - before_slots
 packages = aggregation.packages
 retained_rows = packages.sum { |package| package.fetch(:declarations).length }
 payload = Marshal.dump([packages, aggregation.signal_maxima])
-exact_declaration_total = packages.sum { |package| package.fetch(:declaration_count) }
-raise "declaration total changed" unless exact_declaration_total == declaration_count
 raise "declaration rows were omitted" unless retained_rows == declaration_count
 
 puts JSON.pretty_generate(
@@ -32,7 +30,6 @@ puts JSON.pretty_generate(
   packages: package_count,
   retained_rows: retained_rows,
   retention_ratio: retained_rows.fdiv(declaration_count),
-  exact_declaration_total: exact_declaration_total,
   heap_live_slot_delta: heap_live_slot_delta,
   aggregate_bytes: payload.bytesize,
   elapsed_seconds: elapsed.round(3),

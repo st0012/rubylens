@@ -12,7 +12,7 @@ Generated artifacts are self-contained: one gem run bakes the model JSON and the
 
 **Versioning rule:** any change to a schema's fields, row lengths, or column meaning bumps that schema's version, in the same change. Versions never need to stay decodable by older runtimes — artifacts carry their own runtime.
 
-## `rubylens.snapshot.v7` — indexing handoff (in-memory)
+## `rubylens.snapshot.v8` — indexing handoff (in-memory)
 
 Produced by `RubyLens::Index::RubydexAdapter#index`; consumed by `MorphologyClassifier` and `ArtModelBuilder`. Never persisted.
 
@@ -23,7 +23,7 @@ Produced by `RubyLens::Index::RubydexAdapter#index`; consumed by `MorphologyClas
 | `namespaces` | 13-integer rows, below |
 | `category_stats` | `{"core" => [classes, modules, methods, constants], "tests" => [...]}` |
 | `dependency_signal_maxima` | Six integers: maxima of the dependency declaration signal columns |
-| `packages` | Hashes: `name`, `role` (0 direct / 1 transitive), `location` (0 workspace / 1 external), `declaration_count`, `ruby_counts` (4), `declarations` (7-integer rows, below). Snapshots are complete-only: `declaration_count` must equal `declarations.length`, and `ArtModelBuilder` rejects a snapshot where it does not |
+| `packages` | Hashes: `name`, `role` (0 direct / 1 transitive), `location` (0 workspace / 1 external), `ruby_counts` (4), `declarations` (7-integer rows, below). Snapshots are complete-only: there is no separate declaration count — every consumer derives it from `declarations.length`, so a bounded payload cannot be expressed |
 | `dependency_systems` | Hashes: `id`, `package_indexes`, `label_package_index` |
 | `dependency_warnings` | Hashes with at least `name` and `reason` |
 | `warning_counts` | `{"manifest", "index", "integrity"}` counts |

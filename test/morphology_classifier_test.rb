@@ -108,8 +108,8 @@ class MorphologyClassifierTest < Minitest::Test
       "name" => "first-name",
       "role" => 0,
       "location" => 1,
-      "declaration_count" => 100,
       "ruby_counts" => [0, 0, 20, 20],
+      "declarations" => Array.new(100) { [0, 0, 0, 0, 0, 0, 0] },
     }
     first = RubyLens::MorphologyClassifier.new(package:, phase_seed: 1234).call
     second = RubyLens::MorphologyClassifier.new(
@@ -199,7 +199,7 @@ class MorphologyClassifierTest < Minitest::Test
   end
 
   def classify_package(size:, counts:, phase_seed:)
-    package = { "declaration_count" => size, "ruby_counts" => counts }
+    package = { "ruby_counts" => counts, "declarations" => Array.new(size) { [0, 0, 0, 0, 0, 0, 0] } }
     RubyLens::MorphologyClassifier.new(package:, phase_seed:).call
   end
 
@@ -224,9 +224,8 @@ class MorphologyClassifierTest < Minitest::Test
       "name" => "synthetic-gem",
       "role" => 1,
       "location" => 1,
-      "declaration_count" => dependencies,
       "ruby_counts" => [0, 0, dependencies, 0],
-      "declarations" => [],
+      "declarations" => Array.new(dependencies) { [0, 0, 0, 0, 0, 0, 0] },
     }
     {
       "project_name" => project_name,
