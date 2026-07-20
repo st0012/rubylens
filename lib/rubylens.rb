@@ -8,6 +8,8 @@ end
 require_relative "rubylens/version"
 require_relative "rubylens/errors"
 require_relative "rubylens/paths"
+require_relative "rubylens/atomic_output"
+require_relative "rubylens/default_output"
 require_relative "rubylens/git_repository"
 require_relative "rubylens/dependency_warning"
 require_relative "rubylens/index/manifest"

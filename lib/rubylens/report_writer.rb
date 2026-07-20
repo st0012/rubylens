@@ -3,7 +3,7 @@
 require "base64"
 require "fileutils"
 require "json"
-require "securerandom"
+require_relative "atomic_output"
 require_relative "report_asset_assembler"
 
 module RubyLens
@@ -26,8 +26,7 @@ module RubyLens
 
       payload = Base64.strict_encode64(JSON.generate(model))
       html = template.sub(MODEL_PLACEHOLDER, payload)
-      atomic_write(output, html)
-      output
+      AtomicOutput.replace(output) { |temporary| File.binwrite(temporary, html) }
     end
 
     def rubylens_report?(path)
@@ -42,17 +41,7 @@ module RubyLens
       return unless File.basename(directory) == ".rubylens"
 
       ignore = File.join(directory, ".gitignore")
-      atomic_write(ignore, "*\n") unless File.exist?(ignore)
-    end
-
-    def atomic_write(path, contents)
-      temporary = File.join(File.dirname(path), ".#{File.basename(path)}.#{SecureRandom.hex(6)}.tmp")
-      File.open(temporary, File::WRONLY | File::CREAT | File::EXCL, 0o600) { |file| file.write(contents) }
-      File.chmod(0o600, temporary)
-      File.rename(temporary, path)
-      File.chmod(0o600, path)
-    ensure
-      FileUtils.rm_f(temporary) if temporary && File.exist?(temporary)
+      AtomicOutput.replace(ignore) { |temporary| File.binwrite(temporary, "*\n") } unless File.exist?(ignore)
     end
   end
 end

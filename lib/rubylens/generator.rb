@@ -1,7 +1,11 @@
 # frozen_string_literal: true
 
+require_relative "default_output"
+
 module RubyLens
-  Result = Data.define(:output_path, :counts, :warnings)
+  Result = Data.define(:output_path, :counts, :warnings) do
+    def to_payload = { output: output_path, counts: counts, warnings: warnings }
+  end
 
   class GenerationPipeline
     def initialize(root:, lockfile: nil)
@@ -33,13 +37,8 @@ module RubyLens
     def call
       root = File.realpath(@path)
       report_writer = ReportWriter.new
-      output = @output
-      if output.nil?
-        output = File.join(root, DEFAULT_REPORT_NAME)
-        if File.exist?(output) && !report_writer.rubylens_report?(output)
-          raise Error, "default report path already exists and is not a RubyLens report"
-        end
-        GitRepository.new(root).exclude_local(output)
+      output = @output || DefaultOutput.resolve(root: root, name: DEFAULT_REPORT_NAME, description: "report") do |existing|
+        report_writer.rubylens_report?(existing)
       end
       model, warnings = GenerationPipeline.new(root:, lockfile: @lockfile).call
       output_path = report_writer.write(model, output: output)

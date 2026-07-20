@@ -1,13 +1,15 @@
 # frozen_string_literal: true
 
-require "fileutils"
-require "securerandom"
+require_relative "atomic_output"
+require_relative "default_output"
 require_relative "showcase_generator"
 require_relative "clip/renderer"
 require_relative "clip/toolchain"
 
 module RubyLens
-  ClipResult = Data.define(:output_path, :showcase_path, :counts, :warnings)
+  ClipResult = Data.define(:output_path, :showcase_path, :counts, :warnings) do
+    def to_payload = { output: output_path, showcase: showcase_path, counts: counts, warnings: warnings }
+  end
 
   # Generates a shareable MP4 of a project's showcase. The showcase HTML is
   # written first (it is the render input and stays useful on its own), then
@@ -76,19 +78,14 @@ module RubyLens
     # With --output FILE.mp4, the showcase HTML lands next to it and both are
     # written exactly where requested, like other custom output paths.
     def resolve_outputs(root)
-      return [default_clip_output(root), nil] if @output.nil?
-
-      [@output, showcase_companion_path(@output)]
-    end
-
-    def default_clip_output(root)
-      output = File.join(root, DEFAULT_CLIP_NAME)
-      if File.exist?(output) && !rubylens_clip?(output)
-        raise Error, "default clip path already exists and is not a RubyLens clip"
+      if @output.nil?
+        default = DefaultOutput.resolve(root: root, name: DEFAULT_CLIP_NAME, description: "clip") do |existing|
+          rubylens_clip?(existing)
+        end
+        return [default, nil]
       end
 
-      GitRepository.new(root).exclude_local(output, description: "clip")
-      output
+      [@output, showcase_companion_path(@output)]
     end
 
     def showcase_companion_path(output)
@@ -98,20 +95,11 @@ module RubyLens
     end
 
     def render_atomically(renderer, showcase_html, output)
-      output = File.expand_path(output)
-      FileUtils.mkdir_p(File.dirname(output), mode: 0o700)
-      temporary = File.join(File.dirname(output), ".#{File.basename(output)}.#{SecureRandom.hex(6)}.tmp")
-      File.open(temporary, File::WRONLY | File::CREAT | File::EXCL, 0o600).close
-      begin
+      AtomicOutput.replace(output) do |temporary|
         renderer.render(showcase_html: showcase_html, output: temporary)
       rescue Error => error
         raise Error, "#{error.message} (the showcase HTML was still written to #{showcase_html})"
       end
-      File.chmod(0o600, temporary)
-      File.rename(temporary, output)
-      File.chmod(0o600, output)
-    ensure
-      FileUtils.rm_f(temporary) if temporary && File.exist?(temporary)
     end
   end
 end
