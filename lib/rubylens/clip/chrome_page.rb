@@ -3,7 +3,7 @@
 require "base64"
 require "fileutils"
 require "json"
-require "socket"
+require "net/http"
 require "tmpdir"
 require "uri"
 require_relative "../errors"
@@ -108,15 +108,11 @@ module RubyLens
 
       # A failed start never reaches ChromePage.open's ensure, so the spawned
       # browser and throwaway profile must be cleaned up before re-raising.
+      # The unconditional kill keeps close's Process.wait from hanging on a
+      # live Chrome with no channel.
       def abort_start
         terminate if @pid
-        begin
-          Process.wait(@pid) if @pid
-        rescue Errno::ECHILD
-          nil
-        end
-        @channel&.close
-        FileUtils.remove_entry(@profile) if @profile && File.directory?(@profile)
+        close
       end
 
       def terminate
@@ -145,7 +141,8 @@ module RubyLens
         deadline = DeadlineIO.deadline(LAUNCH_TIMEOUT_SECONDS)
         while DeadlineIO.monotonic < deadline
           if File.exist?(port_path)
-            port = File.read(port_path).lines.first.to_i
+            # to_i reads the leading port line and tolerates a mid-write file.
+            port = File.read(port_path).to_i
             return port if port.positive?
           end
           if Process.waitpid(@pid, Process::WNOHANG)
@@ -165,7 +162,7 @@ module RubyLens
             if (socket_url = target&.fetch("webSocketDebuggerUrl", nil))
               return URI(socket_url).path
             end
-          rescue Error, SystemCallError, JSON::ParserError
+          rescue Error, SystemCallError, JSON::ParserError, Timeout::Error, EOFError
             # The HTTP endpoint can lag DevToolsActivePort; retry until the deadline.
           end
           sleep 0.05
@@ -173,29 +170,13 @@ module RubyLens
         raise Error, "Chrome never exposed the showcase page for capture"
       end
 
-      # Deliberately hand-rolled: Net::HTTP can route through proxy environment
-      # variables, and this endpoint is always a local loopback.
+      # The explicit nil proxy argument keeps this loopback request off any
+      # configured HTTP proxy.
       def http_get(port, path, timeout: 10)
-        deadline = DeadlineIO.deadline(timeout)
-        socket = TCPSocket.new("127.0.0.1", port)
-        socket.write("GET #{path} HTTP/1.1\r\nHost: 127.0.0.1:#{port}\r\nConnection: close\r\n\r\n")
-        response = +"".b
-        response << read_http_chunk(socket, deadline) until response.include?("\r\n\r\n")
-        head, _, body = response.partition("\r\n\r\n")
-        length = head[/^content-length:\s*(\d+)/i, 1]&.to_i
-        raise Error, "Chrome's DevTools endpoint sent an unexpected response" unless length
-
-        body = body.b
-        body << read_http_chunk(socket, deadline) while body.bytesize < length
-        body.byteslice(0, length)
-      ensure
-        socket&.close
-      end
-
-      def read_http_chunk(socket, deadline)
-        DeadlineIO.read_chunk(socket, deadline,
-                              closed_message: "Chrome closed its DevTools endpoint early",
-                              timeout_message: "timed out talking to Chrome's DevTools endpoint")
+        http = Net::HTTP.new("127.0.0.1", port, nil)
+        http.open_timeout = timeout
+        http.read_timeout = timeout
+        http.get(path).body
       end
     end
   end

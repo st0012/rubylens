@@ -95,8 +95,6 @@ module RubyLens
 
       def read_frame(deadline)
         first, second = read_exact(2, deadline).unpack("CC")
-        raise Error, "Chrome sent an invalid DevTools frame" if second.anybits?(0x80)
-
         length = second & 0x7F
         length = read_exact(2, deadline).unpack1("n") if length == 126
         length = read_exact(8, deadline).unpack1("Q>") if length == 127

@@ -23,8 +23,6 @@ module RubyLens
         @chrome = chrome
         @ffmpeg = ffmpeg
         @fps = Integer(fps)
-        raise Error, "clip fps must be positive" unless @fps.positive?
-
         @frame_limit = frame_limit
         @progress = progress
       end
@@ -57,21 +55,13 @@ module RubyLens
       def begin_clip(page)
         preset = page.evaluate("beginShowcaseClip()")
         status = preset.is_a?(Hash) ? preset["status"] : nil
-        case status
-        when "ok" then preset
-        when "renderer-unavailable"
-          raise Error, "Chrome could not initialize WebGL2, which clip rendering requires"
-        else
-          raise Error, "the page is not a RubyLens showcase"
-        end
+        raise Error, "Chrome could not initialize WebGL2, which clip rendering requires" if status == "renderer-unavailable"
+        raise Error, "the page is not a RubyLens showcase" unless status == "ok"
+
+        preset
       end
 
       def frame_count(preset)
-        stage = [preset["stageWidth"], preset["stageHeight"]]
-        unless stage == [STAGE_WIDTH, STAGE_HEIGHT]
-          raise Error, "showcase stage is #{stage.join("x")} but clip capture expects #{STAGE_WIDTH}x#{STAGE_HEIGHT}"
-        end
-
         frames = Integer(preset.fetch("durationMs")) * @fps / 1000
         @frame_limit ? [frames, Integer(@frame_limit)].min : frames
       end
@@ -91,21 +81,27 @@ module RubyLens
         stdin, stderr, waiter = Open3.popen3(*ffmpeg_arguments(output)).then { |i, o, e, t| o.close; [i, e, t] }
         stdin.binmode
         stderr_reader = Thread.new { stderr.read }
-        frames.times do |index|
-          page.evaluate("renderShowcaseClipFrame(#{index}, #{@fps})", await: true)
-          stdin.write(page.screenshot_png)
-          @progress&.call(index + 1, frames)
+        begin
+          frames.times do |index|
+            page.evaluate("renderShowcaseClipFrame(#{index}, #{@fps})", await: true)
+            stdin.write(page.screenshot_png)
+            @progress&.call(index + 1, frames)
+          end
+          stdin.close
+          raise Error, "ffmpeg failed while encoding the clip: #{failure_reason(stderr_reader.value)}" unless waiter.value.success?
+        rescue Errno::EPIPE
+          raise Error, "ffmpeg stopped accepting frames: #{failure_reason(stderr_reader.value)}"
+        ensure
+          # On a capture-side failure, closing stdin lets ffmpeg finish and
+          # exit, the waiter reaps it, and the stderr reader ends on EOF, so
+          # only the original error surfaces.
+          stdin.close unless stdin.closed?
+          waiter.value
+          stderr_reader.value
+          stderr.close unless stderr.closed?
         end
-        stdin.close
-        status = waiter.value
-        raise Error, "ffmpeg failed while encoding the clip: #{failure_reason(stderr_reader.value)}" unless status.success?
-      rescue Errno::EPIPE
-        raise Error, "ffmpeg stopped accepting frames: #{failure_reason(stderr_reader.value)}"
       rescue Errno::ENOENT => error
         raise Error, "could not run ffmpeg at #{@ffmpeg}: #{error.message}"
-      ensure
-        stdin.close if stdin && !stdin.closed?
-        stderr.close if stderr && !stderr.closed?
       end
 
       def failure_reason(stderr_output)

@@ -19,7 +19,6 @@ module RubyLens
   class ClipGenerator
     DEFAULT_CLIP_NAME = "rubylens-clip.mp4"
     MARKER_SCAN_HEAD_BYTES = 512 * 1024
-    MARKER_SCAN_TAIL_BYTES = 64 * 1024
 
     def initialize(path: Dir.pwd, output: nil, lockfile: nil, details: false, progress: nil, renderer: nil)
       @path = path
@@ -49,16 +48,12 @@ module RubyLens
       raise Error, error.message
     end
 
+    # faststart parks the metadata (and so the marker) right behind ftyp, so
+    # every clip RubyLens writes matches within the head window.
     def rubylens_clip?(path)
       return false unless File.file?(path)
 
-      File.open(path, "rb") do |file|
-        return true if file.read(MARKER_SCAN_HEAD_BYTES).to_s.include?(Clip::Renderer::MARKER_COMMENT)
-        return false unless file.size > MARKER_SCAN_HEAD_BYTES
-
-        file.seek([file.size - MARKER_SCAN_TAIL_BYTES, MARKER_SCAN_HEAD_BYTES].max)
-        file.read.to_s.include?(Clip::Renderer::MARKER_COMMENT)
-      end
+      File.open(path, "rb") { |file| file.read(MARKER_SCAN_HEAD_BYTES).to_s.include?(Clip::Renderer::MARKER_COMMENT) }
     rescue Errno::ENOENT, Errno::EACCES
       false
     end
@@ -75,8 +70,9 @@ module RubyLens
 
     # With no --output, both artifacts use their default names, Git-excluded
     # locally, and an existing default clip is only replaced if it is ours.
-    # With --output FILE.mp4, the showcase HTML lands next to it and both are
-    # written exactly where requested, like other custom output paths.
+    # With --output FILE.mp4, the MP4 is written exactly where requested, like
+    # other custom output paths; the derived FILE.html companion was never
+    # named by the user, so an unrelated existing file there is refused.
     def resolve_outputs(root)
       if @output.nil?
         default = DefaultOutput.resolve(root: root, name: DEFAULT_CLIP_NAME, description: "clip") do |existing|
@@ -85,7 +81,12 @@ module RubyLens
         return [default, nil]
       end
 
-      [@output, showcase_companion_path(@output)]
+      companion = showcase_companion_path(@output)
+      if File.exist?(companion) && !ShowcaseWriter.new.rubylens_showcase?(companion)
+        raise Error, "clip companion path #{companion} already exists and is not a RubyLens showcase"
+      end
+
+      [@output, companion]
     end
 
     def showcase_companion_path(output)

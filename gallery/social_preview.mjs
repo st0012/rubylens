@@ -47,14 +47,9 @@ await card.goto(`file://${path.join(GALLERY, 'social-card.html')}`);
 await card.waitForFunction(() =>
   document.fonts.status === 'loaded' && [...document.images].every(image => image.complete && image.naturalWidth > 0),
 undefined, { timeout: 30_000, polling: 250 });
-const retina = await card.screenshot();
-
-// Downscale the retina capture in the browser instead of macOS-only sips.
-const scaleContext = await browser.newContext({ viewport: { width: 1200, height: 630 } });
-const scaler = await scaleContext.newPage();
-await scaler.setContent(`<body style="margin:0"><img src="data:image/png;base64,${retina.toString('base64')}" style="display:block;width:1200px;height:630px"></body>`);
-await scaler.waitForFunction(() => document.images[0].complete && document.images[0].naturalWidth > 0);
+// scale: 'css' downsamples the deviceScaleFactor 2 render to 1200x630 in the
+// browser, replacing the macOS-only sips step.
 const out = path.join(GALLERY, 'social-preview.png');
-await scaler.screenshot({ path: out });
+await card.screenshot({ path: out, scale: 'css' });
 await browser.close();
 console.log(`wrote ${out}`);

@@ -105,20 +105,34 @@ class ClipGeneratorTest < Minitest::Test
     end
   end
 
-  def test_clip_marker_detection_scans_head_and_tail
+  def test_clip_marker_detection_scans_the_head_where_faststart_puts_it
     Dir.mktmpdir("rubylens-clip-marker-") do |directory|
       generator = RubyLens::ClipGenerator.new
       head = File.join(directory, "head.mp4")
       File.binwrite(head, "x#{RubyLens::Clip::Renderer::MARKER_COMMENT}y")
-      tail = File.join(directory, "tail.mp4")
-      File.binwrite(tail, ("z" * (RubyLens::ClipGenerator::MARKER_SCAN_HEAD_BYTES + 16)) + RubyLens::Clip::Renderer::MARKER_COMMENT)
+      foreign = File.join(directory, "foreign.mp4")
+      File.binwrite(foreign, ("z" * (RubyLens::ClipGenerator::MARKER_SCAN_HEAD_BYTES + 16)) + RubyLens::Clip::Renderer::MARKER_COMMENT)
       other = File.join(directory, "other.mp4")
       File.binwrite(other, "plain video bytes")
 
       assert(generator.rubylens_clip?(head))
-      assert(generator.rubylens_clip?(tail))
+      refute(generator.rubylens_clip?(foreign), "a tail-only marker means a re-encoded or foreign file")
       refute(generator.rubylens_clip?(other))
       refute(generator.rubylens_clip?(File.join(directory, "missing.mp4")))
+    end
+  end
+
+  def test_custom_output_refuses_an_unrelated_companion_file
+    with_repository do |directory|
+      output = File.join(directory, "movie.mp4")
+      companion = File.join(directory, "movie.html")
+      File.write(companion, "someone's page")
+
+      error = assert_raises(RubyLens::Error) { generate(path: directory, output: output, renderer: FakeRenderer.new) }
+
+      assert_includes(error.message, "clip companion path")
+      assert_equal("someone's page", File.read(companion))
+      refute(File.exist?(output))
     end
   end
 
