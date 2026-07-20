@@ -6,14 +6,14 @@ class ShowcaseModelTest < Minitest::Test
   def test_minimal_projection_omits_statistics_and_private_names
     private_value = "/private/path/Secret::Namespace hidden-gem source comment"
     model = {
-      "schema" => "rubylens.art.v10",
+      "schema" => "rubylens.art.v11",
       "projectName" => "Synthetic App",
-      "morphology" => { "family" => 3, "designation" => "SBb", "knobs" => [0, 240, 3, 105, 500, 400, 0, 0, 1234, private_value] },
-      "totals" => { "namespaces" => 1, "packages" => 1, "dependencyStars" => 1, "renderedDependencyStars" => 1, "future" => private_value },
+      "morphology" => [3, 0, 240, 3, 105, 500, 400, 0, 0, 1234, private_value],
+      "totals" => { "namespaces" => 1, "packages" => 1, "dependencyStars" => 1, "future" => private_value },
       "domains" => RubyLens::ArtModelBuilder::SIGNAL_FIELDS.to_h { |field| [field, 3] }.merge("future" => private_value),
       "categoryStats" => { "core" => [1, 2, 3, 4], "tests" => [5, 6, 7, 8], "future" => private_value },
       "namespaceNames" => [private_value],
-      "namespaces" => [[1, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, private_value]],
+      "namespaces" => [[1, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, private_value]],
       "packageNames" => [private_value],
       "packages" => [[2, 0, 1, 9, 1, 2, 3, 4, 0, private_value]],
       "packageMorphologies" => [[2, 0, 240, 3, 105, 500, 0, 0, 0, 2, private_value]],
@@ -32,9 +32,9 @@ class ShowcaseModelTest < Minitest::Test
       showcase.keys.sort,
     )
     assert_equal(false, showcase.fetch("details"))
-    assert_equal("rubylens.showcase.v4", showcase.fetch("schema"))
+    assert_equal("rubylens.showcase.v5", showcase.fetch("schema"))
     assert_equal([3, 0, 240, 3, 105, 500, 400, 0, 0, 1234], showcase.fetch("morphology"))
-    assert_equal(15, showcase.fetch("namespaces").first.length)
+    assert_equal(14, showcase.fetch("namespaces").first.length)
     assert_equal(9, showcase.fetch("packages").first.length)
     assert_equal(10, showcase.fetch("packageMorphologies").first.length)
     assert_equal(2, showcase.fetch("dependencySystems").first.length)
@@ -48,7 +48,6 @@ class ShowcaseModelTest < Minitest::Test
     refute_includes(encoded, "totals")
     refute_includes(encoded, "categoryStats")
     refute_includes(encoded, "annotations")
-    refute_includes(encoded, "SBb")
   end
 
   def test_annotated_projection_is_safe_balanced_deterministic_and_capped
@@ -80,7 +79,7 @@ class ShowcaseModelTest < Minitest::Test
     model = minimal_model
     model["namespaceNames"] = ["Object", "Kernel", "BasicObject", "Synthetic::Object"]
     model["namespaces"] = model.fetch("namespaceNames").each_index.map do |index|
-      [index, 0, 0, 0, index + 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 0]
+      [index, 0, 0, index + 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 0]
     end
     model.fetch("totals")["namespaces"] = model.fetch("namespaces").length
 
@@ -118,23 +117,23 @@ class ShowcaseModelTest < Minitest::Test
     assert_equal("package morphology rows must align with packages", error.message)
   end
 
-  def test_defaults_missing_morphology_to_the_legacy_row
+  def test_defaults_missing_morphology_to_the_fallback_row
     model = minimal_model
     model.delete("morphology")
 
     showcase = RubyLens::ShowcaseModel.new(model).call
 
-    assert_equal(RubyLens::ShowcaseModel::LEGACY_MORPHOLOGY_ROW, showcase.fetch("morphology"))
+    assert_equal(RubyLens::ShowcaseModel::FALLBACK_MORPHOLOGY_ROW, showcase.fetch("morphology"))
   end
 
   def test_defaults_unusable_morphology_without_serializing_private_values
     private_value = "Secret::Namespace"
     model = minimal_model
-    model.fetch("morphology").fetch("knobs")[4] = private_value
+    model.fetch("morphology")[4] = private_value
 
     showcase = RubyLens::ShowcaseModel.new(model).call
 
-    assert_equal(RubyLens::ShowcaseModel::LEGACY_MORPHOLOGY_ROW, showcase.fetch("morphology"))
+    assert_equal(RubyLens::ShowcaseModel::FALLBACK_MORPHOLOGY_ROW, showcase.fetch("morphology"))
     refute_includes(JSON.generate(showcase), private_value)
   end
 
@@ -143,12 +142,12 @@ class ShowcaseModelTest < Minitest::Test
   def minimal_model
     {
       "projectName" => "Synthetic App",
-      "morphology" => { "family" => 2, "designation" => "Sb", "knobs" => [0, 240, 3, 105, 500, 0, 0, 0, 1234] },
-      "totals" => { "namespaces" => 1, "packages" => 0, "dependencyStars" => 0, "renderedDependencyStars" => 0 },
+      "morphology" => [2, 0, 240, 3, 105, 500, 0, 0, 0, 1234],
+      "totals" => { "namespaces" => 1, "packages" => 0, "dependencyStars" => 0 },
       "domains" => RubyLens::ArtModelBuilder::SIGNAL_FIELDS.to_h { |field| [field, 0] },
       "categoryStats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
       "namespaceNames" => ["Synthetic::Node"],
-      "namespaces" => [[0] * 15],
+      "namespaces" => [[0] * 14],
       "packageNames" => [],
       "packages" => [],
       "packageMorphologies" => [],
@@ -162,17 +161,17 @@ class ShowcaseModelTest < Minitest::Test
     test_names = Array.new(count) { |index| format("Synthetic::Test%03d", index) }
     package_names = Array.new(count) { |index| format("synthetic-gem-%03d", index) }
     namespace_names = core_names + test_names + ["/private/Secret", "https://example.test/Name", "RSpec example group #000001"]
-    namespaces = Array.new(count) { |index| [index, 0, index.even? ? 0 : 1, 0, index + 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 0] }
-    namespaces.concat(Array.new(count) { |index| [10_000 + index, 0, index.even? ? 0 : 1, 1, index + 1, 2, 3, 4, 5, 6, 1, 0, 2, 0, 0] })
-    namespaces.concat(Array.new(3) { |index| [20_000 + index, 0, 0, 0, 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 0] })
+    namespaces = Array.new(count) { |index| [index, index.even? ? 0 : 1, 0, index + 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 0] }
+    namespaces.concat(Array.new(count) { |index| [10_000 + index, index.even? ? 0 : 1, 1, index + 1, 2, 3, 4, 5, 6, 1, 0, 2, 0, 0] })
+    namespaces.concat(Array.new(3) { |index| [20_000 + index, 0, 0, 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 0] })
     packages = Array.new(count) { |index| [30_000 + index, 0, 1, index + 1, 1, 2, 3, 4, -1] }
     package_names.concat(["unsafe package", "https://example.test/gem", "../secret"])
     packages.concat(Array.new(3) { |index| [40_000 + index, 0, 1, 1, 1, 2, 3, 4, -1] })
     package_morphologies = packages.map { |row| [2, 0, 240, 3, 105, 500, 0, 0, 0, row[0]] }
     {
       "projectName" => "Synthetic App",
-      "morphology" => { "family" => 2, "designation" => "Sb", "knobs" => [0, 240, 3, 105, 500, 0, 0, 0, 1234] },
-      "totals" => { "namespaces" => namespaces.length, "packages" => packages.length, "dependencyStars" => 0, "renderedDependencyStars" => 0 },
+      "morphology" => [2, 0, 240, 3, 105, 500, 0, 0, 0, 1234],
+      "totals" => { "namespaces" => namespaces.length, "packages" => packages.length, "dependencyStars" => 0 },
       "domains" => RubyLens::ArtModelBuilder::SIGNAL_FIELDS.to_h { |field| [field, 10] },
       "categoryStats" => { "core" => [count, count / 2, count * 2, count / 3], "tests" => [count, 0, count * 3, 0] },
       "namespaceNames" => namespace_names,

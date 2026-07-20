@@ -56,17 +56,15 @@ module RubyLens
         end
       end
       {
-        "schema" => "rubylens.art.v10",
+        "schema" => "rubylens.art.v11",
         "projectName" => snapshot.fetch("project_name"),
-        "morphology" => morphology,
+        "morphology" => [morphology.fetch("family"), *morphology.fetch("knobs")],
         "totals" => {
           "namespaces" => namespaces.length,
           "packages" => packages.length,
           "dependencyStars" => indexed_dependency_count,
-          "renderedDependencyStars" => dependencies.length,
         },
         "domains" => signal_domains(namespaces, snapshot.fetch("dependency_signal_maxima")),
-        "componentCounts" => snapshot.fetch("components"),
         "categoryStats" => snapshot.fetch("category_stats"),
         "namespaceNames" => namespace_names,
         "namespaces" => namespaces,
@@ -105,7 +103,7 @@ module RubyLens
     end
 
     def signal_domains(namespaces, dependency_maxima)
-      namespace_columns = [4, 5, 6, 7, 8, 9]
+      namespace_columns = [3, 4, 5, 6, 7, 8]
       namespace_domains = namespace_columns.map { |column| maximum(namespaces, column) }
       SIGNAL_FIELDS.each_with_index.to_h do |field, index|
         [field, [namespace_domains[index], dependency_maxima[index]].max]

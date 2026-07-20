@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import { loadRuntime, minimalModel } from "./helpers/runtime.mjs";
 
 // 3 core namespaces (1 an RSpec proxy), 1 test namespace, 4 dependency stars,
-// 1 two-package system, 3 packages. Row: [seed, component, kind, test, 6 signals, 4 rubyCounts, ivars]
+// 1 two-package system, 3 packages. Row: [seed, kind, test, 6 signals, 4 rubyCounts, ivars]
 function fixtureModel() {
-  const namespaceRow = (seed, kind, test) => [seed, 0, kind, test, 2, 1, 0, 4, 9, 3, 1, 0, 5, 2, 1];
+  const namespaceRow = (seed, kind, test) => [seed, kind, test, 2, 1, 0, 4, 9, 3, 1, 0, 5, 2, 1];
   return minimalModel({
-    totals: { namespaces: 4, packages: 3, dependencyStars: 4, renderedDependencyStars: 4 },
+    totals: { namespaces: 4, packages: 3, dependencyStars: 4 },
     namespaceNames: ["Core::Alpha", "Core::Beta", "RSpec example group #000001", "Spec::Gamma"],
     namespaces: [
       namespaceRow(11, 0, 0),

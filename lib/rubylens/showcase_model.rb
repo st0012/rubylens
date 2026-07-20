@@ -6,7 +6,7 @@ require_relative "errors"
 module RubyLens
   class ShowcaseModel
     SIGNAL_FIELDS = ArtModelBuilder::SIGNAL_FIELDS
-    TOTAL_FIELDS = %w[namespaces packages dependencyStars renderedDependencyStars].freeze
+    TOTAL_FIELDS = %w[namespaces packages dependencyStars].freeze
     CATEGORY_FIELDS = %w[core tests].freeze
     ANNOTATION_LIMIT = 200
     ANNOTATION_CATEGORIES = %w[core dependencies tests].freeze
@@ -14,7 +14,7 @@ module RubyLens
     RUBY_NAME_PATTERN = /\A\p{Lu}[\p{L}\p{N}_]*(?:::\p{Lu}[\p{L}\p{N}_]*)*\z/
     MAX_ANNOTATION_NAME_LENGTH = 160
     RSPEC_PROXY_PREFIX = "RSpec example group #"
-    LEGACY_MORPHOLOGY_ROW = [MorphologyClassifier::SPIRAL, *MorphologyClassifier::DEFAULT_KNOBS].freeze
+    FALLBACK_MORPHOLOGY_ROW = [MorphologyClassifier::SPIRAL, *MorphologyClassifier::DEFAULT_KNOBS].freeze
 
     def initialize(model, details: false)
       @model = model
@@ -27,12 +27,12 @@ module RubyLens
       raise Error, "package morphology rows must align with packages" unless package_morphologies.length == packages.length
 
       showcase = {
-        "schema" => "rubylens.showcase.v4",
+        "schema" => "rubylens.showcase.v5",
         "projectName" => @model.fetch("projectName"),
         "details" => @details,
         "domains" => project_hash(@model.fetch("domains"), SIGNAL_FIELDS),
         "morphology" => morphology_row,
-        "namespaces" => @model.fetch("namespaces").map { |row| numeric_row(row, 15) },
+        "namespaces" => @model.fetch("namespaces").map { |row| numeric_row(row, 14) },
         "packages" => packages.map { |row| numeric_row(row, 9) },
         "packageMorphologies" => package_morphologies.map { |row| numeric_row(row, 10) },
         "dependencySystems" => @model.fetch("dependencySystems", []).map { |row| numeric_row(row, 2) },
@@ -54,14 +54,11 @@ module RubyLens
 
     def morphology_row
       morphology = @model["morphology"]
-      return LEGACY_MORPHOLOGY_ROW.dup unless morphology.is_a?(Hash)
+      return FALLBACK_MORPHOLOGY_ROW.dup unless morphology.is_a?(Array)
 
-      knobs = morphology["knobs"]
-      return LEGACY_MORPHOLOGY_ROW.dup unless knobs.is_a?(Array)
-
-      numeric_row([morphology.fetch("family"), *knobs], 10)
-    rescue KeyError, Error
-      LEGACY_MORPHOLOGY_ROW.dup
+      numeric_row(morphology, 10)
+    rescue Error
+      FALLBACK_MORPHOLOGY_ROW.dup
     end
 
     def project_hash(source, fields)
@@ -112,14 +109,14 @@ module RubyLens
       rows = @model.fetch("namespaces")
       names.each_with_index.filter_map do |name, index|
         row = rows.fetch(index)
-        next unless (row.fetch(3) == 1) == test
+        next unless (row.fetch(2) == 1) == test
         next if OMITTED_ANNOTATION_NAMES.include?(name)
         next unless safe_ruby_name?(name)
 
-        [row.slice(4, 6).sum, {
+        [row.slice(3, 6).sum, {
           "category" => test ? "tests" : "core",
           "name" => name,
-          "kind" => row.fetch(2) == 0 ? "Class" : "Module",
+          "kind" => row.fetch(1) == 0 ? "Class" : "Module",
           "anchor" => index,
         }]
       end.sort_by { |rank, candidate| [-rank, candidate.fetch("name"), candidate.fetch("anchor")] }

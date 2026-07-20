@@ -2,9 +2,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { loadRuntime, minimalModel } from "./helpers/runtime.mjs";
 
 function fixtureModel() {
-  const row = (seed, test) => [seed, 0, 0, test, 3, 1, 0, 2, 8, 4, 1, 0, 6, 1, 0];
+  const row = (seed, test) => [seed, 0, test, 3, 1, 0, 2, 8, 4, 1, 0, 6, 1, 0];
   return minimalModel({
-    totals: { namespaces: 3, packages: 0, dependencyStars: 0, renderedDependencyStars: 0 },
+    totals: { namespaces: 3, packages: 0, dependencyStars: 0 },
     namespaceNames: ["Core::One", "Core::Two", "Spec::Three"],
     namespaces: [row(5, 0), row(6, 0), row(7, 1)],
   });

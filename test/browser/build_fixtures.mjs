@@ -29,7 +29,7 @@ export function fixtureModel({ namespaces = 1500, packages = 12, stars = 2500 } 
     const rubyCounts = [kind === 0 ? 1 : 0, kind === 1 ? 1 : 0, 1 + (index % 40), index % 5];
     rubyCounts.forEach((count, at) => { categoryStats[test ? "tests" : "core"][at] += count; });
     names.push(test ? `Spec::Case${index}` : `Core::Node${index}`);
-    rows.push([seed(), 0, kind, test, index % 9, 1 + (index % 3), index % 2, index % 30, index % 80, index % 20, ...rubyCounts, index % 4]);
+    rows.push([seed(), kind, test, index % 9, 1 + (index % 3), index % 2, index % 30, index % 80, index % 20, ...rubyCounts, index % 4]);
   }
   const packageNames = [];
   const packageRows = [];
@@ -53,12 +53,11 @@ export function fixtureModel({ namespaces = 1500, packages = 12, stars = 2500 } 
   }
   const domains = { ancestorDepth: 9, definitionSites: 3, reopenings: 2, descendants: 30, references: 80, members: 20 };
   return {
-    schema: "rubylens.art.v10",
+    schema: "rubylens.art.v11",
     projectName: "Fixture Cosmos",
-    morphology: { family: 2, designation: "Sb", knobs: [0, 240, 3, 105, 380, 0, 0, 0, 42] },
-    totals: { namespaces, packages, dependencyStars: stars, renderedDependencyStars: stars },
+    morphology: [2, 0, 240, 3, 105, 380, 0, 0, 0, 42],
+    totals: { namespaces, packages, dependencyStars: stars },
     domains,
-    componentCounts: [namespaces],
     categoryStats,
     namespaceNames: names,
     namespaces: rows,

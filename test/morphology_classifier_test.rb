@@ -156,7 +156,7 @@ class MorphologyClassifierTest < Minitest::Test
 
   def test_mixed_core_and_test_namespaces_count_as_non_test_core
     input = snapshot(core: 30)
-    input.fetch("namespaces").first[2] = 2
+    input.fetch("namespaces").first[1] = 2
 
     result = classify(input)
 
@@ -173,7 +173,7 @@ class MorphologyClassifierTest < Minitest::Test
 
   def test_malformed_or_empty_inputs_use_the_current_default
     malformed = snapshot(core: 30)
-    malformed.fetch("namespaces").first[1] = "module"
+    malformed.fetch("namespaces").first[0] = "module"
 
     [{}, snapshot(core: 0), malformed].each do |input|
       result = classify(input)
@@ -217,9 +217,9 @@ class MorphologyClassifierTest < Minitest::Test
       Array.new(count) { |index| "Root#{root}::Node#{index}" }
     end.first(core)
     core_rows = Array.new(core) do |index|
-      [0, index < modules ? 1 : 0, 0, *Array.new(11, 0)]
+      [index < modules ? 1 : 0, 0, *Array.new(11, 0)]
     end
-    test_rows = Array.new(tests) { [0, 0, 1, *Array.new(11, 0)] }
+    test_rows = Array.new(tests) { [0, 1, *Array.new(11, 0)] }
     package = {
       "name" => "synthetic-gem",
       "role" => 1,

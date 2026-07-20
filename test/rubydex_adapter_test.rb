@@ -40,12 +40,11 @@ class RubydexAdapterTest < Minitest::Test
     snapshot = RubyLens::Index::RubydexAdapter.new(manifest).index
     serialized = JSON.generate(snapshot)
 
-    assert_equal("rubylens.snapshot.v6", snapshot.fetch("schema"))
+    assert_equal("rubylens.snapshot.v7", snapshot.fetch("schema"))
     assert_equal("Tiny Repo", snapshot.fetch("project_name"))
     assert_equal(9, snapshot.fetch("namespaces").length)
     assert_equal(9, snapshot.fetch("namespace_names").length)
-    assert_equal(9, snapshot.fetch("components").sum)
-    assert(snapshot.fetch("namespaces").all? { |row| row.length == 14 && row.all?(Integer) })
+    assert(snapshot.fetch("namespaces").all? { |row| row.length == 13 && row.all?(Integer) })
     assert_equal({ "core" => [4, 4, 3, 1], "tests" => [1, 0, 0, 0] }, snapshot.fetch("category_stats"))
     assert_equal(6, snapshot.fetch("dependency_signal_maxima").length)
     assert_empty(snapshot.fetch("dependency_systems"))
@@ -121,9 +120,9 @@ class RubydexAdapterTest < Minitest::Test
 
     assert_equal(9, rows.length)
     assert_equal([9, 0, 14, 0], snapshot.fetch("category_stats").fetch("tests"))
-    assert(rows.all? { |_name, row| row.length == 14 && row.all?(Integer) })
-    assert(rows.all? { |_name, row| row[1] == 0 && row[2] == 1 })
-    assert(rows.all? { |_name, row| row.drop(3).all?(&:zero?) })
+    assert(rows.all? { |_name, row| row.length == 13 && row.all?(Integer) })
+    assert(rows.all? { |_name, row| row[0] == 0 && row[1] == 1 })
+    assert(rows.all? { |_name, row| row.drop(2).all?(&:zero?) })
     assert_equal(rows.length, rows.map(&:first).uniq.length)
     assert_equal(
       (1..9).map { |index| format("RSpec example group #%06d", index) },

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { loadRuntime } from "./helpers/runtime.mjs";
 
 const runtime = loadRuntime();
-const LEGACY_ROW = [2, 0, 240, 3, 105, 380, 0, 0, 0, 0];
 
 describe("decodeMorphology", () => {
   it("decodes each family with clamped knobs", () => {
@@ -21,27 +20,20 @@ describe("decodeMorphology", () => {
     expect(irregular.clumpSpread).toBeCloseTo(0.25, 5);
   });
 
-  it("marks only the exact legacy spiral row as legacy", () => {
-    expect(runtime.decodeMorphology(LEGACY_ROW).legacy).toBe(true);
-    const nearLegacy = [...LEGACY_ROW];
-    nearLegacy[2] = 241;
-    expect(runtime.decodeMorphology(nearLegacy).legacy).toBe(false);
-  });
-
   it("falls back on malformed rows without losing the phase seed", () => {
     for (const bad of [null, [], [9, 0, 0, 0, 0, 0, 0, 0, 0, 0], [2, 0.5, 240, 3, 105, 380, 0, 0, 0, 0]]) {
       const decoded = runtime.decodeMorphology(bad, 77);
       expect(decoded.family).toBe(2);
       expect(decoded.phaseSeed).toBe(77);
     }
-    expect(runtime.decodeMorphology(null, -1)).toBe(runtime.decodeMorphology(null, 2 ** 33));
+    expect(runtime.decodeMorphology(null, -1)).toEqual(runtime.decodeMorphology(null, 2 ** 33));
+    expect(runtime.decodeMorphology(null, -1).phaseSeed).toBe(0);
   });
 
   it("derives phase deterministically from the seed", () => {
     const first = runtime.decodeMorphology([2, 0, 240, 3, 105, 380, 0, 0, 0, 12345]);
     const second = runtime.decodeMorphology([2, 0, 240, 3, 105, 380, 0, 0, 0, 12345]);
     expect(first.phase).toBe(second.phase);
-    expect(first.legacy).toBe(false);
   });
 });
 

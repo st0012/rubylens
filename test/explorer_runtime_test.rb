@@ -281,17 +281,14 @@ class ExplorerRuntimeTest < Minitest::Test
     assert_operator(RUNTIME.index("const dependencyRubyCounts"), :<, RUNTIME.index("model.dependencyStars = []"))
   end
 
-  def test_unavailable_renderer_and_embedded_sampling_use_the_standard_warning_disclosure
+  def test_unavailable_renderer_uses_the_standard_warning_disclosure
     disclosure = runtime_function("populateWarningDisclosure")
 
-    assert_includes(disclosure, "dependencySamplingState(")
     assert_includes(disclosure, 'document.documentElement.dataset.explorerRenderer === "unavailable"')
     assert_includes(disclosure, 'statusSummaries.push("WebGL2 required")')
     assert_includes(disclosure, 'details.open = true')
     assert_includes(disclosure, '"Interactive rendering"')
     assert_includes(disclosure, '"Unavailable"')
-    assert_includes(disclosure, "sampling.summary")
-    assert_includes(disclosure, "sampling.note")
     assert_includes(disclosure, 'appendWarningGroup(container, "Code analysis", counts.index')
     assert_includes(disclosure, 'appendWarningGroup(container, "Integrity checks", counts.integrity')
   end

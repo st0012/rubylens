@@ -55,10 +55,10 @@ module RubyLens
       return if rows.empty?
       return unless rows.each_with_index.all? { |row, index| valid_namespace?(row, names[index]) }
 
-      core_indexes = rows.each_index.reject { |index| rows[index][2] == 1 }
+      core_indexes = rows.each_index.reject { |index| rows[index][1] == 1 }
       core_count = core_indexes.length
       test_count = rows.length - core_count
-      module_count = core_indexes.count { |index| rows[index][1] == 1 }
+      module_count = core_indexes.count { |index| rows[index][0] == 1 }
       dependency_count = packages.sum { |package| dependency_declaration_count(package) }
 
       module_fraction = ratio(module_count, core_count)
@@ -105,8 +105,8 @@ module RubyLens
     end
 
     def valid_namespace?(row, name)
-      row.is_a?(Array) && row.length >= 3 &&
-        [0, 1].include?(row[1]) && [0, 1, 2].include?(row[2]) &&
+      row.is_a?(Array) && row.length >= 2 &&
+        [0, 1].include?(row[0]) && [0, 1, 2].include?(row[1]) &&
         name.is_a?(String) && !name.empty?
     end
 

@@ -542,7 +542,6 @@ class IndexManifestTest < Minitest::Test
       assert_equal(1, snapshot_packages.fetch("system-implementation").fetch("role"))
       assert_equal(2, model.dig("totals", "packages"))
       assert_equal(1, model.dig("totals", "dependencyStars"))
-      assert_equal(1, model.dig("totals", "renderedDependencyStars"))
       assert_equal(1, model.fetch("dependencySystems").length)
       assert(showcase.fetch("packages").all? { |row| row.all?(Integer) })
       assert(showcase.fetch("dependencySystems").flatten.all?(Integer))

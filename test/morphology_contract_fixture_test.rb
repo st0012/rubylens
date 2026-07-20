@@ -69,8 +69,8 @@ class MorphologyContractFixtureTest < Minitest::Test
     names = root_counts.each_with_index.flat_map do |count, root|
       Array.new(count) { |index| "Root#{root}::Node#{index}" }
     end.first(core)
-    core_rows = Array.new(core) { |index| [0, index < modules ? 1 : 0, 0, *Array.new(11, 0)] }
-    test_rows = Array.new(tests) { [0, 0, 1, *Array.new(11, 0)] }
+    core_rows = Array.new(core) { |index| [index < modules ? 1 : 0, 0, *Array.new(11, 0)] }
+    test_rows = Array.new(tests) { [0, 1, *Array.new(11, 0)] }
     {
       "namespaces" => core_rows + test_rows,
       "namespace_names" => names + Array.new(tests) { |index| "Spec::Case#{index}" },

@@ -102,7 +102,7 @@ class ReportWriterTest < Minitest::Test
       assert_includes(html, "warning.reason")
       assert_includes(html, "const testRubyMetricIndexes = [0, 2]")
       assert_includes(html, "function addCoreTooltipMetrics")
-      assert_includes(html, "instanceVariableCount: row[14] || 0")
+      assert_includes(html, "instanceVariableCount: row[13] || 0")
       assert_includes(html, 'addTooltipMetric("Ancestors", point.values[0])')
       assert_includes(html, 'addTooltipMetric("Descendants", point.values[3])')
       assert_includes(html, 'if (point.kind === "Class") addTooltipMetric("Instance variables", point.instanceVariableCount)')

@@ -4,7 +4,7 @@ import { loadRuntime, minimalModel } from "./helpers/runtime.mjs";
 // Package row: [seed, role, location, declarationCount, 4 rubyCounts, systemIndex]
 function fixtureModel() {
   return minimalModel({
-    totals: { namespaces: 0, packages: 3, dependencyStars: 0, renderedDependencyStars: 0 },
+    totals: { namespaces: 0, packages: 3, dependencyStars: 0 },
     packageNames: ["gem-a", "gem-b", "gem-c"],
     packages: [
       [101, 0, 1, 0, 0, 0, 0, 0, 0],

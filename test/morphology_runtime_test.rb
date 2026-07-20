@@ -7,27 +7,17 @@ require_relative "test_helper"
 class MorphologyRuntimeTest < Minitest::Test
   RUNTIME = File.read(File.expand_path("../assets/runtime/report.js", __dir__))
 
-  def test_absent_and_classifier_default_preserve_legacy_positions_exactly
+  def test_absent_and_classifier_default_render_the_same_default_spiral
     absent = runtime_stats(nil)
-    fallback = runtime_stats({ "family" => 2, "knobs" => [0, 240, 3, 105, 380, 0, 0, 0, 0] })
+    fallback = runtime_stats([2, 0, 240, 3, 105, 380, 0, 0, 0, 0])
 
+    assert_equal(fallback, absent)
     [absent, fallback].each do |stats|
-      assert_equal(true, stats.dig("morphology", "legacy"))
-      assert_equal(true, stats.fetch("legacyCoreExact"))
-      assert_equal(true, stats.fetch("legacyTestsExact"))
+      assert_equal(2, stats.dig("morphology", "family"))
+      assert_equal(3, stats.dig("morphology", "armCount"))
       assert_equal(42, stats.dig("layout", "coreOuterRadius"))
       assert_equal(62, stats.dig("layout", "testOuterRadius"))
     end
-  end
-
-  def test_art_object_and_showcase_row_decode_to_the_same_geometry
-    knobs = [0, 220, 4, 80, 520, 480, 0, 0, 1_234_567]
-    object = runtime_stats({ "family" => 3, "knobs" => knobs })
-    row = runtime_stats([3, *knobs])
-
-    assert_equal(object, row)
-    assert_equal(4, object.dig("morphology", "armCount"))
-    assert_equal(false, object.dig("morphology", "legacy"))
   end
 
   def test_every_family_is_deterministic_finite_and_inside_its_declared_extent
@@ -96,25 +86,9 @@ class MorphologyRuntimeTest < Minitest::Test
   def runtime_stats(raw_morphology)
     source = runtime_geometry_source
     script = <<~JAVASCRIPT
-      const model = { morphology: #{JSON.generate(raw_morphology)}, namespaces: Array.from({length: 3000}, (_, index) => [index, 0, 0, index % 4 === 0 ? 1 : 0]) };
+      const model = { morphology: #{JSON.generate(raw_morphology)}, namespaces: Array.from({length: 3000}, (_, index) => [index, 0, index % 4 === 0 ? 1 : 0]) };
       const CORE_SCALE_BASELINE = 3000;
       #{source}
-      function legacyCore(seed) {
-        const bulge = unit(seed, 2) < .24;
-        const radial = bulge ? 17 * Math.pow(unit(seed, 3), 1.75) : Math.min(42, -10 * Math.log(Math.max(1e-5, 1 - unit(seed, 3))));
-        const theta = unit(seed, 4) * Math.PI * 2 + radial * .04;
-        const vertical = normal(seed, 5) * (bulge ? 5.8 : 1.4 + radial * .025);
-        const scale = bulge ? layoutScale.bulge : layoutScale.disk;
-        return [Math.cos(theta) * radial * scale, vertical * scale, Math.sin(theta) * radial * scale];
-      }
-      function legacyTests(seed) {
-        const radial = 17 + Math.min(45, -14 * Math.log(Math.max(1e-5, 1 - unit(seed, 7))));
-        const arm = Math.floor(unit(seed, 8) * 3);
-        const inArm = unit(seed, 9) < .38;
-        const theta = inArm ? arm * (Math.PI * 2 / 3) + radial * .105 + normal(seed, 10) * .22 : unit(seed, 10) * Math.PI * 2;
-        const vertical = normal(seed, 11) * (1.4 + radial * .035);
-        return [Math.cos(theta) * radial * layoutScale.tests, vertical * layoutScale.tests, Math.sin(theta) * radial * layoutScale.tests];
-      }
       const seeds = Array.from({length: 4096}, (_, index) => index + 1);
       const core = seeds.map(corePosition);
       const tests = seeds.map(testPosition);
@@ -129,8 +103,6 @@ class MorphologyRuntimeTest < Minitest::Test
         clumpCenters: irregularClumpCenters.length,
         finite: all.every(point => point.every(Number.isFinite)),
         deterministic: seeds.every(seed => equalPoint(corePosition(seed), corePosition(seed)) && equalPoint(testPosition(seed), testPosition(seed))),
-        legacyCoreExact: morphology.legacy ? seeds.every(seed => equalPoint(corePosition(seed), legacyCore(seed))) : null,
-        legacyTestsExact: morphology.legacy ? seeds.every(seed => equalPoint(testPosition(seed), legacyTests(seed))) : null,
         maxCoreRadius: Math.max(...core.map(radius)),
         maxTestRadius: Math.max(...tests.map(radius)),
         meanHorizontal: core.reduce((sum, point) => sum + Math.hypot(point[0], point[2]), 0) / core.length,
@@ -146,13 +118,13 @@ class MorphologyRuntimeTest < Minitest::Test
 
   def runtime_geometry_source
     family = RUNTIME.match(/^    const MORPHOLOGY_FAMILY = .*;$/).to_s.strip
-    legacy = RUNTIME.match(/^    const LEGACY_MORPHOLOGY = Object\.freeze\(\{.*?^    \}\);$/m).to_s.strip
+    fallback_row = RUNTIME.match(/^    const FALLBACK_MORPHOLOGY_ROW = .*;$/).to_s.strip
     primitives = RUNTIME.match(/^    const hash = .*?^    const spiralMorphology = morphology\.family === MORPHOLOGY_FAMILY\.spiral \|\| morphology\.family === MORPHOLOGY_FAMILY\.barredSpiral;$/m).to_s
     layout = runtime_function("layoutMetricsForCoreCount")
     positions = RUNTIME.match(/^    const coreCount = .*?^    \}\n\n    const dependencySystems =/m).to_s.sub(/\n\n    const dependencySystems =\z/, "")
-    raise "morphology runtime source not found" if [family, legacy, primitives, layout, positions].any?(&:empty?)
+    raise "morphology runtime source not found" if [family, fallback_row, primitives, layout, positions].any?(&:empty?)
 
-    [family, legacy, primitives, layout, positions].join("\n")
+    [family, fallback_row, primitives, layout, positions].join("\n")
   end
 
   def runtime_function(name)

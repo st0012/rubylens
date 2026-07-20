@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { loadRuntime } from "./helpers/runtime.mjs";
 
 const runtime = loadRuntime();
-const metrics = coreCount => runtime.layoutMetricsForCoreCount(coreCount, { legacy: true, family: 2, clumpSpread: 0 });
+const metrics = coreCount => runtime.layoutMetricsForCoreCount(coreCount, runtime.decodeMorphology([2, 0, 240, 3, 105, 380, 0, 0, 0, 7]));
 
 const BASELINE = {
   disk: 1, bulge: 1, tests: 1, cameraScale: 1,
