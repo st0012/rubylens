@@ -20,6 +20,7 @@ require_relative "rubylens/generator"
 require_relative "rubylens/showcase_model"
 require_relative "rubylens/showcase_writer"
 require_relative "rubylens/showcase_generator"
+require_relative "rubylens/clip_generator"
 
 module RubyLens
   module_function
@@ -30,5 +31,9 @@ module RubyLens
 
   def generate_showcase(path: Dir.pwd, output: nil, lockfile: nil, details: false)
     ShowcaseGenerator.new(path: path, output: output, lockfile: lockfile, details: details).call
+  end
+
+  def generate_clip(path: Dir.pwd, output: nil, lockfile: nil, details: false, progress: nil)
+    ClipGenerator.new(path: path, output: output, lockfile: lockfile, details: details, progress: progress).call
   end
 end

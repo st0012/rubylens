@@ -53,8 +53,8 @@ class APITest < Minitest::Test
     end
   end
 
-  def test_public_api_is_exactly_the_report_and_showcase_generators
-    assert_equal(%i[generate_report generate_showcase], RubyLens.singleton_methods(false).sort)
+  def test_public_api_is_exactly_the_report_showcase_and_clip_generators
+    assert_equal(%i[generate_clip generate_report generate_showcase], RubyLens.singleton_methods(false).sort)
   end
 
   private

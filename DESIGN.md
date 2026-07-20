@@ -20,3 +20,5 @@ Controls use standard inputs, buttons, disclosures, keyboard activation, visible
 ## Showcase
 
 Showcase is autonomous and noninteractive. It preserves the approved fixed presentation contract and contains no Explorer panel, toolbar, tooltip, warning disclosure, search, hover, selection, or navigation behavior. Annotated output may show one moving ring-and-leader label at a time in the matching Core, Test, or Gem color; Minimal output has no statistics or labels.
+
+Clip is the Showcase recorded, not a new presentation: one full camera turn captured at the fixed 1920×1080 stage, looping seamlessly. It introduces no clip-only framing, branding, sizes, or brightness. The one sanctioned divergence is annotation fading, which collapses the staggered wall-clock CSS transitions into a single deterministic opacity envelope on the export clock ([rendering reference](docs/EXPLORER_SHOWCASE_RENDERING.md)).

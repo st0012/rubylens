@@ -31,7 +31,7 @@
       tests: { ancestorDepth: .18, definitionSites: .25, reopenings: .18, descendants: .42, references: .85, members: .55 },
       dependencies: { ancestorDepth: .12, definitionSites: .35, reopenings: .2, descendants: .32, references: .48, members: .4 },
     };
-    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedSystemIndex = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, showcaseRenderer = null, showcaseAnnotationSlot = -1, activeShowcaseAnnotation = null;
+    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedSystemIndex = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, showcaseRenderer = null, showcaseAnnotationSlot = -1, activeShowcaseAnnotation = null, clipMode = false;
     const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35;
     const CORE_SCALE_BASELINE = 3_000;
     const DEPENDENCY_CLOUD_THREASHOLD = 18;
@@ -2430,12 +2430,7 @@
       return null;
     }
 
-    function updateShowcaseAnnotation(timestamp) {
-      if (reducedMotionQuery.matches || !showcaseAnnotation || showcaseStartedAt === null) {
-        hideShowcaseAnnotation();
-        return;
-      }
-      const elapsed = Math.max(0, timestamp - showcaseStartedAt);
+    function trackShowcaseAnnotation(elapsed) {
       const slot = Math.floor(elapsed / SHOWCASE_ANNOTATION_PRESET.slotDurationMs);
       const slotElapsed = elapsed % SHOWCASE_ANNOTATION_PRESET.slotDurationMs;
       const matrix = viewMatrix();
@@ -2451,31 +2446,44 @@
           showcaseAnnotationName.textContent = annotation.name;
         }
       }
-      if (!activeShowcaseAnnotation) return;
+      if (!activeShowcaseAnnotation) return null;
 
       const projected = project(activeShowcaseAnnotation.annotation.point, matrix);
-      if (!projected) {
+      if (!projected) return null;
+      const [x, y] = projected;
+      showcaseAnnotation.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+      return { slotElapsed, fits: showcaseAnnotationFits(x, y, activeShowcaseAnnotation.side) };
+    }
+
+    function updateShowcaseAnnotation(timestamp) {
+      if (reducedMotionQuery.matches || !showcaseAnnotation || showcaseStartedAt === null) {
         hideShowcaseAnnotation();
         return;
       }
-      const [x, y] = projected;
-      showcaseAnnotation.style.transform = `translate3d(${x}px, ${y}px, 0)`;
-      const revealed = slotElapsed >= SHOWCASE_ANNOTATION_PRESET.revealStartMs &&
-        slotElapsed <= SHOWCASE_ANNOTATION_PRESET.revealEndMs &&
-        showcaseAnnotationFits(x, y, activeShowcaseAnnotation.side);
+      const tracked = trackShowcaseAnnotation(Math.max(0, timestamp - showcaseStartedAt));
+      if (!tracked) {
+        hideShowcaseAnnotation();
+        return;
+      }
+      const revealed = tracked.slotElapsed >= SHOWCASE_ANNOTATION_PRESET.revealStartMs &&
+        tracked.slotElapsed <= SHOWCASE_ANNOTATION_PRESET.revealEndMs &&
+        tracked.fits;
       showcaseAnnotation.classList.toggle("is-visible", revealed);
       document.documentElement.dataset.showcaseAnnotation = revealed
         ? activeShowcaseAnnotation.annotation.name
         : "hidden";
     }
 
-    function renderShowcase(timestamp) {
-      if (!showcaseRenderer) return;
-      showcaseStartedAt ??= timestamp;
+    function showcaseFrameProgress(elapsed) {
       const frameCount = SHOWCASE_PRESET.targetFps * SHOWCASE_PRESET.durationMs / 1000;
-      const rawProgress = ((timestamp - showcaseStartedAt) % SHOWCASE_PRESET.durationMs) / SHOWCASE_PRESET.durationMs;
-      const progress = Math.floor(rawProgress * frameCount) / frameCount;
-      applyShowcaseCamera(progress);
+      const rawProgress = (elapsed % SHOWCASE_PRESET.durationMs) / SHOWCASE_PRESET.durationMs;
+      return Math.floor(rawProgress * frameCount) / frameCount;
+    }
+
+    function renderShowcase(timestamp) {
+      if (!showcaseRenderer || clipMode) return;
+      showcaseStartedAt ??= timestamp;
+      applyShowcaseCamera(showcaseFrameProgress(timestamp - showcaseStartedAt));
       render(timestamp);
       if (!showcaseRenderer) return;
       if (showcaseDetails) updateShowcaseAnnotation(timestamp);
@@ -2483,7 +2491,71 @@
       if (!reducedMotionQuery.matches) animationFrame = requestAnimationFrame(renderShowcase);
     }
 
+    // Clip export drives Showcase frames from an external capture process
+    // (`rubylens clip`). Frames are a pure function of (frameIndex, fps):
+    // annotation choreography runs off the same synthetic clock with inline
+    // opacity, because live CSS fades would tie captures to wall-clock time.
+    function showcaseClipAnnotationOpacity(slotElapsed) {
+      const preset = SHOWCASE_ANNOTATION_PRESET;
+      if (slotElapsed < preset.revealStartMs) return 0;
+      if (slotElapsed <= preset.revealEndMs) {
+        const linear = Math.min(1, (slotElapsed - preset.revealStartMs) / preset.fadeInMs);
+        return 1 - (1 - linear) ** 3;
+      }
+      const linear = Math.min(1, (slotElapsed - preset.revealEndMs) / preset.fadeOutMs);
+      return Math.max(0, 1 - linear * linear);
+    }
+
+    function updateShowcaseClipAnnotation(elapsed) {
+      if (!showcaseAnnotation) return;
+      const tracked = trackShowcaseAnnotation(elapsed);
+      const opacity = tracked && tracked.fits ? showcaseClipAnnotationOpacity(tracked.slotElapsed) : 0;
+      showcaseAnnotation.classList.toggle("is-visible", opacity > 0);
+      showcaseAnnotation.style.opacity = opacity.toFixed(4);
+      document.documentElement.dataset.showcaseAnnotation = opacity > 0
+        ? activeShowcaseAnnotation.annotation.name
+        : "hidden";
+    }
+
+    function beginShowcaseClip() {
+      if (!showcaseMode) return { status: "not-showcase" };
+      if (!showcaseRenderer) return { status: "renderer-unavailable" };
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      animationFrame = 0;
+      clipMode = true;
+      showcaseStartedAt = 0;
+      showcaseAnnotationSlot = -1;
+      activeShowcaseAnnotation = null;
+      hideShowcaseAnnotation();
+      if (showcaseAnnotation) {
+        showcaseAnnotation.hidden = !showcaseDetails || !renderedShowcaseAnnotations.length;
+        showcaseAnnotation.style.opacity = "0";
+      }
+      document.documentElement.dataset.rubylensClip = "true";
+      document.documentElement.dataset.showcaseMotion = "clip";
+      return {
+        status: "ok",
+        durationMs: SHOWCASE_PRESET.durationMs,
+        stageWidth: SHOWCASE_PRESET.stageWidth,
+        stageHeight: SHOWCASE_PRESET.stageHeight,
+        details: showcaseDetails,
+      };
+    }
+
+    function renderShowcaseClipFrame(frameIndex, fps) {
+      if (!clipMode || !showcaseRenderer) return Promise.reject(new Error("clip mode is not active"));
+      const elapsed = frameIndex * 1000 / fps;
+      applyShowcaseCamera(showcaseFrameProgress(elapsed));
+      render(elapsed);
+      if (showcaseDetails) updateShowcaseClipAnnotation(elapsed);
+      return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => {
+        document.documentElement.dataset.clipFrame = String(frameIndex);
+        resolve(frameIndex);
+      })));
+    }
+
     function startShowcase() {
+      if (clipMode) return;
       if (animationFrame) cancelAnimationFrame(animationFrame);
       animationFrame = 0;
       showcaseStartedAt = null;

@@ -57,6 +57,64 @@ class CLITest < Minitest::Test
     assert_includes(errors, "selected Ruby and dependency names")
   end
 
+  def test_clip_defaults_print_both_artifacts_and_wire_progress_reporting
+    result = RubyLens::ClipResult.new(
+      output_path: "/tmp/clip.mp4",
+      showcase_path: "/tmp/showcase.html",
+      counts: { "namespaces" => 3 },
+      warnings: [],
+    )
+    captured = nil
+    RubyLens.expects(:generate_clip).with do |**options|
+      captured = options
+      options[:path] == Dir.pwd && options[:output].nil? && options[:lockfile].nil? &&
+        options[:details] == false && options[:progress].respond_to?(:call)
+    end.returns(result)
+
+    status, output, errors = run_cli(["clip"])
+
+    assert_equal(0, status)
+    payload = JSON.parse(output)
+    assert_equal("/tmp/clip.mp4", payload.fetch("output"))
+    assert_equal("/tmp/showcase.html", payload.fetch("showcase"))
+    assert_includes(errors, "same picture as showcases")
+
+    _output, progress_lines = capture_io do
+      progress = captured.fetch(:progress)
+      progress.call(1, 1800)
+      progress.call(2, 1800)
+      progress.call(900, 1800)
+      progress.call(1800, 1800)
+    end
+    milestones = progress_lines.lines
+    assert_equal(3, milestones.length)
+    assert_includes(milestones.first, "0% (1/1800 frames)")
+    assert_includes(milestones.last, "100% (1800/1800 frames)")
+  end
+
+  def test_clip_details_is_an_explicit_single_opt_in
+    result = RubyLens::ClipResult.new(output_path: "/tmp/clip.mp4", showcase_path: "/tmp/x.html", counts: {}, warnings: [])
+    RubyLens.expects(:generate_clip).with do |**options|
+      options[:path] == "project" && options[:details] == true
+    end.returns(result)
+
+    status, _output, errors = run_cli(["clip", "--details", "project"])
+
+    assert_equal(0, status)
+    assert_includes(errors, "selected Ruby and dependency names")
+  end
+
+  def test_clip_help_documents_the_mp4_output_without_generating
+    RubyLens.expects(:generate_clip).never
+
+    status, output, = run_cli(["clip", "--help"])
+
+    assert_equal(0, status)
+    assert_includes(output, "Usage: rubylens clip [OPTIONS] [TARGET]")
+    assert_includes(output, "Output MP4 (default: TARGET/rubylens-clip.mp4)")
+    assert_includes(output, "--details")
+  end
+
   def test_options_work_without_a_target
     cases = {
       generate_report: ["report", "--output", "/tmp/report.html", "--lockfile", "/tmp/report.lock"],
@@ -136,8 +194,10 @@ class CLITest < Minitest::Test
     assert_equal(0, status)
     assert_includes(output, "TARGET defaults to the current working directory")
     assert_includes(output, "rubylens report --help")
+    assert_includes(output, "rubylens clip --help")
     assert_includes(output, "rubylens showcase --help")
     assert_includes(output, "report [OPTIONS] [TARGET]")
+    assert_includes(output, "clip [OPTIONS] [TARGET]")
     assert_includes(output, "showcase [OPTIONS] [TARGET]")
   end
 

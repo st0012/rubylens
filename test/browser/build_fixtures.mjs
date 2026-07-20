@@ -71,20 +71,58 @@ export function fixtureModel({ namespaces = 1500, packages = 12, stars = 2500 } 
   };
 }
 
+// The details Showcase projection of the same synthetic scene, for clip specs:
+// identical rows, plus the annotation set the cinematic labels cycle through.
+export function fixtureShowcaseModel() {
+  const model = fixtureModel();
+  const annotations = [];
+  for (let index = 0; index < model.namespaceNames.length; index += 41) {
+    const row = model.namespaces[index];
+    annotations.push({
+      category: row[2] === 1 ? "tests" : "core",
+      name: model.namespaceNames[index],
+      kind: row[1] === 0 ? "Class" : "Module",
+      anchor: index,
+    });
+  }
+  model.packageNames.forEach((name, index) => {
+    annotations.push({ category: "dependencies", name, kind: "Dependency gem", anchor: index });
+  });
+  return {
+    schema: "rubylens.showcase.v5",
+    projectName: model.projectName,
+    details: true,
+    domains: model.domains,
+    morphology: model.morphology,
+    namespaces: model.namespaces,
+    packages: model.packages,
+    packageMorphologies: model.packageMorphologies,
+    dependencySystems: model.dependencySystems,
+    dependencyStars: model.dependencyStars,
+    totals: model.totals,
+    categoryStats: model.categoryStats,
+    pinnedNamespaceAnchors: [],
+    annotations,
+  };
+}
+
 function substituteOnce(template, placeholder, replacement) {
   const occurrences = template.split(placeholder).length - 1;
   if (occurrences !== 1) throw new Error(`expected exactly one ${placeholder}, found ${occurrences}`);
   return template.replace(placeholder, () => replacement);
 }
 
-export default function buildFixtures() {
-  const shell = readFileSync(join(ROOT, "assets/shells/report.html"), "utf8");
-  const styles = readFileSync(join(ROOT, "assets/styles/report.css"), "utf8");
+function assembleFixture(shellName, stylesName, model) {
+  const shell = readFileSync(join(ROOT, "assets/shells", shellName), "utf8");
+  const styles = readFileSync(join(ROOT, "assets/styles", stylesName), "utf8");
   const runtime = readFileSync(join(ROOT, "assets/runtime/report.js"), "utf8");
-  const model = fixtureModel();
   let html = substituteOnce(shell, "{{REPORT_STYLES}}", styles);
   html = substituteOnce(html, "{{REPORT_RUNTIME}}", runtime);
-  html = substituteOnce(html, "{{MODEL_BASE64}}", Buffer.from(JSON.stringify(model)).toString("base64"));
+  return substituteOnce(html, "{{MODEL_BASE64}}", Buffer.from(JSON.stringify(model)).toString("base64"));
+}
+
+export default function buildFixtures() {
   mkdirSync(FIXTURES, { recursive: true });
-  writeFileSync(join(FIXTURES, "explorer.html"), html);
+  writeFileSync(join(FIXTURES, "explorer.html"), assembleFixture("report.html", "report.css", fixtureModel()));
+  writeFileSync(join(FIXTURES, "showcase.html"), assembleFixture("showcase.html", "showcase.css", fixtureShowcaseModel()));
 }

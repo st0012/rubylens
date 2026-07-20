@@ -200,16 +200,42 @@ class ShowcaseContractTest < Minitest::Test
     assert_equal(APPROVED_ANNOTATION_PRESET.fetch("limit"), RubyLens::ShowcaseModel::ANNOTATION_LIMIT)
     runtime = File.read(RUNTIME_PATH)
     render_showcase = runtime.match(/function renderShowcase\(timestamp\) \{(?<body>.*?)^    \}/m)[:body]
+    track_annotation = runtime.match(/function trackShowcaseAnnotation\(elapsed\) \{(?<body>.*?)^    \}/m)[:body]
     update_annotation = runtime.match(/function updateShowcaseAnnotation\(timestamp\) \{(?<body>.*?)^    \}/m)[:body]
 
-    assert_operator(render_showcase.index("applyShowcaseCamera(progress)"), :<, render_showcase.index("render(timestamp)"))
+    assert_operator(render_showcase.index("applyShowcaseCamera(showcaseFrameProgress"), :<, render_showcase.index("render(timestamp)"))
     assert_operator(render_showcase.index("render(timestamp)"), :<, render_showcase.index("updateShowcaseAnnotation(timestamp)"))
-    assert_includes(update_annotation, "project(activeShowcaseAnnotation.annotation.point, matrix)")
-    assert_includes(update_annotation, "showcaseAnnotation.style.transform")
+    assert_includes(track_annotation, "project(activeShowcaseAnnotation.annotation.point, matrix)")
+    assert_includes(track_annotation, "showcaseAnnotation.style.transform")
+    assert_includes(update_annotation, "trackShowcaseAnnotation(Math.max(0, timestamp - showcaseStartedAt))")
     assert_includes(update_annotation, "slotElapsed >= SHOWCASE_ANNOTATION_PRESET.revealStartMs")
     assert_includes(update_annotation, "slotElapsed <= SHOWCASE_ANNOTATION_PRESET.revealEndMs")
     assert_includes(runtime, "--annotation-fade-in")
     assert_includes(runtime, "SHOWCASE_ANNOTATION_PRESET.fadeOutMs")
+  end
+
+  def test_approved_clip_export_contract_is_exact
+    runtime = File.read(RUNTIME_PATH)
+    clip_frame = runtime.match(/function renderShowcaseClipFrame\(frameIndex, fps\) \{(?<body>.*?)^    \}/m)[:body]
+    begin_clip = runtime.match(/function beginShowcaseClip\(\) \{(?<body>.*?)^    \}/m)[:body]
+    clip_annotation = runtime.match(/function updateShowcaseClipAnnotation\(elapsed\) \{(?<body>.*?)^    \}/m)[:body]
+
+    # Clip frames are a pure function of (frameIndex, fps): the same quantized
+    # camera as the live loop, then annotation opacity from the synthetic clock.
+    assert_operator(clip_frame.index("applyShowcaseCamera(showcaseFrameProgress(elapsed))"), :<, clip_frame.index("render(elapsed)"))
+    assert_operator(clip_frame.index("render(elapsed)"), :<, clip_frame.index("updateShowcaseClipAnnotation(elapsed)"))
+    assert_includes(clip_frame, "frameIndex * 1000 / fps")
+    assert_includes(clip_frame, 'dataset.clipFrame = String(frameIndex)')
+    assert_includes(begin_clip, "cancelAnimationFrame(animationFrame)")
+    assert_includes(begin_clip, 'dataset.rubylensClip = "true"')
+    assert_includes(begin_clip, 'dataset.showcaseMotion = "clip"')
+    assert_includes(clip_annotation, "trackShowcaseAnnotation(elapsed)")
+    assert_includes(clip_annotation, "showcaseAnnotation.style.opacity = opacity.toFixed(4)")
+    # The live loop must never race the external capture driver.
+    assert_includes(runtime, "if (!showcaseRenderer || clipMode) return;")
+    assert_match(/function startShowcase\(\) \{\n      if \(clipMode\) return;/, runtime)
+    # Inline opacity only works because clip mode turns CSS fades off.
+    assert_includes(File.read(STYLES_PATH), "html[data-rubylens-clip] .cinema-annotation")
   end
 
   def test_annotation_work_is_opt_in_bounded_and_disabled_for_reduced_motion

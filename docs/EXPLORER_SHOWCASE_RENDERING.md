@@ -47,6 +47,16 @@ Dependency brightness uses fixed category and surface scales, not package-popula
 
 Future brightness changes should preserve exact point counts and geometry, avoid compensating with a Showcase-only size increase, and be inspected in both surfaces. Explorer should be checked at overview and focused/expanded states; Showcase should be checked during autonomous motion.
 
+## Clip export
+
+`rubylens clip` records the Showcase by driving the runtime's clip hook from an external headless Chrome over the DevTools protocol, streaming each captured frame into ffmpeg.
+
+- `beginShowcaseClip()` cancels the live animation loop, marks `data-rubylens-clip` on the root element, and reports the preset (duration, stage size, details mode). `startShowcase` and `renderShowcase` no-op while clip mode is active so nothing races the capture driver.
+- `renderShowcaseClipFrame(frameIndex, fps)` renders a frame as a pure function of `(frameIndex, fps)`: the same `showcaseFrameProgress` quantization and `applyShowcaseCamera` as the live loop, with `elapsed = frameIndex * 1000 / fps` as the synthetic clock. Its promise resolves after two animation frames so the draw has been composited before the driver screenshots, and `data-clip-frame` reports the rendered index.
+- One camera loop is `durationMs` long and ends exactly where it starts, so an exported clip loops seamlessly at any capture fps.
+- Annotation choreography (slot selection, projection, safe-area fit) is shared with the live path via `trackShowcaseAnnotation`. Presentation differs deliberately: live Showcase fades annotations with staggered CSS transitions on wall-clock time; clip mode disables those transitions and drives a single inline opacity envelope from the synthetic clock, because wall-clock fades would make captured frames nondeterministic. The envelope reuses the preset's reveal window, fade durations, and approximates the reveal easing.
+- Capture is full-page (canvas plus masthead, stats, and annotation DOM) at a pinned 1920×1080 viewport, so the stage scale is exactly 1.
+
 ## Performance and privacy invariants
 
 - Project and package morphology rows are decoded at load time; buffer construction remains O(1) work per point (O(point count) in total), with no morphology or brightness work added to the per-frame CPU path.

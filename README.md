@@ -1,6 +1,6 @@
 # RubyLens
 
-RubyLens turns a Ruby codebase into an interactive galaxy in one self-contained HTML file. It runs locally, keeps source text out of the generated HTML, and gives you two ways to see a project: explore it yourself or let it play as an autonomous presentation.
+RubyLens turns a Ruby codebase into an interactive galaxy in one self-contained HTML file. It runs locally, keeps source text out of the generated files, and follows a simple workflow: explore your codebase as a galaxy, then share it as a video clip or a self-playing presentation.
 
 [![Five synthetic RubyLens renders showing elliptical, lenticular, spiral, barred spiral, and irregular galaxy shapes.](docs/images/galaxy-morphology-families.jpg)](docs/images/galaxy-morphology-families.jpg)
 
@@ -38,25 +38,38 @@ Run RubyLens from each separate project's own bundle.
 
 For complete gem clouds, generate from a project with a readable `Gemfile.lock` after `bundle install`. Without a lockfile, RubyLens still shows Core and Tests but omits Gems and reports a warning. It never fetches missing dependencies during generation.
 
-## Choose a view
+## The workflow
+
+Most projects use RubyLens in two steps:
+
+1. **See your codebase differently** — `bundle exec rubylens report` writes the private, interactive Explorer. Search it, orbit it, and get a feel for the galaxy.
+2. **Share it** — `bundle exec rubylens clip` writes a 60-second MP4 of the galaxy completing one slow rotation. Drag it into Slack, attach it to a post, or drop it into slides; video plays everywhere an HTML file can't.
+
+Clip needs Chrome (or Chromium) and ffmpeg installed; it renders locally and tells you exactly what to install if either is missing. It also writes the showcase HTML next to the video, because the clip is simply that showcase recorded.
+
+Reach for `bundle exec rubylens showcase` directly when you want the live page itself rather than a recording: embedding on a website, a conference-booth loop that never ends, or a presentation screen at any resolution.
 
 | Output | Command | Best for | What it reveals |
 | --- | --- | --- | --- |
 | **Explorer** | `bundle exec rubylens report` | Privately exploring a codebase | Class, module, and gem names, relationships, and aggregate Ruby statistics |
-| **Minimal Showcase** | `bundle exec rubylens showcase` | Sharing a visual with fewer details | Project name plus the galaxy's shape and scale |
+| **Clip** | `bundle exec rubylens clip` | Sharing a video on Slack or social media | Same as the Showcase it records |
+| **Minimal Showcase** | `bundle exec rubylens showcase` | Embedding or looping the live page | Project name plus the galaxy's shape and scale |
 | **Details Showcase** | `bundle exec rubylens showcase --details` | A presentation with project-specific labels | Aggregate statistics and a capped selection of class, module, and dependency names |
 
-Explorer writes `rubylens-report.html`. Both Showcase commands write `rubylens-showcase.html`.
+`--details` works on `clip` too, and means the same thing there: the recorded showcase gains statistics and cinematic labels.
+
+Explorer writes `rubylens-report.html`. Showcase writes `rubylens-showcase.html`. Clip writes `rubylens-clip.mp4` plus the `rubylens-showcase.html` it recorded.
 
 ## Privacy and sharing
 
-RubyLens indexes and renders locally. Generated files contain their scripts, styles, fonts, and data, make no network requests, and open without Node or an HTTP server.
+RubyLens indexes and renders locally. Generated HTML files contain their scripts, styles, fonts, and data, make no network requests, and open without Node or an HTTP server. Clip rendering also stays local: it drives your own Chrome and ffmpeg over loopback and never uploads anything.
 
-But the HTML still describes your project:
+But the outputs still describe your project:
 
 - Explorer embeds fully qualified class, module, and gem names. It omits source text, comments, paths, and names for individual dependency stars.
 - Minimal Showcase omits code and gem names, but still reveals the project name plus the galaxy's shape and scale.
 - Details Showcase adds aggregate statistics and selected code/dependency names.
+- Clip shows on screen exactly what the recorded Showcase shows, in a format anyone can replay.
 
 Galaxy shape is also information: a package's rendered shape can make the rough makeup of that gem easier to see, even though it reveals no source text.
 
@@ -99,6 +112,22 @@ bundle exec rubylens showcase --details
 
 Showcase also requires WebGL2. A browser with `prefers-reduced-motion` enabled receives one stable frame with no cinematic labels.
 
+## Using Clip
+
+Clip records the Showcase into `rubylens-clip.mp4`: one full camera rotation at 1920×1080 and 30 frames per second, encoded as H.264 for compatibility with Slack, X, LinkedIn, and slide decks. The video ends exactly where it began, so it loops seamlessly on replay.
+
+```sh
+bundle exec rubylens clip
+bundle exec rubylens clip --details
+```
+
+Clip needs two locally installed tools and checks for them before doing any work:
+
+- **Chrome or Chromium** for headless WebGL2 rendering. Discovery checks `PATH` and common install locations; set `RUBYLENS_CHROME` to point at a specific binary.
+- **ffmpeg** for H.264 encoding (`brew install ffmpeg` or `apt install ffmpeg`); set `RUBYLENS_FFMPEG` to override discovery.
+
+Frames render deterministically off-screen — nothing flashes across your display — and progress is reported as the 1,800 frames encode. Expect a few minutes on machines without GPU acceleration. The showcase HTML is always written next to the video, so a failed render still leaves you a shareable page.
+
 ## What the stars mean
 
 - **Core** is magenta. Its stars represent classes and modules from the project's main Ruby code.
@@ -127,16 +156,17 @@ Read the [accepted morphology design](docs/specs/2026-07-14-galaxy-morphology-de
 
 ```text
 rubylens report [OPTIONS] [TARGET]
+rubylens clip [OPTIONS] [TARGET]
 rubylens showcase [OPTIONS] [TARGET]
 ```
 
-Both commands accept:
+All commands accept:
 
 - `-o FILE` / `--output FILE` to choose an output path
 - `--lockfile FILE` to use a specific `Gemfile.lock`
 - `-h` / `--help` to show command help
 
-`rubylens showcase` also accepts `--details`.
+`rubylens clip` and `rubylens showcase` also accept `--details`. A custom `rubylens clip --output movie.mp4` writes the recorded showcase to `movie.html` next to it.
 
 ## Ruby API
 
@@ -150,6 +180,10 @@ puts report.warnings
 
 showcase = RubyLens.generate_showcase(path: ".", details: true)
 puts showcase.output_path
+
+clip = RubyLens.generate_clip(path: ".", progress: ->(done, total) { puts "#{done}/#{total}" })
+puts clip.output_path    # the MP4
+puts clip.showcase_path  # the showcase HTML it recorded
 ```
 
 Passing `output:` selects a custom path. The caller is responsible for keeping custom outputs private.
