@@ -15,7 +15,7 @@ gem "rubylens", require: false
 bundle exec rubylens report
 ```
 
-Open `rubylens-report.html` in a WebGL2 browser. No server needed.
+Open `rubylens-report.html` in your browser. No server needed.
 
 Three commands, three levels of disclosure:
 
@@ -31,9 +31,6 @@ Three commands, three levels of disclosure:
 <!-- TODO: user-attachments MP4 here: scripted Explorer capture (drift, search, flight, gem expansion) -->
 
 <!-- TODO: user-attachments MP4 here: excerpt of a --details clip -->
-
-> [!NOTE]
-> RubyLens 0.1 is an early release. It supports Ruby 3.2 through 4.0 and pins [Rubydex 0.2.9](https://rubygems.org/gems/rubydex/versions/0.2.9) because Rubydex's API is still pre-1.0.
 
 ## Setup notes
 
