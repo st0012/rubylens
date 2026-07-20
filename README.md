@@ -1,32 +1,45 @@
 # RubyLens
 
-RubyLens turns a Ruby codebase into an interactive galaxy in one self-contained HTML file. It runs locally, keeps source text out of the generated files, and follows a simple workflow: explore your codebase as a galaxy, then share it as a video clip or a self-playing presentation.
+Your Ruby codebase, as a galaxy.
 
-[![Five synthetic RubyLens renders showing elliptical, lenticular, spiral, barred spiral, and irregular galaxy shapes.](docs/images/galaxy-morphology-families.jpg)](docs/images/galaxy-morphology-families.jpg)
+[![Five galaxy families rendered by RubyLens: elliptical, lenticular, spiral, barred spiral, irregular.](docs/images/galaxy-morphology-families.jpg)](docs/images/galaxy-morphology-families.jpg)
 
-*Five galaxy families rendered from the same synthetic codebase data.*
+RubyLens reads a Ruby project and writes one self-contained HTML file: classes and modules as magenta stars, tests as a cyan halo, gems as orbiting gold clouds. The galaxy's shape is derived from the code: spiral, elliptical, barred, lenticular, or irregular.
+
+```ruby
+# Gemfile
+gem "rubylens", require: false
+```
+
+```sh
+bundle exec rubylens report
+```
+
+Open `rubylens-report.html` in a WebGL2 browser. No server needed.
+
+Three commands, three levels of disclosure:
+
+| For | Command | Reveals |
+| --- | --- | --- |
+| Yourself | `rubylens report` | The interactive Explorer: real class, module, and gem names, search, flight |
+| Your team, your talk | `rubylens clip --details` | A 60-second seamless MP4 loop with stats and drifting labels |
+| Anyone | `rubylens clip` | Project name and galaxy shape, nothing else |
+
+> [!IMPORTANT]
+> Nothing is uploaded and no source code is embedded. Outputs still name your project and can name classes and gems. See [Privacy and sharing](#privacy-and-sharing).
+
+<!-- TODO: user-attachments MP4 here: scripted Explorer capture (drift, search, flight, gem expansion) -->
+
+<!-- TODO: user-attachments MP4 here: excerpt of a --details clip -->
 
 > [!NOTE]
 > RubyLens 0.1 is an early release. It supports Ruby 3.2 through 4.0 and pins [Rubydex 0.2.9](https://rubygems.org/gems/rubydex/versions/0.2.9) because Rubydex's API is still pre-1.0.
 
-## Quick start
+## Setup notes
 
-RubyLens works from inside an existing Ruby project's bundle. The project must be inside a Git repository.
+RubyLens runs from inside an existing Ruby project's bundle, and the project must be inside a Git repository. Run it from each project's own bundle.
 
-Add RubyLens to the project's `Gemfile`:
-
-```ruby
-gem "rubylens", require: false
-```
-
-Install the bundle, then generate an Explorer:
-
-```sh
-bundle install
-bundle exec rubylens report
-```
-
-Open `rubylens-report.html` in a browser with WebGL2. No server is required.
+`clip` writes `rubylens-clip.mp4` plus the `rubylens-showcase.html` it records, and needs Chrome (or Chromium) and ffmpeg installed; it renders locally and names whatever is missing. Swap in `rubylens showcase [--details]` for the self-playing HTML page alone.
 
 RubyLens uses the current directory when you omit `TARGET`. To visualize a subdirectory while using the current project's bundle and root lockfile, run:
 
@@ -34,31 +47,7 @@ RubyLens uses the current directory when you omit `TARGET`. To visualize a subdi
 bundle exec rubylens report components/payments --lockfile Gemfile.lock
 ```
 
-Run RubyLens from each separate project's own bundle.
-
 For complete gem clouds, generate from a project with a readable `Gemfile.lock` after `bundle install`. Without a lockfile, RubyLens still shows Core and Tests but omits Gems and reports a warning. It never fetches missing dependencies during generation.
-
-## The workflow
-
-Most projects use RubyLens in two steps:
-
-1. **See your codebase differently** — `bundle exec rubylens report` writes the private, interactive Explorer. Search it, orbit it, and get a feel for the galaxy.
-2. **Share it** — `bundle exec rubylens clip` writes a 60-second MP4 of the galaxy completing one slow rotation. Drag it into Slack, attach it to a post, or drop it into slides; video plays everywhere an HTML file can't.
-
-Clip needs Chrome (or Chromium) and ffmpeg installed; it renders locally and tells you exactly what to install if either is missing. It also writes the showcase HTML next to the video, because the clip is simply that showcase recorded.
-
-Reach for `bundle exec rubylens showcase` directly when you want the live page itself rather than a recording: embedding on a website, a conference-booth loop that never ends, or a presentation screen at any resolution.
-
-| Output | Command | Best for | What it reveals |
-| --- | --- | --- | --- |
-| **Explorer** | `bundle exec rubylens report` | Privately exploring a codebase | Class, module, and gem names, relationships, and aggregate Ruby statistics |
-| **Clip** | `bundle exec rubylens clip` | Sharing a video on Slack or social media | Same as the Showcase it records |
-| **Minimal Showcase** | `bundle exec rubylens showcase` | Embedding or looping the live page | Project name plus the galaxy's shape and scale |
-| **Details Showcase** | `bundle exec rubylens showcase --details` | A presentation with project-specific labels | Aggregate statistics and a capped selection of class, module, and dependency names |
-
-`--details` works on `clip` too, and means the same thing there: the recorded showcase gains statistics and cinematic labels.
-
-Explorer writes `rubylens-report.html`. Showcase writes `rubylens-showcase.html`. Clip writes `rubylens-clip.mp4` plus the `rubylens-showcase.html` it recorded.
 
 ## Privacy and sharing
 
@@ -126,7 +115,7 @@ Clip needs two locally installed tools and checks for them before doing any work
 - **Chrome or Chromium** for headless WebGL2 rendering. Discovery checks `PATH` and common install locations; set `RUBYLENS_CHROME` to point at a specific binary.
 - **ffmpeg** for H.264 encoding (`brew install ffmpeg` or `apt install ffmpeg`); set `RUBYLENS_FFMPEG` to override discovery.
 
-Frames render deterministically off-screen — nothing flashes across your display — and progress is reported as the 1,800 frames encode. Expect a few minutes on machines without GPU acceleration. The showcase HTML is always written next to the video, so a failed render still leaves you a shareable page.
+Frames render deterministically off-screen, so nothing flashes across your display, and progress is reported as the 1,800 frames encode. Expect a few minutes on machines without GPU acceleration. The showcase HTML is always written next to the video, so a failed render still leaves you a shareable page.
 
 ## What the stars mean
 
