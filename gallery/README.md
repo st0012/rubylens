@@ -46,11 +46,11 @@ installed. The script clones and installs nothing; it reports what is missing.
   `<section>` block in `index.html`; add `EXPECTED_WARNINGS` patterns only if
   the project has unavoidable skips.
 - **Refresh the social preview:** run `node gallery/social_preview.mjs` after
-  a build (`npm ci` once for Playwright; macOS `sips` does the final
-  downscale). It recaptures each galaxy from `dist/`, composes
-  `social-card.html`, and rewrites the committed `social-preview.png`, which
-  the build copies into `dist/`. Recapture when the rendering changes
-  meaningfully.
+  a build (`npm ci` once for Playwright; set `RUBYLENS_CHROME` to use a
+  specific browser binary). It freezes each galaxy from `dist/` at the same
+  deterministic clip frame, composes `social-card.html`, and rewrites the
+  committed `social-preview.png`, which the build copies into `dist/`.
+  Recapture when the rendering changes meaningfully.
 
 RubyLens rendering improvements need no gallery changes: artifacts are
 regenerated from the current code on every build.
