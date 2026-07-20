@@ -28,11 +28,11 @@ Three commands, three levels of disclosure:
 > [!IMPORTANT]
 > Nothing is uploaded and no source code is embedded. Outputs still name your project and can name classes and gems. See [Privacy and sharing](#privacy-and-sharing).
 
-https://github.com/user-attachments/assets/bb266de5-bbd7-4ccd-814b-15961b45bd39
+https://github.com/user-attachments/assets/43570623-6d98-46c9-9303-7faa4035b2a7
 
 *The Explorer on Rails: search, fly to a class, expand a gem cloud.*
 
-https://github.com/user-attachments/assets/43570623-6d98-46c9-9303-7faa4035b2a7
+https://github.com/user-attachments/assets/bb266de5-bbd7-4ccd-814b-15961b45bd39
 
 *A `--details` clip: what your team sees.*
 
