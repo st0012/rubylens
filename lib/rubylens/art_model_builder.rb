@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "dependency_warning"
+require_relative "errors"
 require_relative "morphology_classifier"
 
 module RubyLens
@@ -27,6 +28,10 @@ module RubyLens
       packages = package_order.map do |old_index|
         package = snapshot.fetch("packages").fetch(old_index)
         declaration_count = package.fetch("declaration_count")
+        unless package.fetch("declarations").length == declaration_count
+          raise Error, "package declaration rows must equal declaration_count; dependency snapshots are complete-only"
+        end
+
         package_seed = random.rand(0..0xffff_ffff)
         package_morphology = MorphologyClassifier.new(package:, phase_seed: package_seed).call
         package_morphologies << [package_morphology.fetch("family"), *package_morphology.fetch("knobs")]

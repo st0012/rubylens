@@ -10,7 +10,7 @@ Project morphology classification reads only the snapshot's existing namespace r
 
 Dependency aggregation retains every eligible declaration row by package while computing exact package totals, Ruby construct counts, and signal maxima. This complete-only policy makes memory and snapshot size O(eligible dependency declarations) for every caller; there is no lower-volume sampled mode, and the runtime carries no sampled-data presentation state. Art-model construction sorts package rows before deterministic seeded layout, so persisted output does not depend on index stream order.
 
-`totals.dependencyStars` is the exact eligible declaration total, which under the complete-only policy equals the number of declaration rows embedded in the artifact. Explorer and Showcase runtime state expose the full embedded count as plotted under WebGL2 and zero when rendering is unavailable.
+`totals.dependencyStars` is the exact eligible declaration total, which under the complete-only policy equals the number of declaration rows embedded in the artifact; `ArtModelBuilder` rejects a snapshot whose per-package counts and rows disagree rather than persist a silently bounded payload. Explorer and Showcase runtime state expose the full embedded count as plotted under WebGL2 and zero when rendering is unavailable.
 
 Run the synthetic benchmark with the project Ruby activated:
 

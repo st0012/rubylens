@@ -118,7 +118,8 @@ class ArtModelBuilderTest < Minitest::Test
       "dependency_signal_maxima" => [1, 0, 0, 0, 0, 0],
       "packages" => [{
         "name" => "independent-gem", "role" => 1, "location" => 1,
-        "declaration_count" => 100, "ruby_counts" => [0, 0, 20, 20], "declarations" => [],
+        "declaration_count" => 100, "ruby_counts" => [0, 0, 20, 20],
+        "declarations" => Array.new(100) { [2, 0, 1, 0, 0, 0, 0] },
       }],
       "warning_counts" => { "manifest" => 0, "index" => 0, "integrity" => 0 },
     }
@@ -183,19 +184,19 @@ class ArtModelBuilderTest < Minitest::Test
     assert_equal(original, snapshot)
   end
 
-  def test_uses_exact_dependency_totals_and_domains_with_bounded_snapshot_rows
+  def test_uses_dependency_domain_maxima_and_rejects_bounded_snapshot_rows
     snapshot = {
       "schema" => "rubylens.snapshot.v7",
-      "project_name" => "Million Demo",
+      "project_name" => "Domain Demo",
       "namespace_names" => [],
       "namespaces" => [],
       "category_stats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
       "dependency_signal_maxima" => [99, 98, 97, 96, 95, 94],
       "packages" => [{
-        "name" => "large-gem",
+        "name" => "domain-gem",
         "role" => 1,
         "location" => 1,
-        "declaration_count" => 1_000_000,
+        "declaration_count" => 2,
         "ruby_counts" => [1, 2, 3, 4],
         "declarations" => [[0, 1, 1, 0, 0, 0, 0], [1, 2, 1, 0, 0, 0, 0]],
       }],
@@ -204,12 +205,22 @@ class ArtModelBuilderTest < Minitest::Test
 
     model = RubyLens::ArtModelBuilder.new(seed: 12).build(snapshot)
 
-    assert_equal(1_000_000, model.dig("totals", "dependencyStars"))
-    assert_equal([1, 1, 1_000_000, 1, 2, 3, 4, -1], model.fetch("packages").first.drop(1))
+    assert_equal(2, model.dig("totals", "dependencyStars"))
+    assert_equal([1, 1, 2, 1, 2, 3, 4, -1], model.fetch("packages").first.drop(1))
     assert_equal(
       { "ancestorDepth" => 99, "definitionSites" => 98, "reopenings" => 97, "descendants" => 96,
         "references" => 95, "members" => 94 },
       model.fetch("domains")
+    )
+
+    bounded = Marshal.load(Marshal.dump(snapshot))
+    bounded.fetch("packages").first["declaration_count"] = 1_000_000
+
+    error = assert_raises(RubyLens::Error) { RubyLens::ArtModelBuilder.new(seed: 12).build(bounded) }
+
+    assert_equal(
+      "package declaration rows must equal declaration_count; dependency snapshots are complete-only",
+      error.message,
     )
   end
 
