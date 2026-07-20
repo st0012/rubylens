@@ -17,13 +17,13 @@ bundle exec rubylens report
 
 Open `rubylens-report.html` in your browser. No server needed.
 
-Three commands, three levels of disclosure:
+Three levels of disclosure:
 
 | For | Command | Reveals |
 | --- | --- | --- |
-| Yourself | `rubylens report` | The interactive Explorer: real class, module, and gem names, search, flight |
-| Your team, your talk | `rubylens clip --details` | A 60-second seamless MP4 loop with stats and drifting labels |
-| Anyone | `rubylens clip` | Project name and galaxy shape, nothing else |
+| Yourself | `rubylens report` | Real class, module, and gem names, fully interactive |
+| Your team or a talk | `rubylens clip --details` | A 60-second looping MP4 with stats and cinematic labels |
+| Anyone | `rubylens clip` | Project name and the galaxy's shape and scale |
 
 > [!IMPORTANT]
 > Nothing is uploaded and no source code is embedded. Outputs still name your project and can name classes and gems. See [Privacy and sharing](#privacy-and-sharing).
@@ -38,9 +38,9 @@ https://github.com/user-attachments/assets/bb266de5-bbd7-4ccd-814b-15961b45bd39
 
 ## Setup notes
 
-RubyLens runs from inside an existing Ruby project's bundle, and the project must be inside a Git repository. Run it from each project's own bundle.
+RubyLens runs from inside an existing Ruby project's bundle, and the project must be inside a Git repository.
 
-`clip` writes `rubylens-clip.mp4` plus the `rubylens-showcase.html` it records, and needs Chrome (or Chromium) and ffmpeg installed; it renders locally and names whatever is missing. Swap in `rubylens showcase [--details]` for the self-playing HTML page alone.
+`clip` needs Chrome (or Chromium) and ffmpeg; see [Using Clip](#using-clip). Swap in `rubylens showcase [--details]` for the self-playing HTML page alone.
 
 RubyLens uses the current directory when you omit `TARGET`. To visualize a subdirectory while using the current project's bundle and root lockfile, run:
 
@@ -82,11 +82,11 @@ Explorer lets you search and move through Core code, Tests, and Gems while the g
 - Press Space or use the toolbar to pause/resume drift.
 - Use Reset to restore the default camera without changing your drift choice.
 
-Explorer requires WebGL2 to render the complete galaxy. If WebGL2 is unavailable or its context is lost, RubyLens stops the artwork and shows an explicit warning instead of silently presenting a sampled or incomplete galaxy.
+Explorer requires WebGL2 to render the complete galaxy. If WebGL2 is missing or the browser loses the context, RubyLens shows a warning rather than quietly drawing a partial galaxy.
 
 ## Using Showcase
 
-Showcase is autonomous and noninteractive. It opens directly, rotates once per minute, and contains no Explorer controls, search, hover, or navigation.
+Showcase is self-playing and noninteractive. It opens directly, rotates once per minute, and contains no Explorer controls, search, hover, or navigation.
 
 Use the default Minimal mode when the visual shape is enough:
 
@@ -104,7 +104,7 @@ Showcase also requires WebGL2. A browser with `prefers-reduced-motion` enabled r
 
 ## Using Clip
 
-Clip records the Showcase into `rubylens-clip.mp4`: one full camera rotation at 1920×1080 and 30 frames per second, encoded as H.264 for compatibility with Slack, X, LinkedIn, and slide decks. The video ends exactly where it began, so it loops seamlessly on replay.
+Clip records the Showcase into `rubylens-clip.mp4`: one full camera rotation at 1920×1080 and 30 frames per second, encoded as H.264 for compatibility with Slack, X, LinkedIn, and slide decks. The camera ends where it started, so the loop has no visible cut.
 
 ```sh
 bundle exec rubylens clip
