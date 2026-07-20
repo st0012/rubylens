@@ -4,6 +4,7 @@ require "open3"
 require "uri"
 require_relative "../errors"
 require_relative "chrome_page"
+require_relative "deadline_io"
 
 module RubyLens
   module Clip
@@ -45,9 +46,9 @@ module RubyLens
       end
 
       def wait_until_ready(page)
-        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + READY_TIMEOUT_SECONDS
+        deadline = DeadlineIO.deadline(READY_TIMEOUT_SECONDS)
         until page.evaluate("document.documentElement?.dataset.showcaseReady === 'true'")
-          raise Error, "the showcase page never finished loading" if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+          raise Error, "the showcase page never finished loading" if DeadlineIO.monotonic > deadline
 
           sleep 0.1
         end

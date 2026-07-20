@@ -5,6 +5,7 @@ require "digest/sha1"
 require "securerandom"
 require "socket"
 require_relative "../errors"
+require_relative "deadline_io"
 
 module RubyLens
   module Clip
@@ -41,7 +42,7 @@ module RubyLens
       end
 
       def read_text(timeout: 30)
-        deadline = monotonic + timeout
+        deadline = DeadlineIO.deadline(timeout)
         message = +"".b
         loop do
           finished, opcode, payload = read_frame(deadline)
@@ -62,10 +63,8 @@ module RubyLens
 
       private
 
-      def monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-
       def handshake(host, port, path, timeout)
-        deadline = monotonic + timeout
+        deadline = DeadlineIO.deadline(timeout)
         key = SecureRandom.base64(16)
         @socket.write("GET #{path} HTTP/1.1\r\nHost: #{host}:#{port}\r\n" \
                       "Upgrade: websocket\r\nConnection: Upgrade\r\n" \
@@ -110,14 +109,9 @@ module RubyLens
       end
 
       def read_chunk(deadline)
-        remaining = deadline - monotonic
-        raise Error, "timed out waiting for Chrome" if remaining <= 0
-        IO.select([@socket], nil, nil, remaining) or raise Error, "timed out waiting for Chrome"
-        chunk = @socket.read_nonblock(1 << 20, exception: false)
-        raise Error, "Chrome closed the DevTools connection" if chunk.nil?
-        chunk.is_a?(String) ? chunk : "".b
-      rescue SystemCallError, IOError => error
-        raise Error, "lost the Chrome DevTools connection: #{error.message}"
+        DeadlineIO.read_chunk(@socket, deadline,
+                              closed_message: "Chrome closed the DevTools connection",
+                              timeout_message: "timed out waiting for Chrome")
       end
     end
   end

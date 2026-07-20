@@ -7,6 +7,7 @@ require "socket"
 require "tmpdir"
 require "uri"
 require_relative "../errors"
+require_relative "deadline_io"
 require_relative "web_socket_channel"
 
 module RubyLens
@@ -119,8 +120,8 @@ module RubyLens
 
       def wait_for_devtools_port
         port_path = File.join(@profile, "DevToolsActivePort")
-        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + LAUNCH_TIMEOUT_SECONDS
-        while Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+        deadline = DeadlineIO.deadline(LAUNCH_TIMEOUT_SECONDS)
+        while DeadlineIO.monotonic < deadline
           if File.exist?(port_path)
             port = File.read(port_path).lines.first.to_i
             return port if port.positive?
@@ -135,8 +136,8 @@ module RubyLens
       end
 
       def page_target_path(port)
-        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + LAUNCH_TIMEOUT_SECONDS
-        while Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+        deadline = DeadlineIO.deadline(LAUNCH_TIMEOUT_SECONDS)
+        while DeadlineIO.monotonic < deadline
           target = JSON.parse(http_get(port, "/json/list")).find { |info| info["type"] == "page" }
           if (socket_url = target&.fetch("webSocketDebuggerUrl", nil))
             return URI(socket_url).path
@@ -149,7 +150,7 @@ module RubyLens
       # Deliberately hand-rolled: Net::HTTP can route through proxy environment
       # variables, and this endpoint is always a local loopback.
       def http_get(port, path, timeout: 10)
-        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
+        deadline = DeadlineIO.deadline(timeout)
         socket = TCPSocket.new("127.0.0.1", port)
         socket.write("GET #{path} HTTP/1.1\r\nHost: 127.0.0.1:#{port}\r\nConnection: close\r\n\r\n")
         response = +"".b
@@ -166,12 +167,9 @@ module RubyLens
       end
 
       def read_http_chunk(socket, deadline)
-        remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
-        raise Error, "timed out talking to Chrome's DevTools endpoint" if remaining <= 0
-        IO.select([socket], nil, nil, remaining) or raise Error, "timed out talking to Chrome's DevTools endpoint"
-        chunk = socket.read_nonblock(1 << 16, exception: false)
-        raise Error, "Chrome closed its DevTools endpoint early" if chunk.nil?
-        chunk.is_a?(String) ? chunk : "".b
+        DeadlineIO.read_chunk(socket, deadline,
+                              closed_message: "Chrome closed its DevTools endpoint early",
+                              timeout_message: "timed out talking to Chrome's DevTools endpoint")
       end
     end
   end
