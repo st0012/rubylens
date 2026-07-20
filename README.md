@@ -28,9 +28,13 @@ Three commands, three levels of disclosure:
 > [!IMPORTANT]
 > Nothing is uploaded and no source code is embedded. Outputs still name your project and can name classes and gems. See [Privacy and sharing](#privacy-and-sharing).
 
-<!-- TODO: user-attachments MP4 here: scripted Explorer capture (drift, search, flight, gem expansion) -->
+https://github.com/user-attachments/assets/bb266de5-bbd7-4ccd-814b-15961b45bd39
 
-<!-- TODO: user-attachments MP4 here: excerpt of a --details clip -->
+*The Explorer on Rails: search, fly to a class, expand a gem cloud.*
+
+https://github.com/user-attachments/assets/43570623-6d98-46c9-9303-7faa4035b2a7
+
+*A `--details` clip: what your team sees.*
 
 ## Setup notes
 
