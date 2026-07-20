@@ -63,6 +63,11 @@ module RubyLens
       rescue Errno::ENOENT => error
         abort_start
         raise Error, "could not launch Chrome at #{executable}: #{error.message}"
+      rescue SystemCallError => error
+        # A startup race (Chrome exiting or closing its port mid-attach) must
+        # surface as a normal rubylens error, not a raw Errno stack trace.
+        abort_start
+        raise Error, "could not attach to Chrome's DevTools endpoint: #{error.message}"
       rescue StandardError
         abort_start
         raise

@@ -27,6 +27,27 @@ class ClipChromePageTest < Minitest::Test
     assert_equal(before, clip_profiles)
   end
 
+  def test_attach_races_surface_as_rubylens_errors_and_clean_up
+    script = <<~SH
+      #!/bin/sh
+      for arg in "$@"; do case "$arg" in --user-data-dir=*) dir="${arg#--user-data-dir=}";; esac; done
+      echo "39999" > "$dir/DevToolsActivePort"
+      sleep 30
+    SH
+    with_fake_chrome(script) do |fake|
+      RubyLens::Clip::ChromePage.any_instance.stubs(:page_target_path).returns("/devtools/page/test")
+      RubyLens::Clip::WebSocketChannel.expects(:new).raises(Errno::ECONNREFUSED)
+      before = clip_profiles
+
+      error = assert_raises(RubyLens::Error) do
+        RubyLens::Clip::ChromePage.new(executable: fake, url: "about:blank", width: 320, height: 200)
+      end
+
+      assert_includes(error.message, "could not attach to Chrome's DevTools endpoint")
+      assert_equal(before, clip_profiles)
+    end
+  end
+
   private
 
   def with_fake_chrome(script)
