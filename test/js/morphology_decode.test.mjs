@@ -13,7 +13,7 @@ describe("decodeMorphology", () => {
     expect(barred.armCount).toBe(4);
     expect(barred.winding).toBeCloseTo(0.22, 5);
     expect(barred.armFraction).toBeCloseTo(0.8, 5);
-    expect(barred.barLength).toBeCloseTo(0.7, 5);
+    expect(barred.barLength).toBeCloseTo(0.8, 5);
 
     const irregular = runtime.decodeMorphology([4, 0, 0, 0, 0, 0, 0, 9, 100, 5]);
     expect(irregular.clumpCount).toBe(5);
@@ -38,7 +38,7 @@ describe("decodeMorphology", () => {
 });
 
 describe("position recipes", () => {
-  it("stay finite and inside their radii for every package morphology recipe", () => {
+  it("stay finite, with tapered Spiral arms and bounded non-Spiral recipes", () => {
     const radius = 6;
     const shapes = [
       [0, 250, 0, 0, 0, 0, 0, 0, 0, 21],
@@ -49,11 +49,14 @@ describe("position recipes", () => {
     ];
     for (const shape of shapes) {
       const cloud = { ...runtime.decodeMorphology(shape), compact: false };
+      const distances = [];
       for (let seed = 1; seed <= 512; seed += 1) {
         const offset = runtime.dependencyCloudOffset(seed, cloud, radius);
         expect(offset.every(Number.isFinite)).toBe(true);
-        expect(Math.hypot(...offset)).toBeLessThanOrEqual(radius + 1e-9);
+        distances.push(Math.hypot(...offset));
       }
+      if (cloud.family === 2) expect(Math.max(...distances)).toBeGreaterThan(radius);
+      else expect(Math.max(...distances)).toBeLessThanOrEqual(radius + 1e-9);
     }
   });
 

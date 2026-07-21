@@ -34,7 +34,7 @@ describe("Ruby classifier rows decode losslessly", () => {
         expect(decoded.winding).toBeCloseTo(row[4] / 1000, 9);
         expect(decoded.armFraction).toBeCloseTo(row[5] / 1000, 9);
       }
-      if (entry.family === 3) { inRange(row[6], 100, 700); expect(decoded.barLength).toBeCloseTo(row[6] / 1000, 9); }
+      if (entry.family === 3) { inRange(row[6], 100, 800); expect(decoded.barLength).toBeCloseTo(row[6] / 1000, 9); }
       if (entry.family === 4) {
         inRange(row[7], 2, 5);
         inRange(row[8], 250, 1000);

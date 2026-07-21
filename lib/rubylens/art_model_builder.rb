@@ -53,7 +53,7 @@ module RubyLens
         end
       end
       {
-        "schema" => "rubylens.art.v11",
+        "schema" => "rubylens.art.v12",
         "projectName" => snapshot.fetch("project_name"),
         "morphology" => [morphology.fetch("family"), *morphology.fetch("knobs")],
         "totals" => {

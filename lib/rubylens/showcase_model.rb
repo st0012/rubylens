@@ -27,7 +27,7 @@ module RubyLens
       raise Error, "package morphology rows must align with packages" unless package_morphologies.length == packages.length
 
       showcase = {
-        "schema" => "rubylens.showcase.v5",
+        "schema" => "rubylens.showcase.v6",
         "projectName" => @model.fetch("projectName"),
         "details" => @details,
         "domains" => project_hash(@model.fetch("domains"), SIGNAL_FIELDS),

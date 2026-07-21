@@ -53,12 +53,18 @@ class MorphologyContractFixtureTest < Minitest::Test
   end
 
   def package_cases
+    large_smooth_package = {
+      "ruby_counts" => [1, 0, 19_999, 0],
+      "declarations" => Array.new(10_000) { [0, 0, 0, 0, 0, 0, 0] },
+    }
     [
       ["package-elliptical", { "ruby_counts" => [0, 0, 30, 0], "declarations" => Array.new(30) { [0, 0, 0, 0, 0, 0, 0] } }, 1234],
       ["package-lenticular", { "ruby_counts" => [0, 1, 30, 0], "declarations" => Array.new(30) { [0, 0, 0, 0, 0, 0, 0] } }, 1234],
       ["package-spiral", { "ruby_counts" => [0, 0, 20, 20], "declarations" => Array.new(100) { [0, 0, 0, 0, 0, 0, 0] } }, 4321],
       ["package-irregular-small", { "ruby_counts" => [1, 0, 8, 1], "declarations" => Array.new(12) { [0, 0, 0, 0, 0, 0, 0] } }, 77],
       ["package-fallback", { "ruby_counts" => [0, 0, 0, 0], "declarations" => Array.new(100) { [0, 0, 0, 0, 0, 0, 0] } }, 999],
+      ["package-large-enriched-spiral", large_smooth_package, 1234],
+      ["package-large-enriched-barred", large_smooth_package, 1235],
     ]
   end
 

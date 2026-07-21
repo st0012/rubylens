@@ -6,7 +6,7 @@ class ShowcaseModelTest < Minitest::Test
   def test_minimal_projection_omits_statistics_and_private_names
     private_value = "/private/path/Secret::Namespace hidden-gem source comment"
     model = {
-      "schema" => "rubylens.art.v11",
+      "schema" => "rubylens.art.v12",
       "projectName" => "Synthetic App",
       "morphology" => [3, 0, 240, 3, 105, 500, 400, 0, 0, 1234, private_value],
       "totals" => { "namespaces" => 1, "packages" => 1, "dependencyStars" => 1, "future" => private_value },
@@ -32,7 +32,7 @@ class ShowcaseModelTest < Minitest::Test
       showcase.keys.sort,
     )
     assert_equal(false, showcase.fetch("details"))
-    assert_equal("rubylens.showcase.v5", showcase.fetch("schema"))
+    assert_equal("rubylens.showcase.v6", showcase.fetch("schema"))
     assert_equal([3, 0, 240, 3, 105, 500, 400, 0, 0, 1234], showcase.fetch("morphology"))
     assert_equal(14, showcase.fetch("namespaces").first.length)
     assert_equal(9, showcase.fetch("packages").first.length)

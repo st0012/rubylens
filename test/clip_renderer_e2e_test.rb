@@ -47,7 +47,7 @@ class ClipRendererE2ETest < Minitest::Test
       [seed.call, index % packages, index % 6, 1 + (index % 2), index % 3, index % 25, index % 60, index % 15]
     end
     {
-      "schema" => "rubylens.showcase.v5",
+      "schema" => "rubylens.showcase.v6",
       "projectName" => "Clip E2E Fixture",
       "details" => false,
       "domains" => { "ancestorDepth" => 9, "definitionSites" => 3, "reopenings" => 2,

@@ -53,7 +53,7 @@ export function fixtureModel({ namespaces = 1500, packages = 12, stars = 2500 } 
   }
   const domains = { ancestorDepth: 9, definitionSites: 3, reopenings: 2, descendants: 30, references: 80, members: 20 };
   return {
-    schema: "rubylens.art.v11",
+    schema: "rubylens.art.v12",
     projectName: "Fixture Cosmos",
     morphology: [2, 0, 240, 3, 105, 380, 0, 0, 0, 42],
     totals: { namespaces, packages, dependencyStars: stars },
@@ -89,7 +89,7 @@ export function fixtureShowcaseModel() {
     annotations.push({ category: "dependencies", name, kind: "Dependency gem", anchor: index });
   });
   return {
-    schema: "rubylens.showcase.v5",
+    schema: "rubylens.showcase.v6",
     projectName: model.projectName,
     details: true,
     domains: model.domains,

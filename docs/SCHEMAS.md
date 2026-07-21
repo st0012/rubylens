@@ -47,7 +47,7 @@ Dependency declaration row (7 integers):
 
 - `kind`: 0 class, 1 module, 2 other. Columns 1–6 are the six signal fields (`DependencyAggregation::SIGNAL_COLUMNS`).
 
-## `rubylens.art.v11` — Explorer model (persisted)
+## `rubylens.art.v12` — Explorer model (persisted)
 
 Built by `ArtModelBuilder#build`; embedded base64-encoded in `rubylens-report.html`. Rows are deterministically shuffled and prefixed with a render seed.
 
@@ -73,10 +73,10 @@ Morphology row (10 integers), decoded once at load by the runtime's `decodeMorph
  clumpCount, clumpSpread, phaseSeed]
 ```
 
-- `family`: 0 elliptical, 1 lenticular, 2 spiral, 3 barred spiral, 4 irregular. Fraction knobs are scaled to thousandths; only the knobs relevant to the family are read. The accepted knob ranges are specified in the [galaxy morphology design](specs/2026-07-14-galaxy-morphology-design.md).
+- `family`: 0 elliptical, 1 lenticular, 2 spiral, 3 barred spiral, 4 irregular. Fraction knobs are scaled to thousandths; only the knobs relevant to the family are read. Barred-spiral `barLength` accepts 0.1–0.8, including the longer bars emitted for visually enriched large packages. The other accepted knob ranges are specified in the [galaxy morphology design](specs/2026-07-14-galaxy-morphology-design.md).
 - A malformed row falls back to the default spiral `[2, 0, 240, 3, 105, 380, 0, 0, 0, phaseSeed]`, rendered through the standard spiral recipe.
 
-## `rubylens.showcase.v5` — Showcase projection (persisted)
+## `rubylens.showcase.v6` — Showcase projection (persisted)
 
 Built by `ShowcaseModel#call` from the art model; embedded in `rubylens-showcase.html`. It is the privacy-filtered projection: numeric rows are re-validated and truncated to their exact lengths, and no name fields are carried except in Details annotations.
 

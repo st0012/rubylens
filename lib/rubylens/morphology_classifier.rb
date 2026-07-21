@@ -16,6 +16,10 @@ module RubyLens
     BAR_CONCENTRATION = 0.50
     SPIRAL_STAGE_WIDTH = 0.10
     SPIRAL_KNOB_RANGE = 0.35
+    LARGE_PACKAGE_ENRICHMENT_THRESHOLD = 10_000
+    LARGE_PACKAGE_ENRICHMENT_FAMILIES = [SPIRAL, BARRED_SPIRAL].freeze
+    UINT32_MASK = 0xffff_ffff
+    UINT32_RANGE = 0x1_0000_0000
 
     DEFAULT_KNOBS = [0, 240, 3, 105, 380, 0, 0, 0, 0].freeze
 
@@ -32,7 +36,10 @@ module RubyLens
       inputs = package_classification? ? package_classification_inputs : project_classification_inputs
       return fallback(phase_seed: fallback_phase_seed) unless inputs
 
-      classify(**inputs)
+      classified = classify(**inputs)
+      return classified unless package_classification?
+
+      enrich_large_smooth_package(classified, size: inputs.fetch(:size), phase_seed: inputs.fetch(:phase_seed))
     rescue KeyError, TypeError, ArgumentError
       fallback(phase_seed: fallback_phase_seed)
     end
@@ -173,8 +180,31 @@ module RubyLens
 
       family = concentration >= BAR_CONCENTRATION ? BARRED_SPIRAL : SPIRAL
       stage = [[((structure - LENTICULAR_MAX) / SPIRAL_STAGE_WIDTH).floor, 0].max, 2].min
-      designation = family == BARRED_SPIRAL ? "SB#{%w[a b c][stage]}" : "S#{%w[a b c][stage]}"
       progress = [[(structure - LENTICULAR_MAX) / SPIRAL_KNOB_RANGE, 0.0].max, 1.0].min
+
+      spiral_morphology(family:, stage:, progress:, phase_seed:)
+    end
+
+    def enrich_large_smooth_package(classified, size:, phase_seed:)
+      return classified if size < LARGE_PACKAGE_ENRICHMENT_THRESHOLD
+      return classified unless [ELLIPTICAL, LENTICULAR].include?(classified.fetch("family"))
+
+      family_count = LARGE_PACKAGE_ENRICHMENT_FAMILIES.length
+      family = LARGE_PACKAGE_ENRICHMENT_FAMILIES.fetch(phase_seed % family_count)
+      progress = seeded_unit(phase_seed / family_count, 91)
+      stage = [(progress * 3).floor, 2].min
+
+      spiral_morphology(
+        family:,
+        stage:,
+        progress:,
+        phase_seed:,
+        bar_length: 0.62 + 0.18 * progress,
+      )
+    end
+
+    def spiral_morphology(family:, stage:, progress:, phase_seed:, bar_length: nil)
+      designation = family == BARRED_SPIRAL ? "SB#{%w[a b c][stage]}" : "S#{%w[a b c][stage]}"
       arm_limit = family == BARRED_SPIRAL ? 2 : 4
       morphology(
         family,
@@ -183,9 +213,17 @@ module RubyLens
         arm_count: 2 + (progress * arm_limit).round,
         winding: scaled(0.18 - 0.115 * progress),
         arm_fraction: scaled(0.45 + 0.11 * progress),
-        bar_length: family == BARRED_SPIRAL ? scaled(0.28 + 0.22 * progress) : 0,
+        bar_length: family == BARRED_SPIRAL ? scaled(bar_length || (0.28 + 0.22 * progress)) : 0,
         phase_seed:,
       )
+    end
+
+    def seeded_unit(seed, channel)
+      value = (seed ^ (channel * 0x9e37_79b9)) & UINT32_MASK
+      value = ((value ^ (value >> 16)) * 0x21f0_aaad) & UINT32_MASK
+      value = ((value ^ (value >> 15)) * 0x735a_2d97) & UINT32_MASK
+      value = (value ^ (value >> 15)) & UINT32_MASK
+      value.fdiv(UINT32_RANGE)
     end
 
     def morphology(family, designation, ellipticity: 0, bulge_share: 0, arm_count: 0, winding: 0,

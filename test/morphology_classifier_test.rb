@@ -103,7 +103,33 @@ class MorphologyClassifierTest < Minitest::Test
     end
   end
 
-  def test_package_seed_changes_only_orientation_and_metadata_does_not_change_the_decision
+  def test_large_smooth_packages_use_deterministic_spiral_families_at_the_threshold
+    below_threshold = classify_package(size: 9_999, counts: [1, 0, 9_998, 0], phase_seed: 1234)
+    spiral = classify_package(size: 10_000, counts: [1, 0, 9_999, 0], phase_seed: 1234)
+    barred = classify_package(size: 10_000, counts: [1, 0, 9_999, 0], phase_seed: 1235)
+
+    assert_equal(0, below_threshold.fetch("family"))
+    assert_equal("Sc", spiral.fetch("designation"))
+    assert_equal([0, 198, 5, 95, 531, 0, 0, 0, 1234], spiral.fetch("knobs"))
+    assert_equal(2, spiral.fetch("family"))
+    assert_equal("SBc", barred.fetch("designation"))
+    assert_equal([0, 198, 3, 95, 531, 753, 0, 0, 1235], barred.fetch("knobs"))
+    assert_equal(3, barred.fetch("family"))
+  end
+
+  def test_large_packages_keep_aggregate_derived_spiral_morphologies
+    spiral = classify_package(size: 10_000, counts: [0, 0, 5_000, 5_000], phase_seed: 1235)
+    barred = classify_package(size: 10_000, counts: [0, 0, 0, 10_000], phase_seed: 1235)
+
+    assert_equal(2, spiral.fetch("family"))
+    assert_equal("Sc", spiral.fetch("designation"))
+    assert_equal([0, 234, 4, 114, 513, 0, 0, 0, 1235], spiral.fetch("knobs"))
+    assert_equal(3, barred.fetch("family"))
+    assert_equal("SBc", barred.fetch("designation"))
+    assert_equal([0, 140, 4, 65, 560, 500, 0, 0, 1235], barred.fetch("knobs"))
+  end
+
+  def test_package_seed_changes_only_orientation_below_the_large_threshold_and_metadata_does_not_change_the_decision
     package = {
       "name" => "first-name",
       "role" => 0,
@@ -132,7 +158,7 @@ class MorphologyClassifierTest < Minitest::Test
   end
 
   def test_package_without_recognized_constructs_uses_an_independent_seeded_fallback
-    result = classify_package(size: 100, counts: [0, 0, 0, 0], phase_seed: 1234)
+    result = classify_package(size: 10_000, counts: [0, 0, 0, 0], phase_seed: 1234)
 
     assert_equal(2, result.fetch("family"))
     assert_equal("Sb", result.fetch("designation"))
@@ -189,6 +215,7 @@ class MorphologyClassifierTest < Minitest::Test
     assert_includes(readme, "central Core/Test galaxy and each dependency package independently")
     assert_includes(readme, "never inherits the project's, host's, or dependency system's decision")
     assert_includes(readme, "a package's rendered shape can make the rough makeup of that gem easier to see")
+    assert_includes(readme, "Very large dependency packages")
     assert_includes(readme, "docs/specs/2026-07-14-galaxy-morphology-design.md")
   end
 
