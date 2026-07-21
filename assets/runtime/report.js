@@ -382,7 +382,11 @@
       if (!bulge && morphology.family === MORPHOLOGY_FAMILY.barredSpiral && unit(seed, 33) < .32) {
         return barredCorePosition(seed, sheet(seed, 5) * 1.6, scale);
       }
-      if (coreDiscUsesArm(seed, bulge)) {
+      // Unbarred arms fade out inside the core: inner members would all sit
+      // at their arm's origin angle and draw a cross of straight spokes.
+      const inArm = coreDiscUsesArm(seed, bulge) &&
+        (morphology.family === MORPHOLOGY_FAMILY.barredSpiral || radial > 8);
+      if (inArm) {
         const [theta, armRadial] = spiralArmPlacement(seed, radial, 43);
         return [Math.cos(theta) * armRadial * scale, sheet(seed, 5) * (1.4 + armRadial * .025) * scale, Math.sin(theta) * armRadial * scale];
       }
@@ -536,7 +540,7 @@
         const theta = origin + sweep + normal(seed, 23) * width;
         return boundedDependencyOffset(Math.cos(theta) * armRadial, vertical, Math.sin(theta) * armRadial, radius);
       }
-      const theta = inArm && !barred
+      const theta = inArm && !barred && !bulge
         ? cloud.phase + arm * Math.PI * 2 / armCount +
           Math.log(Math.max(radial, radius * .2) / (radius * .2)) / Math.max(.12, .43 - 1.5 * cloud.winding) + normal(seed, 23) * .17
         : cloud.phase + unit(seed, 23) * Math.PI * 2;
