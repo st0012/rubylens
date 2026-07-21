@@ -53,7 +53,9 @@ class MorphologyRuntimeTest < Minitest::Test
 
     assert_equal(6, spiral.dig("morphology", "armCount"))
     assert_equal(4, barred.dig("morphology", "armCount"))
-    assert_in_delta(0.5, spiral.fetch("coreArmShare"), 0.025)
+    # Unbarred arm membership excludes the inner core (radial <= 8), so the
+    # rendered share sits near armFraction times the outer-disc probability.
+    assert_in_delta(0.225, spiral.fetch("coreArmShare"), 0.025)
     assert_in_delta(0.5, barred.fetch("coreArmShare"), 0.025)
     assert_equal(1, RUNTIME.scan("const morphology = decodeMorphology(model.morphology);").length)
     assert_equal(1, RUNTIME.scan("const irregularClumpCenters =").length)
@@ -96,7 +98,8 @@ class MorphologyRuntimeTest < Minitest::Test
       const radius = point => Math.hypot(point[0], point[2]);
       const equalPoint = (left, right) => left.every((value, index) => Object.is(value, right[index]));
       const discSeeds = seeds.filter(seed => unit(seed, 2) >= morphology.bulgeShare);
-      const armSeeds = discSeeds.filter(seed => coreDiscUsesArm(seed, false));
+      const discRadial = seed => Math.min(42, -10 * Math.log(Math.max(1e-5, 1 - unit(seed, 3))));
+      const armSeeds = discSeeds.filter(seed => coreDiscUsesArm(seed, false, discRadial(seed)));
       process.stdout.write(JSON.stringify({
         morphology,
         layout: layoutScale,

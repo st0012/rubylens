@@ -365,9 +365,12 @@
       ];
     }
 
-    function coreDiscUsesArm(seed, bulge) {
+    function coreDiscUsesArm(seed, bulge, radial) {
+      // Unbarred arms fade out inside the core: inner members would all sit
+      // at their arm's origin angle and draw a cross of straight spokes.
       return !bulge &&
         spiralMorphology &&
+        (morphology.family === MORPHOLOGY_FAMILY.barredSpiral || radial > 8) &&
         unit(seed, 30) < morphology.armFraction;
     }
 
@@ -382,11 +385,7 @@
       if (!bulge && morphology.family === MORPHOLOGY_FAMILY.barredSpiral && unit(seed, 33) < .32) {
         return barredCorePosition(seed, sheet(seed, 5) * 1.6, scale);
       }
-      // Unbarred arms fade out inside the core: inner members would all sit
-      // at their arm's origin angle and draw a cross of straight spokes.
-      const inArm = coreDiscUsesArm(seed, bulge) &&
-        (morphology.family === MORPHOLOGY_FAMILY.barredSpiral || radial > 8);
-      if (inArm) {
+      if (coreDiscUsesArm(seed, bulge, radial)) {
         const [theta, armRadial] = spiralArmPlacement(seed, radial, 43);
         return [Math.cos(theta) * armRadial * scale, sheet(seed, 5) * (1.4 + armRadial * .025) * scale, Math.sin(theta) * armRadial * scale];
       }
