@@ -134,6 +134,8 @@ RubyLens is not a type checker, whole-program call graph, source browser, route 
 
 RubyLens uses the [Hubble sequence](https://science.nasa.gov/asset/hubble/the-hubble-tuning-fork-classification-of-galaxies/) as a visual vocabulary. It uses broad code counts to choose a repeatable shape for the central Core/Test galaxy and each dependency package independently. A package never inherits the project's, host's, or dependency system's decision.
 
+Very large dependency packages that would otherwise render as smooth elliptical or lenticular clouds use a deterministic Spiral or Barred Spiral enrichment. This keeps their visual mass structured while smaller packages retain their aggregate-derived family.
+
 The morphology describes the rendered shape. It is not a claim about the project's architecture, purpose, quality, or correctness.
 
 [![Paired synthetic RubyLens renders comparing E2 with E6, Sa with Sc, and SBa with SBc.](docs/images/galaxy-morphology-variations.jpg)](docs/images/galaxy-morphology-variations.jpg)

@@ -24,9 +24,11 @@ Decisions made during brainstorming:
   the shape "means" anything about code quality or architecture.
 - **Discrete families with within-family variation.** Five unmistakably
   different silhouettes; knobs vary the details inside each family.
-- **Stable under normal churn.** Classification reads coarse, slow-moving
-  ratios. A week of commits keeps the same family; crossing a band edge moves a
-  project to the adjacent family on the tuning fork, never a random one.
+- **Stable under normal churn.** Standard classification reads coarse,
+  slow-moving ratios. A week of commits keeps the same family; crossing a band
+  edge moves a project to the adjacent family on the tuning fork. Very large
+  smooth dependency packages use a separate deterministic visual enrichment,
+  described below.
 - **Applies to Explorer reports and both Showcase modes**, which share the same
   layout runtime.
 - **Shared classifier, independent decisions.** The project morphology governs
@@ -42,8 +44,8 @@ Decisions made during brainstorming:
   in the art model but has no visual consumer yet.
 - Any change to dependency package/system anchors, grouping, colors,
   interactions, camera controls, drift, bloom, or the WebGL2 rendering path.
-  Package-local declaration offsets may vary inside their existing bounded
-  cloud radius.
+  Package-local declaration offsets may vary around their existing anchors;
+  Spiral arms alone may taper beyond the nominal cloud radius.
 - New Rubydex indexing. All inputs already exist in the snapshot.
 
 ## Taxonomy
@@ -113,11 +115,17 @@ derived inputs:
 - `irregularity = (moduleStructure + nonMethodShare) / 2`, which controls
   the spread of small Irr clumps
 
-The package's existing seed controls orientation only. Packages with no
-recognized constructs use the current seeded default morphology. At runtime,
-packages with fewer than `DEPENDENCY_CLOUD_THREASHOLD` (`18`) declarations use
-a compact bounded cloud regardless of the classified family, because their
-population is too small to render a legible silhouette.
+For standard classification, the package's existing seed controls orientation
+only. Packages with no recognized constructs use the current seeded default
+morphology. Smooth packages with at least 10,000 declarations are the artistic
+exception: an E or S0 result is deterministically enriched to S or SB, with the
+seed selecting the family and within-family knobs. This prevents the largest
+dependency populations from reading as featureless blobs while leaving every
+smaller or already-structured package on the aggregate-derived decision path.
+
+At runtime, packages with fewer than `DEPENDENCY_CLOUD_THRESHOLD` (`18`)
+declarations use a compact bounded cloud regardless of the classified family,
+because their population is too small to render a legible silhouette.
 
 Initial constants (weights, band edges, knob tables) are implementation
 guidance, not normative: calibrate against a corpus of real projects (for
@@ -133,7 +141,7 @@ default with a valid package seed when available instead of failing generation.
 
 ## Schema and data flow
 
-### Art model (`rubylens.art.v10`)
+### Art model (`rubylens.art.v12`)
 
 A new `MorphologyClassifier` (new file `lib/rubylens/morphology_classifier.rb`,
 invoked from `ArtModelBuilder#build`) emits:
@@ -161,7 +169,7 @@ one numeric row aligned with each `packages` row:
 Every row has exactly ten integers. The package name is not part of the row or
 the classification input.
 
-### Showcase model (`rubylens.showcase.v4`)
+### Showcase model (`rubylens.showcase.v6`)
 
 `ShowcaseModel#call` projects the project morphology and aligned package rows
 through the existing `numeric_row` validation:
@@ -208,9 +216,11 @@ to the complete-row WebGL2 path.
 - **`dependencyAnchor`** — unchanged recipe (satellite systems read well around
   every family); only its inner radius follows the family's outer extent.
 - **`dependencyCloudOffset`** — dispatches on the package's independently
-  classified family inside its existing package anchor and radius. Every offset
-  is bounded to that radius. Packages below the 18-declaration compact threshold
-  use a readable spheroidal fallback instead of trying to draw arms or clumps.
+  classified family inside its existing package anchor and nominal radius.
+  Spiral arms use a deterministic tapered tail that can extend beyond that
+  radius; compact, elliptical, lenticular, barred-spiral, and irregular recipes
+  remain bounded. Packages below the 18-declaration compact threshold use a
+  readable spheroidal fallback instead of trying to draw arms or clumps.
 - **`layoutMetricsForCoreCount`** — gains a family-aware scene radius;
   `testOuterRadius`, `dependencyInnerRadius`, and camera fitting derive from
   the actual silhouette extent (an E7 spheroid is more compact than an Sc
@@ -265,6 +275,9 @@ and must be treated as sensitive when sharing an artifact.
 - **Zero dependencies:** no halo, as today.
 - **Tiny projects:** caught by the Irr floor. Dependency packages below 18
   declarations use the compact runtime form.
+- **Huge smooth packages:** E/S0 results at 10,000 declarations or more receive
+  the seeded S/SB visual enrichment; naturally structured S/SB decisions and
+  seeded fallbacks are preserved.
 - **Band-edge projects:** may alternate between adjacent families across
   regenerations if the codebase hovers on an edge; acceptable because the
   neighboring silhouettes are the most similar pair.
@@ -276,9 +289,10 @@ and must be treated as sensitive when sharing an artifact.
 
 - Unit tests for `MorphologyClassifier`: project snapshots and package
   aggregates → expected family, designation, and knobs; band-edge values;
-  stability under small perturbations; independent orientation seeds; fallback
-  on malformed input.
-- Schema tests: art v10 project block and package-row alignment; showcase v4
+  stability under small perturbations; ordinary orientation seeds; the large
+  smooth-package enrichment threshold and deterministic seed split; fallback on
+  malformed input.
+- Schema tests: art v12 project block and package-row alignment; showcase v6
   integer row length, alignment, and validation.
 - End-to-end: report and showcase generation include the morphology block and
   parse.

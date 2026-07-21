@@ -18,7 +18,7 @@ The strongest direction is one concentrated bulge, an extended irregular disc, a
 
 4. **Make dependency packages satellite systems.** Give every package a compact local population, then distribute those systems through a thicker, much sparser 3D halo with large empty intervals. This matches the useful visual hierarchy of disc, bulge, diffuse halo, globular clusters, and companion systems shown in [NASA’s Milky Way cluster overview](https://science.nasa.gov/asset/hubble/globular-clusters-around-milky-way/) and [ESA Gaia’s cluster and dwarf-galaxy orbit map](https://www.esa.int/ESA_Multimedia/Images/2018/04/Gaia_s_globular_clusters_and_dwarf_galaxies_with_orbits).
 
-5. **Share a grammar without inheriting decisions.** One project morphology governs the Core/Test body. Each dependency package is classified independently from its own existing numeric aggregates and seed; it never inherits a project, host, or system family. Component phase drift, broken arm segments, package-system inclination, and rare off-plane outliers can vary deterministically inside those bounded recipes.
+5. **Share a grammar without inheriting decisions.** One project morphology governs the Core/Test body. Each dependency package is classified independently from its own existing numeric aggregates and seed; it never inherits a project, host, or system family. Component phase drift, broken arm segments, package-system inclination, and rare off-plane outliers can vary deterministically inside those recipes. Smooth packages with at least 10,000 declarations receive a deterministic Spiral or Barred Spiral enrichment so their unusually large populations do not collapse into featureless light.
 
 ## Light and material rules
 
@@ -40,7 +40,7 @@ The strongest direction is one concentrated bulge, an extended irregular disc, a
 | --- | --- | --- |
 | Core | Bulge, nucleus, inner disc | Most concentrated population. Members, descendants, references, ancestry, definition sites, and reopenings control light/scale through user weights; they do not create hard depth bands. |
 | Tests | Extended disc and flocculent arms | Flatter and radially broader. A minority occupies broken arms while most remains in the interarm disc. |
-| Dependency packages | Globular clusters and satellite systems | One anonymous hub per package in a sparse 3D halo. Role sets a broad mean distance, not an exact shell. Each package uses an independently classified, bounded local morphology; tiny populations remain compact. |
+| Dependency packages | Globular clusters and satellite systems | One anonymous hub per package in a sparse 3D halo. Role sets a broad mean distance, not an exact shell. Each package uses an independently classified local morphology; tiny populations remain compact, while Spiral arms can taper beyond the nominal cloud radius. |
 | Dependency declarations | Stars inside each satellite | Mostly tiny, faint, package-local marks. Fixed category and surface alpha preserve the hierarchy, while local geometry can still make coarse aggregate composition more legible. |
 | Cross-origin evidence | Halo outliers or short streams | Use only when a real indexed signal supports it; never add decorative tidal tails without data. |
 

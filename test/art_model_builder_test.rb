@@ -45,7 +45,7 @@ class ArtModelBuilderTest < Minitest::Test
     second = builder.build(snapshot)
 
     assert_equal(first, second)
-    assert_equal("rubylens.art.v11", first.fetch("schema"))
+    assert_equal("rubylens.art.v12", first.fetch("schema"))
     assert_equal("Demo", first.fetch("projectName"))
     assert_equal(10, first.fetch("morphology").length)
     assert_equal(4, first.fetch("morphology").first)
@@ -133,23 +133,24 @@ class ArtModelBuilderTest < Minitest::Test
   end
 
   def test_renders_every_dependency_declaration_from_a_complete_snapshot
-    declarations = 18_020.times.map { [2, 0, 1, 0, 0, 0, 0] }
+    declarations = 10_020.times.map { [2, 0, 1, 0, 0, 0, 0] }
     snapshot = {
       "project_name" => "Large Demo",
       "namespace_names" => [],
       "namespaces" => [],
       "category_stats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
       "dependency_signal_maxima" => [1, 0, 0, 0, 0, 0],
-      "packages" => [{ "name" => "large-gem", "role" => 1, "location" => 1, "ruby_counts" => [1, 1, 18_020, 100], "declarations" => declarations }],
+      "packages" => [{ "name" => "large-gem", "role" => 1, "location" => 1, "ruby_counts" => [1, 1, 10_020, 100], "declarations" => declarations }],
       "warning_counts" => { "manifest" => 0, "index" => 0, "integrity" => 0 },
     }
 
     model = RubyLens::ArtModelBuilder.new(seed: 12).build(snapshot)
 
-    assert_equal(18_020, model.dig("totals", "dependencyStars"))
+    assert_equal(10_020, model.dig("totals", "dependencyStars"))
     assert_equal(9, model.fetch("packages").first.length)
     assert_equal(10, model.fetch("packageMorphologies").first.length)
-    assert_equal([1, 1, 18_020, 1, 1, 18_020, 100, -1], model.fetch("packages").first.drop(1))
+    assert_includes([2, 3], model.fetch("packageMorphologies").first[0])
+    assert_equal([1, 1, 10_020, 1, 1, 10_020, 100, -1], model.fetch("packages").first.drop(1))
   end
 
   def test_dependency_rows_are_deterministic_across_snapshot_traversal_order

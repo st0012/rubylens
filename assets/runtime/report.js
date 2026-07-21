@@ -173,7 +173,7 @@
           : family === MORPHOLOGY_FAMILY.barredSpiral ? clamp(row[3], 2, 4) : 0,
         winding: [MORPHOLOGY_FAMILY.spiral, MORPHOLOGY_FAMILY.barredSpiral].includes(family) ? clamp(row[4], 40, 220) / 1000 : 0,
         armFraction: [MORPHOLOGY_FAMILY.spiral, MORPHOLOGY_FAMILY.barredSpiral].includes(family) ? clamp(row[5], 0, 800) / 1000 : 0,
-        barLength: family === MORPHOLOGY_FAMILY.barredSpiral ? clamp(row[6], 100, 700) / 1000 : 0,
+        barLength: family === MORPHOLOGY_FAMILY.barredSpiral ? clamp(row[6], 100, 800) / 1000 : 0,
         clumpCount: family === MORPHOLOGY_FAMILY.irregular ? clamp(row[7], 2, 5) : 0,
         clumpSpread: family === MORPHOLOGY_FAMILY.irregular ? clamp(row[8], 250, 1000) / 1000 : 0,
         phaseSeed,
@@ -420,9 +420,14 @@
       }
 
       const bulge = unit(seed, 18) < cloud.bulgeShare;
+      const radialUnit = unit(seed, 19);
+      const inArm = unit(seed, 22) < cloud.armFraction;
+      const spiralArmTail = cloud.family === MORPHOLOGY_FAMILY.spiral && !bulge && inArm
+        ? .12 * Math.max(0, -Math.log((1 - radialUnit) / .15))
+        : 0;
       const radial = bulge
-        ? radius * .36 * Math.pow(unit(seed, 19), 1.55)
-        : radius * (.2 + .72 * Math.sqrt(unit(seed, 19)));
+        ? radius * .36 * Math.pow(radialUnit, 1.55)
+        : radius * (.2 + .72 * Math.sqrt(radialUnit) + spiralArmTail);
       const vertical = clamp(normal(seed, 20), -2.2, 2.2) * radius * (bulge ? .13 : .055);
       if (cloud.family === MORPHOLOGY_FAMILY.barredSpiral && !bulge && radial < radius * cloud.barLength && unit(seed, 21) < .74) {
         const along = (unit(seed, 22) * 2 - 1) * radius * cloud.barLength;
@@ -438,18 +443,19 @@
       const armCount = Math.max(2, cloud.armCount);
       const arm = Math.floor(unit(seed, 21) * armCount);
       const armOrigin = cloud.family === MORPHOLOGY_FAMILY.barredSpiral ? arm % 2 * Math.PI : arm * Math.PI * 2 / armCount;
-      const inArm = unit(seed, 22) < cloud.armFraction;
       const radialShare = radial / radius;
       const theta = inArm
         ? cloud.phase + armOrigin + radialShare * cloud.winding * 42 + normal(seed, 23) * .17
         : cloud.phase + unit(seed, 23) * Math.PI * 2;
-      return boundedDependencyOffset(Math.cos(theta) * radial, vertical, Math.sin(theta) * radial, radius);
+      const x = Math.cos(theta) * radial;
+      const z = Math.sin(theta) * radial;
+      return spiralArmTail > 0 ? [x, vertical, z] : boundedDependencyOffset(x, vertical, z, radius);
     }
     const dependencyAnchor = (seed, declarationCount) => {
       const radius = layoutScale.dependencyInnerRadius + 72 * Math.sqrt(layoutScale.tests) * Math.pow(unit(seed, 14), .72);
       const theta = unit(seed, 15) * Math.PI * 2;
       const vertical = normal(seed, 16) * 24 * Math.sqrt(layoutScale.tests);
-      return [Math.cos(theta) * radius, vertical, Math.sin(theta) * radius, 1.6 + Math.min(9, Math.sqrt(declarationCount) * .055)];
+      return [Math.cos(theta) * radius, vertical, Math.sin(theta) * radius, 1.6 + Math.sqrt(declarationCount) * .055];
     };
     const systemAnchors = dependencySystems.map((row, index) => {
       const anchor = dependencyAnchor(row[0], systemAggregates[index]?.declarationCount || 0);
@@ -459,7 +465,7 @@
     });
     const packageAnchors = model.packages.map((row, index) => {
       const systemIndex = Number(row[8]);
-      const cloudRadius = 1.6 + Math.min(9, Math.sqrt(row[3]) * .055);
+      const cloudRadius = 1.6 + Math.sqrt(row[3]) * .055;
       if (!Number.isInteger(systemIndex) || systemIndex < 0 || !systemAnchors[systemIndex]) {
         return [...dependencyAnchor(row[0], row[3]), index, -1];
       }

@@ -58,7 +58,7 @@ const CONTEXT_2D_STUB = {
 
 export function minimalModel(overrides = {}) {
   return {
-    schema: "rubylens.art.v11",
+    schema: "rubylens.art.v12",
     projectName: "Fixture",
     morphology: [2, 0, 240, 3, 105, 380, 0, 0, 0, 7],
     totals: { namespaces: 0, packages: 0, dependencyStars: 0 },

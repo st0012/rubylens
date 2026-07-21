@@ -11,6 +11,7 @@ const PACKAGES = [
   [303, 1, 1, 100, 0, 0, 60, 40, -1],
   [404, 1, 1, 100, 10, 5, 80, 5, -1],
   [505, 1, 1, 100, 0, 0, 0, 0, -1],
+  [606, 1, 1, 10_000, 1, 0, 9_999, 0, -1],
 ];
 const MORPHOLOGY_ROWS = [
   [0, 350, 0, 0, 0, 0, 0, 0, 0, 101],
@@ -21,6 +22,7 @@ const MORPHOLOGY_ROWS = [
   [3, 0, 240, 2, 100, 520, 450, 0, 0, 303],
   [4, 0, 0, 0, 0, 0, 0, 4, 600, 404],
   [99],
+  [0, 350, 0, 0, 0, 0, 0, 0, 0, 606],
 ];
 
 function hostModel(hostFamily) {
@@ -52,10 +54,11 @@ describe("package cloud morphology", () => {
   });
 
   it("decodes families, compactness, and phase seeds from the rows", () => {
-    expect(runtime.packageMorphologies.map(cloud => cloud.family)).toEqual([0, 0, 1, 2, 2, 3, 4, 2]);
+    expect(runtime.packageMorphologies.map(cloud => cloud.family)).toEqual([0, 0, 1, 2, 2, 3, 4, 2, 0]);
     expect(runtime.packageMorphologies.map(cloud => cloud.compact).slice(0, 2)).toEqual([true, false]);
     expect(runtime.packageMorphologies[7].compact).toBe(false);
     expect(runtime.packageMorphologies[3]).toEqual(runtime.packageMorphologies[4]);
+    expect(runtime.packageMorphologies[8].family).toBe(0);
     expect(runtime.DEPENDENCY_CLOUD_THRESHOLD).toBe(18);
   });
 
@@ -66,15 +69,19 @@ describe("package cloud morphology", () => {
     expect(fallback.phase).toBe(runtime.fallbackMorphology(505).phase);
   });
 
-  it("keeps every cloud finite, bounded, and deterministic, with distinct family recipes", () => {
+  it("keeps every cloud finite and deterministic, with tapered Spiral arms and bounded other families", () => {
     const distinct = new Set();
+    let spiralTailSeen = false;
     runtime.packageMorphologies.forEach((cloud, index) => {
       const offsets = offsetsFor(runtime, cloud);
+      const maxDistance = Math.max(...offsets.map(point => Math.hypot(...point)));
       expect(offsets.every(point => point.every(Number.isFinite))).toBe(true);
-      expect(Math.max(...offsets.map(point => Math.hypot(...point)))).toBeLessThanOrEqual(6 + 1e-9);
+      if (cloud.family === 2 && !cloud.compact) spiralTailSeen ||= maxDistance > 6;
+      else expect(maxDistance).toBeLessThanOrEqual(6 + 1e-9);
       expect(offsetsFor(runtime, cloud)).toEqual(offsets);
       if ([1, 2, 3, 5, 6].includes(index)) distinct.add(JSON.stringify(offsets));
     });
+    expect(spiralTailSeen).toBe(true);
     expect(distinct.size).toBe(5);
   });
 });

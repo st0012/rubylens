@@ -168,5 +168,39 @@
       0,
       999
     ]
+  },
+  {
+    "label": "package-large-enriched-spiral",
+    "family": 2,
+    "designation": "Sc",
+    "row": [
+      2,
+      0,
+      198,
+      5,
+      95,
+      531,
+      0,
+      0,
+      0,
+      1234
+    ]
+  },
+  {
+    "label": "package-large-enriched-barred",
+    "family": 3,
+    "designation": "SBc",
+    "row": [
+      3,
+      0,
+      198,
+      3,
+      95,
+      531,
+      753,
+      0,
+      0,
+      1235
+    ]
   }
 ]
