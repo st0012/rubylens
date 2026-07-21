@@ -38,125 +38,56 @@ https://github.com/user-attachments/assets/bb266de5-bbd7-4ccd-814b-15961b45bd39
 
 ## Setup notes
 
-RubyLens runs from inside an existing Ruby project's bundle, and the project must be inside a Git repository.
-
-`clip` needs Chrome (or Chromium) and ffmpeg; see [Using Clip](#using-clip). Swap in `rubylens showcase [--details]` for the self-playing HTML page alone.
-
-RubyLens uses the current directory when you omit `TARGET`. To visualize a subdirectory while using the current project's bundle and root lockfile, run:
-
-```sh
-bundle exec rubylens report components/payments --lockfile Gemfile.lock
-```
-
-For complete gem clouds, generate from a project with a readable `Gemfile.lock` after `bundle install`. Without a lockfile, RubyLens still shows Core and Tests but omits Gems and reports a warning. It never fetches missing dependencies during generation.
+RubyLens runs from a project's own bundle, inside a Git repository. Complete gem clouds need a readable `Gemfile.lock` and installed gems; without them you still get Core and Tests, plus a warning. `TARGET` defaults to the current directory; pass a subdirectory and `--lockfile Gemfile.lock` to zoom into part of a monorepo.
 
 ## Privacy and sharing
 
-RubyLens indexes and renders locally. Generated HTML files contain their scripts, styles, fonts, and data, make no network requests, and open without Node or an HTTP server. Clip rendering also stays local: it drives your own Chrome and ffmpeg over loopback and never uploads anything.
+Everything runs locally: indexing, rendering, and clip encoding (your own Chrome and ffmpeg, over loopback). Outputs are self-contained files that make no network requests.
 
-But the outputs still describe your project:
+What each output reveals:
 
-- Explorer embeds fully qualified class, module, and gem names. It omits source text, comments, paths, and names for individual dependency stars.
-- Minimal Showcase omits code and gem names, but still reveals the project name plus the galaxy's shape and scale.
-- Details Showcase adds aggregate statistics and selected code/dependency names.
-- Clip shows on screen exactly what the recorded Showcase shows, in a format anyone can replay.
+- **Explorer**: fully qualified class, module, and gem names. Never source text, comments, or file paths.
+- **Showcase and clip**: the project name and the galaxy's shape and scale; `--details` adds aggregate statistics and selected names.
 
-Galaxy shape is also information: a package's rendered shape can make the rough makeup of that gem easier to see, even though it reveals no source text.
-
-Default outputs are written atomically with owner-only `0600` permissions. RubyLens also adds the exact default output and its temporary-file pattern to the repository's local `.git/info/exclude`, so it does not change the shared `.gitignore`.
-
-RubyLens updates its own existing default output, but refuses to overwrite a tracked file or an unrelated file at that path.
-
-Custom output paths are written exactly where requested, may replace an existing file there, and are not added to Git's local excludes. Choose the path carefully and review the HTML before sharing it.
+Shape is information too: a gem cloud's form hints at its rough makeup. Default outputs are written `0600` and added to the repository's local `.git/info/exclude`; RubyLens replaces its own previous output but refuses tracked or unrelated files. Custom `--output` paths are written exactly where you point them, with none of these protections.
 
 ## Using Explorer
 
-Explorer lets you search and move through Core code, Tests, and Gems while the galaxy continues to drift.
-
-- Drag to orbit.
-- Scroll at the cursor to zoom.
-- Shift-drag, use Pan mode, or use the arrow keys to move across the galaxy.
-- Search for classes, modules, and gems from the side panel.
-- Select a class, module, or dependency system to fly to a top-down comparison that keeps Core visible for scale.
-- Double-click a gem cloud to expand its existing stars.
-- Press Space or use the toolbar to pause/resume drift.
-- Use Reset to restore the default camera without changing your drift choice.
-
-Explorer requires WebGL2 to render the complete galaxy. If WebGL2 is missing or the browser loses the context, RubyLens shows a warning rather than quietly drawing a partial galaxy.
+Drag to orbit, scroll to zoom, search from the panel, double-click a gem cloud to expand it. Press `?` in the app for every shortcut. WebGL2 is required; without it RubyLens shows a warning rather than a partial galaxy.
 
 ## Using Showcase
 
-Showcase is self-playing and noninteractive. It opens directly, rotates once per minute, and contains no Explorer controls, search, hover, or navigation.
-
-Use the default Minimal mode when the visual shape is enough:
-
-```sh
-bundle exec rubylens showcase
-```
-
-Use `--details` when you want aggregate statistics and one-at-a-time cinematic labels:
-
-```sh
-bundle exec rubylens showcase --details
-```
-
-Showcase also requires WebGL2. A browser with `prefers-reduced-motion` enabled receives one stable frame with no cinematic labels.
+`rubylens showcase [--details]` writes the self-playing page the clip records: it rotates once per minute, forever, with no controls. Embed it or loop it on a screen. With `prefers-reduced-motion` it presents one stable frame.
 
 ## Using Clip
 
-Clip records the Showcase into `rubylens-clip.mp4`: one full camera rotation at 1920×1080 and 30 frames per second, encoded as H.264 for compatibility with Slack, X, LinkedIn, and slide decks. The camera ends where it started, so the loop has no visible cut.
-
-```sh
-bundle exec rubylens clip
-bundle exec rubylens clip --details
-```
-
-Clip needs two locally installed tools and checks for them before doing any work:
-
-- **Chrome or Chromium** for headless WebGL2 rendering. Discovery checks `PATH` and common install locations; set `RUBYLENS_CHROME` to point at a specific binary.
-- **ffmpeg** for H.264 encoding (`brew install ffmpeg` or `apt install ffmpeg`); set `RUBYLENS_FFMPEG` to override discovery.
-
-Frames render deterministically off-screen, so nothing flashes across your display, and progress is reported as the 1,800 frames encode. Expect a few minutes on machines without GPU acceleration. The showcase HTML is always written next to the video, so a failed render still leaves you a shareable page.
+`rubylens clip [--details]` records one full rotation into `rubylens-clip.mp4` (1080p30 H.264; the loop has no visible cut). It needs Chrome or Chromium and ffmpeg, checks for both before any work, and honors `RUBYLENS_CHROME` and `RUBYLENS_FFMPEG` overrides. Rendering is off-screen with progress reported; expect a few minutes without GPU acceleration. The showcase HTML always lands next to the video.
 
 ## What the stars mean
 
-- **Core** is magenta. Its stars represent classes and modules from the project's main Ruby code.
-- **Tests** are cyan. They represent test classes and modules. RubyLens also adds class-like stars for RSpec `describe` and `context` calls under `spec/` or `specs/`.
-- **Gems** are warm gold. Each gem forms a cloud of anonymous stars. Related gems from the same materialized Git source can appear together as one dependency system.
+- **Magenta**: the project's classes and modules.
+- **Cyan**: test classes and modules, including RSpec `describe`/`context` groups.
+- **Gold**: gem clouds of anonymous stars; gems from one Git source can share a dependency system.
 
-RubyLens uses Rubydex to find classes, modules, methods, constants, inheritance, reopenings, and references. It does not claim that references form a complete call graph, and it never executes the project or its tests.
-
-RubyLens analyzes tracked `.rb`, `.rake`, `.rbs`, and `.ru` files inside the target, plus untracked files of those types that Git does not ignore. It reads dependency versions from `Gemfile.lock` and analyzes gem code already installed locally.
-
-RubyLens is not a type checker, whole-program call graph, source browser, route explorer, or per-dependency-star inspector.
+Rubydex supplies the declarations and references; RubyLens never executes your code, and references are not a call graph. It reads tracked and unignored `.rb`, `.rake`, `.rbs`, and `.ru` files, plus locally installed gem code.
 
 ## Galaxy morphology
 
-RubyLens uses the [Hubble sequence](https://science.nasa.gov/asset/hubble/the-hubble-tuning-fork-classification-of-galaxies/) as a visual vocabulary. It uses broad code counts to choose a repeatable shape for the central Core/Test galaxy and each dependency package independently. A package never inherits the project's, host's, or dependency system's decision.
-
-The morphology describes the rendered shape. It is not a claim about the project's architecture, purpose, quality, or correctness.
+Broad code counts pick each galaxy's shape from the [Hubble sequence](https://science.nasa.gov/asset/hubble/the-hubble-tuning-fork-classification-of-galaxies/), independently for the core and every gem. The shape describes the rendering, not the architecture or its quality.
 
 [![Paired synthetic RubyLens renders comparing E2 with E6, Sa with Sc, and SBa with SBc.](docs/images/galaxy-morphology-variations.jpg)](docs/images/galaxy-morphology-variations.jpg)
 
 *Representative endpoints inside the elliptical, spiral, and barred-spiral families.*
 
-Read the [accepted morphology design](docs/specs/2026-07-14-galaxy-morphology-design.md) or [stellar design research](docs/STELLAR_DESIGN_RESEARCH.md) for the full visual model.
+Full visual model: [morphology design](docs/specs/2026-07-14-galaxy-morphology-design.md) and [stellar design research](docs/STELLAR_DESIGN_RESEARCH.md).
 
 ## CLI reference
 
 ```text
-rubylens report [OPTIONS] [TARGET]
-rubylens clip [OPTIONS] [TARGET]
-rubylens showcase [OPTIONS] [TARGET]
+rubylens report|clip|showcase [OPTIONS] [TARGET]
 ```
 
-All commands accept:
-
-- `-o FILE` / `--output FILE` to choose an output path
-- `--lockfile FILE` to use a specific `Gemfile.lock`
-- `-h` / `--help` to show command help
-
-`rubylens clip` and `rubylens showcase` also accept `--details`. A custom `rubylens clip --output movie.mp4` writes the recorded showcase to `movie.html` next to it.
+All commands take `-o`/`--output FILE` and `--lockfile FILE`; `clip` and `showcase` also take `--details`. `rubylens clip --output movie.mp4` writes the recorded showcase to `movie.html` beside it.
 
 ## Ruby API
 
@@ -164,50 +95,24 @@ All commands accept:
 require "rubylens"
 
 report = RubyLens.generate_report(path: ".")
-puts report.output_path
-puts report.counts
-puts report.warnings
-
-showcase = RubyLens.generate_showcase(path: ".", details: true)
-puts showcase.output_path
-
-clip = RubyLens.generate_clip(path: ".", progress: ->(done, total) { puts "#{done}/#{total}" })
-puts clip.output_path    # the MP4
-puts clip.showcase_path  # the showcase HTML it recorded
+clip = RubyLens.generate_clip(path: ".", details: true)
+clip.output_path    # the MP4
+clip.showcase_path  # the showcase it recorded
 ```
 
-Passing `output:` selects a custom path. The caller is responsible for keeping custom outputs private.
+Results carry `output_path`, `counts`, and `warnings`. Custom `output:` paths are the caller's to keep private.
 
 ## Development
 
-RubyLens supports Ruby 3.2 through 4.0. The repository's `.ruby-version` and `.node-version` select the development runtimes. Activate Ruby with your version manager, then install the Ruby and JavaScript dependencies:
+Ruby 3.2 through 4.0; `.ruby-version` and `.node-version` pin the development runtimes.
 
 ```sh
-bundle install
-npm ci
+bundle install && npm ci
+bundle exec rake test   # Ruby tests
+npm test                # JS unit + browser tests (npx playwright install chromium once)
 ```
 
-Run the Ruby and JavaScript unit tests:
-
-```sh
-bundle exec rake test
-npm run test:unit
-```
-
-Run the browser tests:
-
-```sh
-npx playwright install chromium
-npm run test:browser
-```
-
-Build the gem:
-
-```sh
-gem build rubylens.gemspec
-```
-
-The product and design contracts live in [PRODUCT.md](PRODUCT.md) and [DESIGN.md](DESIGN.md). Scale and benchmark notes live in [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+Contracts live in [PRODUCT.md](PRODUCT.md) and [DESIGN.md](DESIGN.md); scale notes in [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
 
 ## License
 
