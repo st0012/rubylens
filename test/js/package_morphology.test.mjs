@@ -56,7 +56,7 @@ describe("package cloud morphology", () => {
     expect(runtime.packageMorphologies.map(cloud => cloud.compact).slice(0, 2)).toEqual([true, false]);
     expect(runtime.packageMorphologies[7].compact).toBe(false);
     expect(runtime.packageMorphologies[3]).toEqual(runtime.packageMorphologies[4]);
-    expect(runtime.DEPENDENCY_CLOUD_THREASHOLD).toBe(18);
+    expect(runtime.DEPENDENCY_CLOUD_THRESHOLD).toBe(18);
   });
 
   it("falls back for malformed rows without losing the package phase seed", () => {

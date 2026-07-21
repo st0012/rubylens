@@ -8,7 +8,7 @@ class APITest < Minitest::Test
     Dir.mktmpdir("rubylens-api-") do |directory|
       report = RubyLens.generate_report(path: SnapshotHelpers::FIXTURE, output: File.join(directory, "report.html"))
 
-      assert(RubyLens::ReportWriter.new.rubylens_report?(report.output_path))
+      assert(RubyLens::ArtifactMarker.present?(report.output_path, RubyLens::ReportWriter::MARKER))
       report_model = embedded_model(report.output_path)
       assert_equal("rubylens.art.v11", report_model.fetch("schema"))
       assert_equal(10, report_model.fetch("morphology").length)
@@ -23,7 +23,7 @@ class APITest < Minitest::Test
         output: File.join(directory, "showcase.html"),
       )
 
-      assert(RubyLens::ShowcaseWriter.new.rubylens_showcase?(result.output_path))
+      assert(RubyLens::ArtifactMarker.present?(result.output_path, RubyLens::ShowcaseWriter::MARKER))
       assert_operator(result.counts.fetch("namespaces"), :>, 0)
       model = embedded_model(result.output_path)
       assert_equal("rubylens.showcase.v5", model.fetch("schema"))

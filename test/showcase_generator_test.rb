@@ -11,7 +11,7 @@ class ShowcaseGeneratorTest < Minitest::Test
 
       assert_equal(expected, result.output_path)
       assert_equal(0o600, File.stat(expected).mode & 0o777)
-      assert(RubyLens::ShowcaseWriter.new.rubylens_showcase?(expected))
+      assert(RubyLens::ArtifactMarker.present?(expected, RubyLens::ShowcaseWriter::MARKER))
       assert(system("git", "-C", directory, "check-ignore", "--quiet", expected))
       exclude = File.read(File.join(directory, ".git", "info", "exclude"))
       assert_includes(exclude, "/rubylens-showcase.html")

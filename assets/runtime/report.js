@@ -34,7 +34,7 @@
     let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedSystemIndex = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, showcaseRenderer = null, showcaseAnnotationSlot = -1, activeShowcaseAnnotation = null, clipMode = false;
     const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35;
     const CORE_SCALE_BASELINE = 3_000;
-    const DEPENDENCY_CLOUD_THREASHOLD = 18;
+    const DEPENDENCY_CLOUD_THRESHOLD = 18;
     const DEPENDENCY_STAR_ALPHA_SCALE = .85;
     const MORPHOLOGY_FAMILY = Object.freeze({ elliptical: 0, lenticular: 1, spiral: 2, barredSpiral: 3, irregular: 4 });
     const MORPHOLOGY_FAMILY_LABELS = Object.freeze(["Elliptical galaxy", "Lenticular galaxy", "Spiral galaxy", "Barred spiral galaxy", "Irregular galaxy"]);
@@ -379,7 +379,7 @@
       const declarationCount = Math.max(0, Number(packageRow[3]) || 0);
       return Object.freeze({
         ...decodeMorphology(raw, phaseSeed),
-        compact: declarationCount < DEPENDENCY_CLOUD_THREASHOLD,
+        compact: declarationCount < DEPENDENCY_CLOUD_THRESHOLD,
       });
     }
 

@@ -16,11 +16,5 @@ module RubyLens
         runtime_path: RUNTIME_PATH,
       ))
     end
-
-    def rubylens_showcase?(path)
-      File.file?(path) && File.open(path, "rb") { |file| file.read(2048).include?(MARKER) }
-    rescue Errno::ENOENT, Errno::EACCES
-      false
-    end
   end
 end

@@ -3,12 +3,14 @@
 require "base64"
 require "fileutils"
 require "json"
+require_relative "artifact_marker"
 require_relative "atomic_output"
 require_relative "report_asset_assembler"
 
 module RubyLens
   class ReportWriter
     MODEL_PLACEHOLDER = "{{MODEL_BASE64}}"
+    MARKER = '<meta name="generator" content="RubyLens">'
 
     def initialize(asset_assembler: ReportAssetAssembler.new)
       @asset_assembler = asset_assembler
@@ -27,12 +29,6 @@ module RubyLens
       payload = Base64.strict_encode64(JSON.generate(model))
       html = template.sub(MODEL_PLACEHOLDER, payload)
       AtomicOutput.replace(output) { |temporary| File.binwrite(temporary, html) }
-    end
-
-    def rubylens_report?(path)
-      File.file?(path) && File.open(path, "rb") { |file| file.read(2048).include?('<meta name="generator" content="RubyLens">') }
-    rescue Errno::ENOENT, Errno::EACCES
-      false
     end
 
     private

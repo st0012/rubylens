@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "artifact_marker"
 require_relative "default_output"
 require_relative "generator"
 require_relative "showcase_model"
@@ -18,12 +19,11 @@ module RubyLens
 
     def call
       root = File.realpath(@path)
-      showcase_writer = ShowcaseWriter.new
       output = @output || DefaultOutput.resolve(root: root, name: DEFAULT_SHOWCASE_NAME, description: "showcase") do |existing|
-        showcase_writer.rubylens_showcase?(existing)
+        ArtifactMarker.present?(existing, ShowcaseWriter::MARKER)
       end
       model, warnings = GenerationPipeline.new(root:, lockfile: @lockfile).call
-      output_path = showcase_writer.write(ShowcaseModel.new(model, details: @details).call, output: output)
+      output_path = ShowcaseWriter.new.write(ShowcaseModel.new(model, details: @details).call, output: output)
 
       Result.new(output_path:, counts: model.fetch("totals").freeze, warnings:)
     rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP => error
