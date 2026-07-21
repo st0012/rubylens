@@ -151,6 +151,12 @@
     };
     const unit = (seed, channel) => hash(seed, channel) / 4294967296;
     const normal = (seed, channel) => Math.sqrt(-2 * Math.log(Math.max(unit(seed, channel), 1e-7))) * Math.cos(6.283185 * unit(seed, channel + 1));
+    // Spitzer isothermal-sheet vertical draw: a sech^2(z / 2z0) disc profile
+    // via its logistic inverse CDF, scaled to Gaussian-sigma-equivalent units.
+    const sheet = (seed, channel) => {
+      const share = Math.min(.996, Math.max(.004, unit(seed, channel)));
+      return .551 * Math.log(share / (1 - share));
+    };
     const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
     function fallbackMorphology(phaseSeed = 0) {
       const normalizedSeed = Number.isInteger(phaseSeed) && phaseSeed >= 0 && phaseSeed <= 0xffff_ffff ? phaseSeed >>> 0 : 0;
@@ -352,13 +358,13 @@
       const radial = bulge ? 17 * Math.pow(unit(seed, 3), 1.75) : Math.min(discLimit, -10 * Math.log(Math.max(1e-5, 1 - unit(seed, 3))));
       const scale = bulge ? layoutScale.bulge : layoutScale.disk;
       if (!bulge && morphology.family === MORPHOLOGY_FAMILY.barredSpiral && unit(seed, 33) < .32) {
-        return barredCorePosition(seed, normal(seed, 5) * 1.6, scale);
+        return barredCorePosition(seed, sheet(seed, 5) * 1.6, scale);
       }
       if (coreDiscUsesArm(seed, bulge)) {
         const [theta, armRadial] = spiralArmPlacement(seed, radial, 43);
-        return [Math.cos(theta) * armRadial * scale, normal(seed, 5) * (1.4 + armRadial * .025) * scale, Math.sin(theta) * armRadial * scale];
+        return [Math.cos(theta) * armRadial * scale, sheet(seed, 5) * (1.4 + armRadial * .025) * scale, Math.sin(theta) * armRadial * scale];
       }
-      const vertical = normal(seed, 5) * (bulge ? 5.8 : 1.4 + radial * .025);
+      const vertical = bulge ? normal(seed, 5) * 5.8 : sheet(seed, 5) * (1.4 + radial * .025);
       const theta = morphology.phase + unit(seed, 4) * Math.PI * 2 + radial * .04;
       return [Math.cos(theta) * radial * scale, vertical * scale, Math.sin(theta) * radial * scale];
     }
@@ -375,10 +381,10 @@
         : discFloor + Math.min(45, -14 * Math.log(Math.max(1e-5, 1 - unit(seed, 7))));
       if (spiralMorphology && unit(seed, 9) < morphology.armFraction) {
         const [theta, armRadial] = spiralArmPlacement(seed, radial, 13);
-        return [Math.cos(theta) * armRadial * layoutScale.tests, normal(seed, 11) * (1.4 + armRadial * .035) * layoutScale.tests, Math.sin(theta) * armRadial * layoutScale.tests];
+        return [Math.cos(theta) * armRadial * layoutScale.tests, sheet(seed, 11) * (1.4 + armRadial * .035) * layoutScale.tests, Math.sin(theta) * armRadial * layoutScale.tests];
       }
       const theta = morphology.phase + unit(seed, 10) * Math.PI * 2;
-      const vertical = normal(seed, 11) * (1.4 + radial * .035);
+      const vertical = sheet(seed, 11) * (1.4 + radial * .035);
       return [Math.cos(theta) * radial * layoutScale.tests, vertical * layoutScale.tests, Math.sin(theta) * radial * layoutScale.tests];
     }
 
@@ -458,7 +464,7 @@
       const radial = bulge
         ? radius * .36 * Math.pow(radialUnit, 1.55)
         : radius * (.2 + .72 * Math.sqrt(radialUnit) + spiralArmTail);
-      const vertical = clamp(normal(seed, 26), -2.2, 2.2) * radius * (bulge ? .13 : .055);
+      const vertical = clamp(bulge ? normal(seed, 26) : sheet(seed, 26), -2.2, 2.2) * radius * (bulge ? .13 : .055);
       if (barred && !bulge && unit(seed, 21) < .34) {
         const halfLength = radius * cloud.barLength;
         const along = (unit(seed, 22) * 2 - 1) * halfLength;
