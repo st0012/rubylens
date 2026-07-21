@@ -31,10 +31,6 @@ module RubyLens
       AtomicOutput.replace(output) { |temporary| File.binwrite(temporary, html) }
     end
 
-    def rubylens_report?(path)
-      ArtifactMarker.present?(path, MARKER)
-    end
-
     private
 
     def protect_default_directory(directory)

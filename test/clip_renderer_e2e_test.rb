@@ -23,7 +23,7 @@ class ClipRendererE2ETest < Minitest::Test
       renderer.render(showcase_html: showcase, output: output)
 
       assert_operator(File.size(output), :>, 10_000)
-      assert(RubyLens::ClipGenerator.new.rubylens_clip?(output))
+      assert(RubyLens::ArtifactMarker.present?(output, RubyLens::Clip::Renderer::MARKER_COMMENT, head_bytes: RubyLens::ClipGenerator::MARKER_SCAN_HEAD_BYTES))
       assert_equal("ftyp", File.binread(output, 8).byteslice(4, 4))
     end
   end

@@ -19,6 +19,8 @@ module RubyLens
   # ffmpeg fails in under a second with install guidance.
   class ClipGenerator
     DEFAULT_CLIP_NAME = "rubylens-clip.mp4"
+    # faststart parks the metadata (and so the marker) right behind ftyp, so
+    # every clip RubyLens writes matches within this head window.
     MARKER_SCAN_HEAD_BYTES = 512 * 1024
 
     def initialize(path: Dir.pwd, output: nil, lockfile: nil, details: false, progress: nil, renderer: nil)
@@ -49,12 +51,6 @@ module RubyLens
       raise Error, error.message
     end
 
-    # faststart parks the metadata (and so the marker) right behind ftyp, so
-    # every clip RubyLens writes matches within the head window.
-    def rubylens_clip?(path)
-      ArtifactMarker.present?(path, Clip::Renderer::MARKER_COMMENT, head_bytes: MARKER_SCAN_HEAD_BYTES)
-    end
-
     private
 
     def build_renderer
@@ -73,7 +69,7 @@ module RubyLens
     def resolve_outputs(root)
       if @output.nil?
         default = DefaultOutput.resolve(root: root, name: DEFAULT_CLIP_NAME, description: "clip") do |existing|
-          rubylens_clip?(existing)
+          ArtifactMarker.present?(existing, Clip::Renderer::MARKER_COMMENT, head_bytes: MARKER_SCAN_HEAD_BYTES)
         end
         return [default, nil]
       end
@@ -82,7 +78,7 @@ module RubyLens
       # all refer to the same real paths.
       output = File.expand_path(@output)
       companion = showcase_companion_path(output)
-      if File.exist?(companion) && !ShowcaseWriter.new.rubylens_showcase?(companion)
+      if File.exist?(companion) && !ArtifactMarker.present?(companion, ShowcaseWriter::MARKER)
         raise Error, "clip companion path #{companion} already exists and is not a RubyLens showcase"
       end
 

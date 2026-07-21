@@ -20,7 +20,7 @@ class ShowcaseWriterTest < Minitest::Test
       RubyLens::ShowcaseWriter.new.write(model, output: output)
       html = File.read(output)
 
-      assert(RubyLens::ShowcaseWriter.new.rubylens_showcase?(output))
+      assert(RubyLens::ArtifactMarker.present?(output, RubyLens::ShowcaseWriter::MARKER))
       assert_includes(html, '<meta name="rubylens-artifact" content="showcase">')
       assert_includes(html, 'data-rubylens-mode="showcase"')
       assert_includes(html, "const SHOWCASE_PRESET = Object.freeze")
@@ -54,8 +54,8 @@ class ShowcaseWriterTest < Minitest::Test
       File.write(showcase, '<meta name="rubylens-artifact" content="showcase">')
 
       writer = RubyLens::ShowcaseWriter.new
-      refute(writer.rubylens_showcase?(report))
-      assert(writer.rubylens_showcase?(showcase))
+      refute(RubyLens::ArtifactMarker.present?(report, RubyLens::ShowcaseWriter::MARKER))
+      assert(RubyLens::ArtifactMarker.present?(showcase, RubyLens::ShowcaseWriter::MARKER))
     end
   end
 end

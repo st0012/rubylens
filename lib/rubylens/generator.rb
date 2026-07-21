@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "artifact_marker"
 require_relative "default_output"
 
 module RubyLens
@@ -36,12 +37,11 @@ module RubyLens
 
     def call
       root = File.realpath(@path)
-      report_writer = ReportWriter.new
       output = @output || DefaultOutput.resolve(root: root, name: DEFAULT_REPORT_NAME, description: "report") do |existing|
-        report_writer.rubylens_report?(existing)
+        ArtifactMarker.present?(existing, ReportWriter::MARKER)
       end
       model, warnings = GenerationPipeline.new(root:, lockfile: @lockfile).call
-      output_path = report_writer.write(model, output: output)
+      output_path = ReportWriter.new.write(model, output: output)
 
       RubyLens::Result.new(output_path: output_path, counts: model.fetch("totals").freeze, warnings:)
     rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP => error

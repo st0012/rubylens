@@ -19,7 +19,7 @@ class GeneratorTest < Minitest::Test
       result = generate(path: directory)
 
       assert_equal(File.join(File.realpath(directory), "rubylens-report.html"), result.output_path)
-      assert(RubyLens::ReportWriter.new.rubylens_report?(result.output_path))
+      assert(RubyLens::ArtifactMarker.present?(result.output_path, RubyLens::ReportWriter::MARKER))
       assert(system("git", "-C", directory, "check-ignore", "--quiet", result.output_path))
     end
   end

@@ -29,8 +29,8 @@ class ClipGeneratorTest < Minitest::Test
       assert_equal(showcase, result.showcase_path)
       assert_equal(showcase, renderer.rendered_showcase_html)
       assert_equal(0o600, File.stat(clip).mode & 0o777)
-      assert(RubyLens::ClipGenerator.new.rubylens_clip?(clip))
-      assert(RubyLens::ShowcaseWriter.new.rubylens_showcase?(showcase))
+      assert(RubyLens::ArtifactMarker.present?(clip, RubyLens::Clip::Renderer::MARKER_COMMENT, head_bytes: RubyLens::ClipGenerator::MARKER_SCAN_HEAD_BYTES))
+      assert(RubyLens::ArtifactMarker.present?(showcase, RubyLens::ShowcaseWriter::MARKER))
       assert(system("git", "-C", directory, "check-ignore", "--quiet", clip))
       exclude = File.read(File.join(directory, ".git", "info", "exclude"))
       assert_includes(exclude, "/rubylens-clip.mp4")
@@ -115,10 +115,10 @@ class ClipGeneratorTest < Minitest::Test
       other = File.join(directory, "other.mp4")
       File.binwrite(other, "plain video bytes")
 
-      assert(generator.rubylens_clip?(head))
-      refute(generator.rubylens_clip?(foreign), "a tail-only marker means a re-encoded or foreign file")
-      refute(generator.rubylens_clip?(other))
-      refute(generator.rubylens_clip?(File.join(directory, "missing.mp4")))
+      assert(RubyLens::ArtifactMarker.present?(head, RubyLens::Clip::Renderer::MARKER_COMMENT, head_bytes: RubyLens::ClipGenerator::MARKER_SCAN_HEAD_BYTES))
+      refute(RubyLens::ArtifactMarker.present?(foreign, RubyLens::Clip::Renderer::MARKER_COMMENT, head_bytes: RubyLens::ClipGenerator::MARKER_SCAN_HEAD_BYTES), "a tail-only marker means a re-encoded or foreign file")
+      refute(RubyLens::ArtifactMarker.present?(other, RubyLens::Clip::Renderer::MARKER_COMMENT, head_bytes: RubyLens::ClipGenerator::MARKER_SCAN_HEAD_BYTES))
+      refute(RubyLens::ArtifactMarker.present?(File.join(directory, "missing.mp4"), RubyLens::Clip::Renderer::MARKER_COMMENT, head_bytes: RubyLens::ClipGenerator::MARKER_SCAN_HEAD_BYTES))
     end
   end
 

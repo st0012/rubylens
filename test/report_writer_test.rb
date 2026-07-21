@@ -91,7 +91,7 @@ class ReportWriterTest < Minitest::Test
       encoded = html.match(/atob\("([A-Za-z0-9+\/=]+)"\)/).captures.first
       assert_equal(model, JSON.parse(Base64.strict_decode64(encoded)))
       assert_includes(html, "connect-src 'none'")
-      assert(RubyLens::ReportWriter.new.rubylens_report?(output))
+      assert(RubyLens::ArtifactMarker.present?(output, RubyLens::ReportWriter::MARKER))
       assert_includes(html, "RubyLens · Explorer")
       assert_includes(html, "Explore this codebase")
       assert_includes(html, 'const rubyMetricLabels = ["Classes", "Modules", "Methods", "Constants"]')

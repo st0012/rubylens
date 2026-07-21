@@ -16,9 +16,5 @@ module RubyLens
         runtime_path: RUNTIME_PATH,
       ))
     end
-
-    def rubylens_showcase?(path)
-      ArtifactMarker.present?(path, MARKER)
-    end
   end
 end
