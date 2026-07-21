@@ -10,7 +10,7 @@ module RubyLens
     # report, showcase, and clip lives here, not in per-command methods.
     COMMANDS = {
       "report" => {
-        default_name: "rubylens-report.html",
+        default_name: Generator::DEFAULT_REPORT_NAME,
         generator: :generate_report,
         warning: "RubyLens reports contain private codebase structure. Keep the output local unless you intend to share it.",
         details_option: false,
@@ -18,7 +18,7 @@ module RubyLens
         report_progress: false,
       },
       "clip" => {
-        default_name: "rubylens-clip.mp4",
+        default_name: ClipGenerator::DEFAULT_CLIP_NAME,
         generator: :generate_clip,
         warning: "RubyLens clips show the same picture as showcases: the project name plus the galaxy's shape and scale; --details adds aggregate statistics and selected Ruby and dependency names. Share them intentionally.",
         details_option: true,
@@ -26,7 +26,7 @@ module RubyLens
         report_progress: true,
       },
       "showcase" => {
-        default_name: "rubylens-showcase.html",
+        default_name: ShowcaseGenerator::DEFAULT_SHOWCASE_NAME,
         generator: :generate_showcase,
         warning: "RubyLens showcases disclose the project name and visual codebase structure; --details also includes aggregate statistics and selected Ruby and dependency names. Share them intentionally.",
         details_option: true,

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "artifact_marker"
 require_relative "atomic_output"
 require_relative "default_output"
 require_relative "showcase_generator"
@@ -51,11 +52,7 @@ module RubyLens
     # faststart parks the metadata (and so the marker) right behind ftyp, so
     # every clip RubyLens writes matches within the head window.
     def rubylens_clip?(path)
-      return false unless File.file?(path)
-
-      File.open(path, "rb") { |file| file.read(MARKER_SCAN_HEAD_BYTES).to_s.include?(Clip::Renderer::MARKER_COMMENT) }
-    rescue Errno::ENOENT, Errno::EACCES
-      false
+      ArtifactMarker.present?(path, Clip::Renderer::MARKER_COMMENT, head_bytes: MARKER_SCAN_HEAD_BYTES)
     end
 
     private

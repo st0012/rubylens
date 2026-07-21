@@ -3,12 +3,14 @@
 require "base64"
 require "fileutils"
 require "json"
+require_relative "artifact_marker"
 require_relative "atomic_output"
 require_relative "report_asset_assembler"
 
 module RubyLens
   class ReportWriter
     MODEL_PLACEHOLDER = "{{MODEL_BASE64}}"
+    MARKER = '<meta name="generator" content="RubyLens">'
 
     def initialize(asset_assembler: ReportAssetAssembler.new)
       @asset_assembler = asset_assembler
@@ -30,9 +32,7 @@ module RubyLens
     end
 
     def rubylens_report?(path)
-      File.file?(path) && File.open(path, "rb") { |file| file.read(2048).include?('<meta name="generator" content="RubyLens">') }
-    rescue Errno::ENOENT, Errno::EACCES
-      false
+      ArtifactMarker.present?(path, MARKER)
     end
 
     private

@@ -18,9 +18,7 @@ module RubyLens
     end
 
     def rubylens_showcase?(path)
-      File.file?(path) && File.open(path, "rb") { |file| file.read(2048).include?(MARKER) }
-    rescue Errno::ENOENT, Errno::EACCES
-      false
+      ArtifactMarker.present?(path, MARKER)
     end
   end
 end
