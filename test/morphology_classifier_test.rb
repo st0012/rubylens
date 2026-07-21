@@ -59,11 +59,11 @@ class MorphologyClassifierTest < Minitest::Test
   def test_locks_spiral_stage_designations_and_knobs
     cases = [
       [0, 100, "Sa", [0, 360, 2, 180, 450, 0, 0, 0, 1_250_263_674]],
-      [0, 1, "SBa", [0, 360, 2, 180, 450, 280, 0, 0, 1_250_263_674]],
+      [0, 1, "SBa", [0, 360, 2, 180, 450, 500, 0, 0, 1_250_263_674]],
       [30, 100, "Sb", [0, 295, 3, 146, 483, 0, 0, 0, 1_250_263_674]],
-      [30, 1, "SBb", [0, 295, 3, 146, 483, 345, 0, 0, 1_250_263_674]],
+      [30, 1, "SBb", [0, 295, 3, 146, 483, 435, 0, 0, 1_250_263_674]],
       [100, 100, "Sc", [0, 219, 5, 106, 521, 0, 0, 0, 1_250_263_674]],
-      [100, 1, "SBc", [0, 219, 3, 106, 521, 421, 0, 0, 1_250_263_674]],
+      [100, 1, "SBc", [0, 219, 3, 106, 521, 359, 0, 0, 1_250_263_674]],
     ]
 
     cases.each do |tests, roots, designation, knobs|
@@ -91,7 +91,7 @@ class MorphologyClassifierTest < Minitest::Test
       [100, [1, 0, 100, 0], 0, "E0", [0, 0, 0, 0, 0, 0, 0, 0, 1234]],
       [100, [0, 0, 40, 10], 1, "S0", [0, 347, 0, 0, 0, 0, 0, 0, 1234]],
       [100, [0, 0, 20, 20], 2, "Sc", [0, 234, 4, 114, 513, 0, 0, 0, 1234]],
-      [100, [0, 0, 0, 10], 3, "SBc", [0, 140, 4, 65, 560, 500, 0, 0, 1234]],
+      [100, [0, 0, 0, 10], 3, "SBc", [0, 140, 4, 65, 560, 280, 0, 0, 1234]],
     ]
 
     cases.each do |size, counts, family, designation, knobs|
@@ -113,7 +113,7 @@ class MorphologyClassifierTest < Minitest::Test
     assert_equal([0, 198, 5, 95, 531, 0, 0, 0, 1234], spiral.fetch("knobs"))
     assert_equal(2, spiral.fetch("family"))
     assert_equal("SBc", barred.fetch("designation"))
-    assert_equal([0, 198, 3, 95, 531, 753, 0, 0, 1235], barred.fetch("knobs"))
+    assert_equal([0, 198, 3, 95, 531, 561, 0, 0, 1235], barred.fetch("knobs"))
     assert_equal(3, barred.fetch("family"))
   end
 
@@ -126,7 +126,7 @@ class MorphologyClassifierTest < Minitest::Test
     assert_equal([0, 234, 4, 114, 513, 0, 0, 0, 1235], spiral.fetch("knobs"))
     assert_equal(3, barred.fetch("family"))
     assert_equal("SBc", barred.fetch("designation"))
-    assert_equal([0, 140, 4, 65, 560, 500, 0, 0, 1235], barred.fetch("knobs"))
+    assert_equal([0, 140, 4, 65, 560, 280, 0, 0, 1235], barred.fetch("knobs"))
   end
 
   def test_package_seed_changes_only_orientation_below_the_large_threshold_and_metadata_does_not_change_the_decision

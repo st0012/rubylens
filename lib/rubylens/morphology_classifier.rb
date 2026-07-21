@@ -199,7 +199,7 @@ module RubyLens
         stage:,
         progress:,
         phase_seed:,
-        bar_length: 0.62 + 0.18 * progress,
+        bar_length: 0.45 + 0.15 * progress,
       )
     end
 
@@ -213,7 +213,7 @@ module RubyLens
         arm_count: 2 + (progress * arm_limit).round,
         winding: scaled(0.18 - 0.115 * progress),
         arm_fraction: scaled(0.45 + 0.11 * progress),
-        bar_length: family == BARRED_SPIRAL ? scaled(bar_length || (0.28 + 0.22 * progress)) : 0,
+        bar_length: family == BARRED_SPIRAL ? scaled(bar_length || (0.50 - 0.22 * progress)) : 0,
         phase_seed:,
       )
     end
