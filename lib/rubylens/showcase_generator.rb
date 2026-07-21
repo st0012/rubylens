@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "default_output"
 require_relative "generator"
 require_relative "showcase_model"
 require_relative "showcase_writer"
@@ -18,13 +19,8 @@ module RubyLens
     def call
       root = File.realpath(@path)
       showcase_writer = ShowcaseWriter.new
-      output = @output
-      if output.nil?
-        output = File.join(root, DEFAULT_SHOWCASE_NAME)
-        if File.exist?(output) && !showcase_writer.rubylens_showcase?(output)
-          raise Error, "default showcase path already exists and is not a RubyLens showcase"
-        end
-        GitRepository.new(root).exclude_local(output, description: "showcase")
+      output = @output || DefaultOutput.resolve(root: root, name: DEFAULT_SHOWCASE_NAME, description: "showcase") do |existing|
+        showcase_writer.rubylens_showcase?(existing)
       end
       model, warnings = GenerationPipeline.new(root:, lockfile: @lockfile).call
       output_path = showcase_writer.write(ShowcaseModel.new(model, details: @details).call, output: output)

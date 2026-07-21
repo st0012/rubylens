@@ -39,6 +39,9 @@
     @media (prefers-reduced-motion: reduce) {
       .cinema-annotation, .cinema-annotation::before, .cinema-annotation::after, .cinema-annotation-copy { transition: none; }
     }
+    /* Clip export drives annotation opacity per frame from a synthetic clock;
+       wall-clock CSS fades would make captured frames nondeterministic. */
+    html[data-rubylens-clip] .cinema-annotation, html[data-rubylens-clip] .cinema-annotation::before, html[data-rubylens-clip] .cinema-annotation::after, html[data-rubylens-clip] .cinema-annotation-copy { transition: none; }
     @media (max-width: 600px) {
       .galaxy-summary { font-size: 24px; }
       .showcase-status { max-width: 720px; font-size: 24px; }

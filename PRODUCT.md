@@ -6,8 +6,9 @@ RubyLens turns a Ruby codebase into a private, self-contained stellar map. It is
 
 - **Explorer (`rubylens report`)** is the interactive artifact. It supports system visibility, spatial navigation, Ruby-node and dependency-system search, hover and selection, and aggregate Ruby metrics.
 - **Showcase (`rubylens showcase`)** is an autonomous presentation. Minimal output shows only the project title and galaxy; explicit `--details` output adds aggregate statistics and capped cinematic labels. It has no controls, hover, selection, search, warning details, or user navigation.
+- **Clip (`rubylens clip`)** is the Showcase rendered as a shareable video: one seamless 1080p camera loop as an MP4, for chat and social posts where an HTML file cannot play. It writes the showcase HTML alongside the video, shows exactly what that showcase shows (`--details` included), and renders locally through an installed Chrome/Chromium and ffmpeg — never through a hosted service.
 
-Both outputs are single offline HTML files, written privately by default. Reports intentionally embed the project name plus rendered namespace and dependency-system names; source text, comments, paths, dependency-star names, and per-node dependency identities stay out of the presentation model.
+Explorer and Showcase outputs are single offline HTML files, written privately by default; Clip adds a locally rendered MP4 of the Showcase with the same disclosure profile. Reports intentionally embed the project name plus rendered namespace and dependency-system names; source text, comments, paths, dependency-star names, and per-node dependency identities stay out of the presentation model.
 
 ## Meaning and scale
 
@@ -23,6 +24,7 @@ Both outputs are single offline HTML files, written privately by default. Report
 - Derived names, paths, relationships, dependency lists, and aggregate visual shapes are sensitive even when no source text is included. Package-local morphology can make coarse aggregate composition more visually legible without adding names or raw source data.
 - Source snippets and file contents stay out of the model. Any future excerpt feature requires an explicit option with clear sharing warnings.
 - Default outputs are written owner-only to a Git-excluded path, with a warning that sharing the HTML can disclose codebase structure.
+- Clip rendering drives a local headless browser and ffmpeg over loopback only; the video is a recording of the local Showcase and follows the same sharing warnings.
 - Indexing passes an explicit Git-selected manifest to Rubydex's `Graph#index_all`. The bare `index_workspace` mode and upstream MCP indexer can read ignored or untracked Ruby files and are not product paths.
 - If hosting is explored later, redaction, retention, access control, deletion, and cost limits come before accepting private data.
 
