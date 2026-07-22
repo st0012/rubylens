@@ -232,8 +232,11 @@ The accepted morphology change left package/system anchors and grouping,
 category colors, Explorer interactions, Showcase rotation and annotation
 anchoring, and `prefers-reduced-motion` behavior unchanged. A 2026-07-22
 follow-up added rigid package-local rotation without changing those anchors or
-morphology recipes. Its dynamical-timescale derivation, shared GPU transform,
-motion controls, and exact Showcase/Clip loop are specified in
+morphology recipes. A second follow-up gave each package an isotropically
+seeded local plane instead of inheriting the project plane; flattened families
+show the tilt while nearly spherical families remain visually insensitive.
+Its dynamical-timescale derivation, shared GPU transform, motion controls, and
+exact Showcase/Clip loop are specified in
 [Explorer and Showcase rendering](../EXPLORER_SHOWCASE_RENDERING.md).
 
 One project morphology still governs the Core/Test body. Dependency packages

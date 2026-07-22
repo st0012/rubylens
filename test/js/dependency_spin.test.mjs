@@ -28,6 +28,27 @@ function fixtureModel() {
 describe("dependency cloud spin", () => {
   const runtime = loadRuntime(fixtureModel());
 
+  it("assigns deterministic isotropic package planes instead of inheriting Core's plane", () => {
+    const orientations = Array.from({ length: 2_048 }, (_, seed) => runtime.dependencyOrientation(seed + 1));
+    const mean = axis => orientations.reduce((total, orientation) => total + orientation[axis], 0) / orientations.length;
+
+    for (const orientation of runtime.packageOrientations) {
+      const normal = orientation.slice(0, 3);
+      const tangentX = orientation.slice(3, 6);
+      const tangentZ = orientation.slice(6, 9);
+      expect(Math.hypot(...normal)).toBeCloseTo(1, 12);
+      expect(Math.hypot(...tangentX)).toBeCloseTo(1, 12);
+      expect(Math.hypot(...tangentZ)).toBeCloseTo(1, 12);
+      expect(normal.reduce((sum, value, index) => sum + value * tangentX[index], 0)).toBeCloseTo(0, 12);
+      expect(normal.reduce((sum, value, index) => sum + value * tangentZ[index], 0)).toBeCloseTo(0, 12);
+    }
+    expect(mean(0)).toBeCloseTo(0, 1);
+    expect(mean(1)).toBeCloseTo(.5, 1);
+    expect(mean(2)).toBeCloseTo(0, 1);
+    expect(runtime.packageOrientations.every(orientation => orientation[1] === 1)).toBe(false);
+    expect(loadRuntime(fixtureModel()).packageOrientations).toEqual(runtime.packageOrientations);
+  });
+
   it("uses self-gravity and tidal frequencies to assign bounded loop-safe speeds", () => {
     const densePackage = [1, 0, 1, 500, 0, 0, 0, 0, -1];
     const lightPackage = [1, 0, 1, 10, 0, 0, 0, 0, -1];
@@ -54,9 +75,15 @@ describe("dependency cloud spin", () => {
     }
   });
 
-  it("rotates each cloud rigidly around its own hub and closes the Showcase seam", () => {
+  it("preserves cloud radius, rotates around the package-local normal, and closes the Showcase seam", () => {
     const packageIndex = 1;
     const anchor = runtime.packageAnchors[packageIndex];
+    const orientation = runtime.packageOrientations[packageIndex];
+    const localOffset = runtime.dependencyCloudOffset(
+      42,
+      runtime.packageMorphologies[packageIndex],
+      anchor[3],
+    );
     const initial = runtime.dependencyPosition(42, packageIndex);
     const rotated = runtime.dependencySpunPosition(...initial, packageIndex, 12_345);
     const looped = runtime.dependencySpunPosition(
@@ -66,11 +93,13 @@ describe("dependency cloud spin", () => {
     );
 
     expect(rotated).not.toEqual(initial);
-    expect(rotated[1]).toBe(initial[1]);
-    expect(Math.hypot(rotated[0] - anchor[0], rotated[2] - anchor[2])).toBeCloseTo(
-      Math.hypot(initial[0] - anchor[0], initial[2] - anchor[2]),
-      10,
-    );
+    const initialOffset = initial.map((value, index) => value - anchor[index]);
+    const rotatedOffset = rotated.map((value, index) => value - anchor[index]);
+    const axialComponent = offset => orientation.slice(0, 3)
+      .reduce((sum, value, index) => sum + value * offset[index], 0);
+    expect(Math.hypot(...initialOffset)).toBeCloseTo(Math.hypot(...localOffset), 10);
+    expect(Math.hypot(...rotatedOffset)).toBeCloseTo(Math.hypot(...initialOffset), 10);
+    expect(axialComponent(rotatedOffset)).toBeCloseTo(axialComponent(initialOffset), 10);
     expect(looped[0]).toBeCloseTo(initial[0], 10);
     expect(looped[1]).toBeCloseTo(initial[1], 10);
     expect(looped[2]).toBeCloseTo(initial[2], 10);
