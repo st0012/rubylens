@@ -334,7 +334,7 @@ class RubydexAdapterTest < Minitest::Test
     graph = Rubydex::Graph.new(workspace_path: manifest.root.to_s)
     assert_empty(graph.index_all(manifest.files))
     graph.resolve
-    indexed_package_document_paths = adapter.send(:indexed_package_document_paths, graph)
+    indexed_package_document_paths, = adapter.send(:resolve_documents, graph)
     adapter.instance_variable_set(:@indexed_package_document_paths, indexed_package_document_paths)
     collected = adapter.send(:collect_declarations, graph.declarations)
     workspace = adapter.send(

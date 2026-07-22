@@ -70,10 +70,11 @@ module RubyLens
 
       def package_index_for(path)
         path = path.to_s
-        return @package_index_by_file[path] if @package_index_by_file.key?(path)
-        return @package_index_cache[path] if @package_index_cache.key?(path)
-
-        @package_index_cache[path] = uncached_package_index_for(path)
+        @package_index_by_file.fetch(path) do
+          @package_index_cache.fetch(path) do
+            @package_index_cache[path] = uncached_package_index_for(path)
+          end
+        end
       rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP
         nil
       end
@@ -84,9 +85,9 @@ module RubyLens
 
       def relative_workspace_path(path)
         path = path.to_s
-        return @relative_workspace_path_cache[path] if @relative_workspace_path_cache.key?(path)
-
-        @relative_workspace_path_cache[path] = uncached_relative_workspace_path(path)
+        @relative_workspace_path_cache.fetch(path) do
+          @relative_workspace_path_cache[path] = uncached_relative_workspace_path(path)
+        end
       end
 
       private
