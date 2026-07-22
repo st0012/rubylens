@@ -59,9 +59,9 @@ describe("buildHazePoints", () => {
       const category = runtime.hazeData[offset + 5] - runtime.HAZE_CATEGORY_OFFSET;
       expect([0, 1, 2]).toContain(category);
       expect(runtime.hazeData[offset + 3]).toBeGreaterThanOrEqual(0.16);
-      expect(runtime.hazeData[offset + 3]).toBeLessThanOrEqual(0.3);
+      expect(runtime.hazeData[offset + 3]).toBeLessThanOrEqual(0.48);
       expect(runtime.hazeData[offset + 4]).toBeGreaterThan(0);
-      expect(runtime.hazeData[offset + 4]).toBeLessThan(0.9);
+      expect(runtime.hazeData[offset + 4]).toBeLessThan(1.1);
       expect(runtime.hazeData[offset + 6]).toBeCloseTo(1.2, 5);
     }
   });

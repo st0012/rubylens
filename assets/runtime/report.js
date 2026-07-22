@@ -869,25 +869,45 @@
       const writeHazeStar = (position, category, packageIndex, systemIndex, seed) => {
         const out = cursor * SCENE_POINT_STRIDE;
         const faint = unit(seed, 97);
+        // faint⁴ keeps most of the field very dim with a small sparkle tail of
+        // brighter, slightly larger resolved stars — the depth hierarchy of a
+        // real star field rather than uniform grain.
+        const sparkle = faint > .96;
         data[out] = position[0];
         data[out + 1] = position[1];
         data[out + 2] = position[2];
-        data[out + 3] = .16 + .14 * unit(seed, 96);
-        data[out + 4] = meanAlpha[category] * (.3 + .7 * faint * faint);
+        data[out + 3] = sparkle ? .3 + .18 * unit(seed, 96) : .16 + .14 * unit(seed, 96);
+        data[out + 4] = meanAlpha[category] * (.24 + .95 * faint * faint * faint * faint);
         data[out + 5] = category + HAZE_CATEGORY_OFFSET;
         data[out + 6] = 1.2;
         data[out + 7] = packageIndex;
         data[out + 8] = systemIndex;
         cursor += 1;
       };
-      for (let star = 0; star < poolCounts[0]; star += 1) {
-        const seed = hash(star + 1, 133);
-        writeHazeStar(corePosition(seed), categoryCodes.core, -1, -1, seed);
-      }
-      for (let star = 0; star < poolCounts[1]; star += 1) {
-        const seed = hash(star + 1, 134);
-        writeHazeStar(testPosition(seed), categoryCodes.tests, -1, -1, seed);
-      }
+      // A fraction of each namespace pool lands in tight clumps resampled from
+      // the same law — the flocculent star-cloud patchiness of a real disc.
+      const writeNamespacePool = (count, category, positionFor, clumpShare, clumpSpread) => {
+        const clumpSize = 14;
+        const clumps = Math.floor(count * clumpShare / clumpSize);
+        const smooth = count - clumps * clumpSize;
+        for (let star = 0; star < smooth; star += 1) {
+          const seed = hash(star + 1, 133 + category);
+          writeHazeStar(positionFor(seed), category, -1, -1, seed);
+        }
+        for (let clump = 0; clump < clumps; clump += 1) {
+          const center = positionFor(hash(clump + 1, 137 + category));
+          for (let member = 0; member < clumpSize; member += 1) {
+            const seed = hash(clump * 97 + member + 1, 139 + category);
+            writeHazeStar([
+              center[0] + normal(seed, 1) * clumpSpread,
+              center[1] + normal(seed, 3) * clumpSpread * .4,
+              center[2] + normal(seed, 5) * clumpSpread,
+            ], category, -1, -1, seed);
+          }
+        }
+      };
+      writeNamespacePool(poolCounts[0], categoryCodes.core, corePosition, .2, 1.1 * layoutScale.disk);
+      writeNamespacePool(poolCounts[1], categoryCodes.tests, testPosition, .3, 1.4 * layoutScale.tests);
       for (const row of dependencyRows) {
         const offset = Math.floor(row / 8) * SCENE_POINT_STRIDE;
         const seed = hash(row + 1, 135);
@@ -903,6 +923,57 @@
     }
     const hazeData = buildHazePoints();
     const hazePointCount = hazeData.length / SCENE_POINT_STRIDE;
+
+    // Dust absorbs. One broad, broken lane hugs each spiral arm's inner edge
+    // and attenuates the marks and haze behind it by up to half — rule 6 of
+    // docs/STELLAR_DESIGN_RESEARCH.md: dust is derived from the morphology,
+    // broken into segments, and absorbing; never uniform fog and never new
+    // glowing particles. Positions are static in galaxy space, so absorption
+    // is baked into point alphas at build time and costs nothing per frame.
+    const DUST_PRESET = Object.freeze({ maxAbsorption: .5, laneWidth: 2.4, laneOffset: -.16, innerRadius: 7, segmentLength: 9 });
+    const smoothstep = (low, high, value) => {
+      const t = clamp((value - low) / (high - low), 0, 1);
+      return t * t * (3 - 2 * t);
+    };
+    function dustAttenuation(position, radialScale) {
+      if (!spiralMorphology) return 0;
+      const x = position[0] / radialScale;
+      const z = position[2] / radialScale;
+      const radial = Math.hypot(x, z);
+      const window = smoothstep(DUST_PRESET.innerRadius, DUST_PRESET.innerRadius + 5, radial) * (1 - smoothstep(44, 58, radial));
+      if (window <= 0) return 0;
+      const pointTheta = Math.atan2(z, x);
+      const barReach = morphology.family === MORPHOLOGY_FAMILY.barredSpiral ? (12 + morphology.barLength * 24) * .55 : 0;
+      const armCount = Math.max(2, morphology.armCount);
+      let density = 0;
+      for (let arm = 0; arm < armCount; arm += 1) {
+        const origin = morphology.family === MORPHOLOGY_FAMILY.barredSpiral
+          ? morphology.phase + arm % 2 * Math.PI
+          : morphology.phase + arm * Math.PI * 2 / armCount;
+        const laneTheta = origin + Math.max(0, radial - barReach) * morphology.winding + DUST_PRESET.laneOffset;
+        const delta = Math.atan2(Math.sin(pointTheta - laneTheta), Math.cos(pointTheta - laneTheta));
+        const across = Math.abs(delta) * radial;
+        if (across > DUST_PRESET.laneWidth * 3) continue;
+        const segment = Math.floor((radial + arm * 3.7) / DUST_PRESET.segmentLength);
+        const broken = (.35 + .65 * unit(hash(morphology.phaseSeed + arm * 17 + 1, 150 + segment), 0)) *
+          (.6 + .4 * Math.sin(radial * 1.7 + arm * 2.1));
+        density = Math.max(density, Math.exp(-((across / DUST_PRESET.laneWidth) ** 2)) * clamp(broken, 0, 1));
+      }
+      return DUST_PRESET.maxAbsorption * window * density;
+    }
+    function applyDustLanes(rows, count, categoryColumnOffset) {
+      for (let index = 0; index < count; index += 1) {
+        const offset = index * SCENE_POINT_STRIDE;
+        const category = rows[offset + 5] - categoryColumnOffset;
+        if (category !== categoryCodes.core && category !== categoryCodes.tests) continue;
+        const radialScale = category === categoryCodes.core ? layoutScale.disk : layoutScale.tests;
+        const absorbed = dustAttenuation([rows[offset], rows[offset + 1], rows[offset + 2]], radialScale);
+        if (absorbed > 0) rows[offset + 4] *= 1 - absorbed;
+      }
+    }
+    applyDustLanes(sceneData, scenePointCount, 0);
+    applyDustLanes(hazeData, hazePointCount, HAZE_CATEGORY_OFFSET);
+
     // Data rows first, haze rows after: glow and white-hot passes draw only the
     // first scenePointCount rows, and data render indexes stay pairable with
     // gl_VertexID for selection.
