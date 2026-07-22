@@ -57,6 +57,8 @@ Point construction computes `sizeFactor` as `base * (0.62 + signal * 0.46)`; pro
 
 Dependency brightness uses fixed category and surface scales, not package-population normalization. This avoids adding a package-specific exposure signal, but the independently derived local geometry can still make coarse package aggregate composition more visually legible. Because the renderer is additive, perceived brightness is not linear with alpha: dense overlap can still look brighter than sparse regions.
 
+Dependency cloud centers apply a `1.15` halo-spacing scale after their deterministic system and package layout is complete. This expands every center coordinate uniformly around Core, increasing all pairwise center distances by 15% while leaving each cloud's declaration-count radius, internal morphology, and complete declaration population unchanged. The visual scale is divided out of the distance used by the tidal rotation term, so spacing refinement does not silently rewrite the dynamical-time classification.
+
 ## Dependency cloud rotation
 
 Each package's local point field rotates rigidly around its existing package hub. The runtime derives one signed angular rate from data already present: declaration count supplies a mass proxy, the package anchor supplies cloud radius and distance from Core, and the package seed supplies direction. The characteristic score combines `sqrt(declarationCount / cloudRadius³)` with a weaker `(dependencyInnerRadius / coreDistance)³ᐟ²` tidal term, then compresses it to one or two whole turns per 60-second presentation loop. Most clouds use the slower tier; only the densest or most tidally influenced reach the faster one. The renderer stores no new payload field.

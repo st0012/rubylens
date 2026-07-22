@@ -31,15 +31,17 @@ describe("dependency cloud spin", () => {
   it("uses self-gravity and tidal frequencies to assign bounded loop-safe speeds", () => {
     const densePackage = [1, 0, 1, 500, 0, 0, 0, 0, -1];
     const lightPackage = [1, 0, 1, 10, 0, 0, 0, 0, -1];
-    const near = runtime.dependencySpinTurns(densePackage, [60, 0, 0, 3]);
-    const far = runtime.dependencySpinTurns(densePackage, [140, 0, 0, 3]);
-    const diffuse = runtime.dependencySpinTurns(densePackage, [60, 0, 0, 6]);
-    const light = runtime.dependencySpinTurns(lightPackage, [60, 0, 0, 3]);
+    const displayScale = runtime.DEPENDENCY_HALO_SPACING_SCALE;
+    const near = runtime.dependencySpinTurns(densePackage, [60 * displayScale, 0, 0, 3]);
+    const far = runtime.dependencySpinTurns(densePackage, [140 * displayScale, 0, 0, 3]);
+    const diffuse = runtime.dependencySpinTurns(densePackage, [60 * displayScale, 0, 0, 6]);
+    const light = runtime.dependencySpinTurns(lightPackage, [60 * displayScale, 0, 0, 3]);
 
     expect(near).toBe(2);
     expect(far).toBe(1);
     expect(diffuse).toBe(1);
     expect(light).toBe(1);
+    expect(displayScale).toBe(1.15);
     expect(runtime.DEPENDENCY_SPIN_RECIPE.maximumTurnsPerLoop).toBe(2);
     const assignedTurns = runtime.packageSpinRates.map(rate =>
       Math.abs(rate) * runtime.SHOWCASE_PRESET.durationMs / 1000 / (Math.PI * 2)

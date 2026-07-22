@@ -36,6 +36,7 @@
     const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35;
     const CORE_SCALE_BASELINE = 3_000;
     const DEPENDENCY_CLOUD_THRESHOLD = 18;
+    const DEPENDENCY_HALO_SPACING_SCALE = 1.15;
     const DEPENDENCY_STAR_ALPHA_SCALE = .85;
     const MORPHOLOGY_FAMILY = Object.freeze({ elliptical: 0, lenticular: 1, spiral: 2, barredSpiral: 3, irregular: 4 });
     const MORPHOLOGY_FAMILY_LABELS = Object.freeze(["Elliptical galaxy", "Lenticular galaxy", "Spiral galaxy", "Barred spiral galaxy", "Irregular galaxy"]);
@@ -711,11 +712,19 @@
         systemIndex,
       ];
     });
+    for (const anchors of [systemAnchors, packageAnchors]) {
+      for (const anchor of anchors) {
+        anchor[0] *= DEPENDENCY_HALO_SPACING_SCALE;
+        anchor[1] *= DEPENDENCY_HALO_SPACING_SCALE;
+        anchor[2] *= DEPENDENCY_HALO_SPACING_SCALE;
+      }
+    }
 
     function dependencySpinTurns(packageRow, anchor) {
       const declarationCount = Math.max(1, Number(packageRow?.[3]) || 0);
       const cloudRadius = Math.max(1e-6, Number(anchor?.[3]) || 0);
-      const coreDistance = Math.max(1e-6, Math.hypot(anchor?.[0] || 0, anchor?.[1] || 0, anchor?.[2] || 0));
+      const coreDistance = Math.max(1e-6, Math.hypot(anchor?.[0] || 0, anchor?.[1] || 0, anchor?.[2] || 0)) /
+        DEPENDENCY_HALO_SPACING_SCALE;
       const selfGravityFrequency = Math.sqrt(declarationCount / cloudRadius ** 3);
       const tidalFrequency = (layoutScale.dependencyInnerRadius / coreDistance) ** 1.5;
       const characteristicFrequency = selfGravityFrequency * DEPENDENCY_SPIN_RECIPE.selfGravityScale +
