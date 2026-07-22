@@ -115,12 +115,15 @@
       "labelWidth": 440
     });
     const TRAVEL_PRESET = Object.freeze({
-      "cycleDurationMs": 2000,
-      "flightDurationMs": 1300,
-      "launchWindowMs": 800,
+      "flightDurationMs": 2200,
+      "initialDelayMin": 0.2,
+      "initialDelayRange": 0.5,
+      "intervalMin": 0.55,
+      "intervalRange": 0.75,
+      "handoffGapMinMs": 24,
+      "handoffGapRangeMs": 126,
+      "loopQuietMs": 80,
       "tailFraction": 0.7,
-      "startFractionMin": 0.3,
-      "startFractionJitter": 0.2,
       "progressEase": 0.055,
       "fadeInFraction": 0.12,
       "fadeOutStart": 0.82,
@@ -142,15 +145,15 @@
       "tipAlpha": 0.3,
       "tipGlowAlpha": 0.07,
       "tipGlowBlur": 1.4,
-      "randomCyclePeriod": 1009,
-      "startJitterChannel": 401,
-      "arcDirectionChannel": 8192
+      "initialDelayChannel": 13,
+      "intervalChannel": 29,
+      "handoffGapChannel": 43,
+      "candidateChannel": 59,
+      "arcDirectionChannel": 71
     });
-    function travelLaunchCountForPointCount(pointCount) {
+    function travelFlightLimitForPointCount(pointCount) {
       if (pointCount < 500) return 1;
-      if (pointCount < 5_000) return 2;
-      if (pointCount < 100_000) return 3;
-      return 4;
+      return 2;
     }
     const TOP_DOWN_PITCH = Math.PI / 2;
     const CONTEXT_TARGET_X = .32;
@@ -794,9 +797,12 @@
       return { sceneData, scenePointCount, interactivePoints, dependencyHubs, packageHubs, systemHubs };
     }
     const { sceneData, scenePointCount, interactivePoints, dependencyHubs, packageHubs, systemHubs } = buildPoints();
-    const travelLaunchCount = travelLaunchCountForPointCount(scenePointCount);
-    const travelVisibleLimit = travelLaunchCount <= 2 ? travelLaunchCount : travelLaunchCount - 1;
+    const travelFlightLimit = travelFlightLimitForPointCount(scenePointCount);
     const constantReferenceLinks = decodeConstantReferenceLinks(model.constantReferenceLinks);
+    const travelScheduleSeed = hash((
+      morphology.phaseSeed ^ scenePointCount ^
+      Math.imul(constantReferenceLinks.length + 1, 0x9e3779b9)
+    ) >>> 0);
     delete model.constantReferenceLinks;
     function travelEndpointCategory(renderIndex) {
       const categoryCode = sceneData[renderIndex * SCENE_POINT_STRIDE + 5];
@@ -2412,7 +2418,9 @@
         travelCanvas.height = height;
         travelContext.setTransform(1, 0, 0, 1, 0, 0);
         travelOverlayDirty = false;
-        travelPlan = null;
+        travelEpisodes.length = 0;
+        travelScheduleMinute = 0;
+        travelScheduleComplete = false;
         fitShowcaseStage();
         updateSceneViewport();
         if (reducedMotionQuery.matches) applyShowcaseCamera(0);
@@ -2590,7 +2598,9 @@
       return projectCoordinates(positionX, positionY, positionZ, matrix, out);
     }
 
-    let travelPlan = null;
+    const travelEpisodes = [];
+    let travelScheduleMinute = 0;
+    let travelScheduleComplete = false;
     let explorerTravelCameraOrigin = null;
     let explorerTravelElapsed = 0;
     let explorerTravelLastTimestamp = null;
@@ -2598,7 +2608,9 @@
 
     function resetExplorerTravel() {
       if (!interactiveMode) return;
-      travelPlan = null;
+      travelEpisodes.length = 0;
+      travelScheduleMinute = 0;
+      travelScheduleComplete = false;
       explorerTravelCameraOrigin = null;
       explorerTravelElapsed = 0;
       explorerTravelLastTimestamp = null;
@@ -2611,28 +2623,23 @@
         left.arrivalIndex === right.arrivalIndex;
     }
 
-    function travelLinkCandidatesForSlot(cycle, slot, selected) {
-      const launchCount = travelLaunchCount;
-      let dependencyPreferred;
-      let primaryStart;
-      if (launchCount === 1) {
-        dependencyPreferred = cycle % 3 !== 2;
-        primaryStart = dependencyPreferred
-          ? cycle - Math.floor((cycle + 1) / 3)
-          : Math.floor(cycle / 3);
-      } else {
-        const workspaceSlot = cycle % launchCount;
-        dependencyPreferred = slot !== workspaceSlot;
-        primaryStart = dependencyPreferred
-          ? cycle * (launchCount - 1) + slot - (slot > workspaceSlot ? 1 : 0)
-          : cycle;
-      }
+    function travelEpisodeSeed(episodeIndex) {
+      return hash(hash(travelScheduleSeed, travelScheduleMinute + 1), episodeIndex + 1);
+    }
+
+    function travelLinkCandidatesForEpisode(episodeIndex, selected) {
+      const episodeSeed = travelEpisodeSeed(episodeIndex);
+      const preferencePhase = hash(travelScheduleSeed, travelScheduleMinute + 1) & 3;
+      const dependencyPreferred = (episodeIndex + preferencePhase) % 4 !== 0;
       const primaryPool = dependencyPreferred ? dependencyTravelLinkIndices : workspaceTravelLinkIndices;
       const secondaryPool = dependencyPreferred ? workspaceTravelLinkIndices : dependencyTravelLinkIndices;
-      const secondaryStart = cycle * launchCount + slot;
       const candidates = [];
       const avoidSelected = selected.size < constantReferenceLinks.length;
-      for (const [pool, start] of [[primaryPool, primaryStart], [secondaryPool, secondaryStart]]) {
+      for (const [pool, channel] of [
+        [primaryPool, TRAVEL_PRESET.candidateChannel],
+        [secondaryPool, TRAVEL_PRESET.candidateChannel + 1],
+      ]) {
+        const start = Math.floor(unit(episodeSeed, channel) * pool.length);
         for (let offset = 0; offset < pool.length && candidates.length < TRAVEL_PRESET.admissionCandidateLimit; offset += 1) {
           const linkIndex = pool[(start + offset) % pool.length];
           if (avoidSelected && selected.has(linkIndex)) continue;
@@ -2642,27 +2649,65 @@
       return candidates;
     }
 
-    function travelEpisodeStartsAt(cycle, slot, link) {
-      const launchCount = travelLaunchCount;
-      const slotDuration = TRAVEL_PRESET.launchWindowMs / launchCount;
-      const linkSeed = hash((link.arrivalIndex ^ Math.imul(link.departureIndex + 1, 0x9e3779b9)) >>> 0);
-      const startFraction = TRAVEL_PRESET.startFractionMin +
-        unit(
-          linkSeed,
-          TRAVEL_PRESET.startJitterChannel + (cycle % TRAVEL_PRESET.randomCyclePeriod) * launchCount + slot,
-        ) * TRAVEL_PRESET.startFractionJitter;
-      return cycle * TRAVEL_PRESET.cycleDurationMs + slot * slotDuration + slotDuration * startFraction;
+    function travelEpisodeStartsAt(episodeIndex) {
+      const episodeSeed = travelEpisodeSeed(episodeIndex);
+      const baseInterval = TRAVEL_PRESET.flightDurationMs / travelFlightLimit;
+      const minuteStart = travelScheduleMinute * SHOWCASE_PRESET.durationMs;
+      let startsAt;
+      if (episodeIndex === 0) {
+        startsAt = minuteStart + baseInterval * (
+          TRAVEL_PRESET.initialDelayMin +
+          unit(episodeSeed, TRAVEL_PRESET.initialDelayChannel) * TRAVEL_PRESET.initialDelayRange
+        );
+      } else {
+        startsAt = travelEpisodes[episodeIndex - 1].startsAt + baseInterval * (
+          TRAVEL_PRESET.intervalMin +
+          unit(episodeSeed, TRAVEL_PRESET.intervalChannel) * TRAVEL_PRESET.intervalRange
+        );
+      }
+      if (episodeIndex >= travelFlightLimit) {
+        const handoffAt = travelEpisodes[episodeIndex - travelFlightLimit].startsAt +
+          TRAVEL_PRESET.flightDurationMs + TRAVEL_PRESET.handoffGapMinMs +
+          unit(episodeSeed, TRAVEL_PRESET.handoffGapChannel) * TRAVEL_PRESET.handoffGapRangeMs;
+        startsAt = Math.max(startsAt, handoffAt);
+      }
+      const latestStart = minuteStart + SHOWCASE_PRESET.durationMs -
+        TRAVEL_PRESET.flightDurationMs - TRAVEL_PRESET.loopQuietMs;
+      return startsAt <= latestStart ? startsAt : minuteStart + SHOWCASE_PRESET.durationMs;
+    }
+
+    function travelEpisodeUpperBound(elapsed) {
+      let low = 0;
+      let high = travelEpisodes.length;
+      while (low < high) {
+        const middle = (low + high) >>> 1;
+        if (travelEpisodes[middle].startsAt <= elapsed) low = middle + 1;
+        else high = middle;
+      }
+      return low;
+    }
+
+    function travelEpisodesThrough(elapsed) {
+      if (!constantReferenceLinks.length || !Number.isFinite(elapsed)) return [];
+      const normalizedElapsed = showcaseMode
+        ? ((elapsed % SHOWCASE_PRESET.durationMs) + SHOWCASE_PRESET.durationMs) % SHOWCASE_PRESET.durationMs
+        : Math.max(0, elapsed);
+      ensureTravelEpisodesThrough(normalizedElapsed, normalizedElapsed);
+      return travelEpisodes.slice(0, travelEpisodeUpperBound(normalizedElapsed));
     }
 
     function travelStatesAt(elapsed) {
       if (!constantReferenceLinks.length || !Number.isFinite(elapsed)) return [];
-      const normalizedElapsed = Math.max(0, elapsed);
-      const episodes = travelAdmissionPlanAt(normalizedElapsed).episodes;
+      const normalizedElapsed = showcaseMode
+        ? ((elapsed % SHOWCASE_PRESET.durationMs) + SHOWCASE_PRESET.durationMs) % SHOWCASE_PRESET.durationMs
+        : Math.max(0, elapsed);
+      ensureTravelEpisodesThrough(normalizedElapsed, normalizedElapsed);
       const states = [];
-      for (const episode of episodes) {
-        if (!episode.route) continue;
+      for (let index = travelEpisodeUpperBound(normalizedElapsed) - 1; index >= 0; index -= 1) {
+        const episode = travelEpisodes[index];
         const flightElapsed = normalizedElapsed - episode.startsAt;
-        if (flightElapsed < 0 || flightElapsed >= TRAVEL_PRESET.flightDurationMs) continue;
+        if (flightElapsed >= TRAVEL_PRESET.flightDurationMs) break;
+        if (!episode.route) continue;
         const rawProgress = flightElapsed / TRAVEL_PRESET.flightDurationMs;
         const progress = rawProgress - TRAVEL_PRESET.progressEase * Math.sin(Math.PI * 2 * rawProgress);
         const fadeInProgress = Math.min(1, rawProgress / TRAVEL_PRESET.fadeInFraction);
@@ -2671,7 +2716,7 @@
         const fadeOut = 1 - fadeOutProgress * fadeOutProgress * (3 - 2 * fadeOutProgress);
         states.push({ episode, progress, visibility: fadeIn * fadeOut });
       }
-      return states;
+      return states.reverse();
     }
 
     function travelEmphasis(category) {
@@ -2718,7 +2763,7 @@
       );
     }
 
-    function prepareTravelGeometry(link, cycle, slot, departure, arrival, right, bottom, inset = 8) {
+    function prepareTravelGeometry(link, episodeIndex, departure, arrival, right, bottom, inset = 8) {
       const visible = point => point[0] >= inset && point[0] <= right - inset && point[1] >= inset && point[1] <= bottom - inset;
       if (!visible(departure) || !visible(arrival)) return null;
 
@@ -2745,9 +2790,8 @@
       const negativeClearance = Math.hypot(negativeX - centerX, negativeY - centerY);
       const linkSeed = hash((link.arrivalIndex ^ Math.imul(link.departureIndex + 1, 0x9e3779b9)) >>> 0);
       const seededDirection = unit(
-        linkSeed,
-        TRAVEL_PRESET.arcDirectionChannel +
-          (cycle % TRAVEL_PRESET.randomCyclePeriod) * travelLaunchCount + slot,
+        hash(linkSeed, episodeIndex + 1),
+        TRAVEL_PRESET.arcDirectionChannel,
       ) < 0.5 ? -1 : 1;
       const arcDirection = Math.abs(positiveClearance - negativeClearance) < 1
         ? seededDirection
@@ -2760,12 +2804,12 @@
       };
     }
 
-    function beginExplorerTravelCamera(cycle, elapsed) {
-      const originElapsed = cycle * TRAVEL_PRESET.cycleDurationMs;
+    function beginExplorerTravelCamera(elapsed) {
+      if (explorerTravelCameraOrigin) return;
       const yawDirection = screenRotationYawSign(pitch);
       explorerTravelCameraOrigin = {
-        elapsed: originElapsed,
-        yaw: yaw - yawDirection * DRIFT_RADIANS_PER_SECOND * (elapsed - originElapsed) / 1000,
+        elapsed: 0,
+        yaw: yaw - yawDirection * DRIFT_RADIANS_PER_SECOND * elapsed / 1000,
         yawDirection,
         pitch,
         zoom,
@@ -2786,7 +2830,7 @@
       };
     }
 
-    function prepareFrozenTravelRoute(cycle, slot, episode, right, bottom) {
+    function prepareFrozenTravelRoute(episodeIndex, episode, right, bottom) {
       const link = constantReferenceLinks[episode.linkIndex];
       const departureCategory = travelEndpointCategory(link.departureIndex);
       const arrivalCategory = travelEndpointCategory(link.arrivalIndex);
@@ -2810,8 +2854,7 @@
       if (!departure || !arrival) return null;
       const route = prepareTravelGeometry(
         link,
-        cycle,
-        slot,
+        episodeIndex,
         departure,
         arrival,
         right,
@@ -2821,59 +2864,54 @@
       return route && travelCurveFits(route, right, bottom, TRAVEL_PRESET.admissionInsetPx) ? route : null;
     }
 
-    function travelEpisodesOverlap(left, right) {
-      return left.startsAt < right.startsAt + TRAVEL_PRESET.flightDurationMs &&
-        right.startsAt < left.startsAt + TRAVEL_PRESET.flightDurationMs;
-    }
-
-    function buildTravelPlan(cycle, elapsed) {
-      if (!showcaseMode) beginExplorerTravelCamera(cycle, elapsed);
+    function ensureTravelEpisodesThrough(elapsed, cameraElapsed) {
+      const minute = Math.floor(elapsed / SHOWCASE_PRESET.durationMs);
+      if (travelScheduleMinute !== minute) {
+        travelEpisodes.length = 0;
+        travelScheduleMinute = minute;
+        travelScheduleComplete = false;
+      }
+      if (!showcaseMode) beginExplorerTravelCamera(cameraElapsed);
       const right = interactiveMode ? sceneRight : width;
       const bottom = interactiveMode ? sceneBottom : height;
-      const selected = new Set();
-      const episodes = [];
-      for (let slot = 0; slot < travelLaunchCount; slot += 1) {
-        const candidates = travelLinkCandidatesForSlot(cycle, slot, selected);
+      while (!travelScheduleComplete && (!travelEpisodes.length || travelEpisodes.at(-1).startsAt <= elapsed)) {
+        const episodeIndex = travelEpisodes.length;
+        const startsAt = travelEpisodeStartsAt(episodeIndex);
+        if (startsAt >= (minute + 1) * SHOWCASE_PRESET.durationMs) {
+          travelScheduleComplete = true;
+          break;
+        }
+        const overlapping = [];
+        for (let index = travelEpisodes.length - 1; index >= 0; index -= 1) {
+          const other = travelEpisodes[index];
+          if (other.startsAt + TRAVEL_PRESET.flightDurationMs <= startsAt) break;
+          if (other.route) overlapping.push(other);
+        }
+        const selected = new Set(overlapping.map(episode => episode.linkIndex));
+        const candidates = travelLinkCandidatesForEpisode(episodeIndex, selected);
         let chosen = null;
         for (const linkIndex of candidates) {
           const episode = {
             linkIndex,
-            startsAt: travelEpisodeStartsAt(cycle, slot, constantReferenceLinks[linkIndex]),
+            startsAt,
             route: null,
           };
-          const overlapping = episodes.filter(other => other.route && travelEpisodesOverlap(other, episode));
-          if (overlapping.length >= travelVisibleLimit) {
-            chosen ||= episode;
-            continue;
-          }
-          if (overlapping.some(other => travelLinksShareEndpoint(
+          chosen ||= episode;
+          if (overlapping.length >= travelFlightLimit || overlapping.some(other => travelLinksShareEndpoint(
             constantReferenceLinks[other.linkIndex],
             constantReferenceLinks[episode.linkIndex],
           ))) {
-            chosen ||= episode;
             continue;
           }
-          const route = prepareFrozenTravelRoute(cycle, slot, episode, right, bottom);
-          if (!route) {
-            chosen ||= episode;
-            continue;
-          }
+          const route = prepareFrozenTravelRoute(episodeIndex, episode, right, bottom);
+          if (!route) continue;
           episode.route = route;
           chosen = episode;
           break;
         }
-        if (!chosen) continue;
-        selected.add(chosen.linkIndex);
-        episodes.push(chosen);
+        if (!chosen) break;
+        travelEpisodes.push(chosen);
       }
-      return { cycle, episodes };
-    }
-
-    function travelAdmissionPlanAt(elapsed) {
-      const normalizedElapsed = Math.max(0, elapsed);
-      const cycle = Math.floor(normalizedElapsed / TRAVEL_PRESET.cycleDurationMs);
-      if (travelPlan?.cycle !== cycle) travelPlan = buildTravelPlan(cycle, normalizedElapsed);
-      return travelPlan;
     }
 
     function travelWakeWeight(position) {

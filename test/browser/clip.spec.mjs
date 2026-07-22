@@ -22,7 +22,7 @@ function renderClipFrame(page, frameIndex, fps = 30) {
 
 function peakTravelFrame(page, fps = 60) {
   return page.evaluate(rate => {
-    const frameCount = TRAVEL_PRESET.cycleDurationMs * rate / 1000;
+    const frameCount = SHOWCASE_PRESET.durationMs * rate / 1000;
     let peak = { frame: null, count: 0, score: -1 };
     for (let frame = 0; frame < frameCount; frame += 1) {
       const elapsed = frame * 1000 / rate;
@@ -37,13 +37,13 @@ function peakTravelFrame(page, fps = 60) {
         peak = { frame, count: states.length, score };
       }
     }
-    return { ...peak, limit: travelVisibleLimit };
+    return { ...peak, limit: travelFlightLimit };
   }, fps);
 }
 
-function peakVisibleTravelFrame(page, fps = 30, cycles = 6) {
-  return page.evaluate(([rate, cycleCount]) => {
-    const frameCount = TRAVEL_PRESET.cycleDurationMs * rate / 1000 * cycleCount;
+function peakVisibleTravelFrame(page, fps = 30) {
+  return page.evaluate(rate => {
+    const frameCount = SHOWCASE_PRESET.durationMs * rate / 1000;
     let peak = { frame: null, count: 0, visibility: -1 };
     for (let frame = 0; frame < frameCount; frame += 1) {
       const elapsed = frame * 1000 / rate;
@@ -54,17 +54,15 @@ function peakVisibleTravelFrame(page, fps = 30, cycles = 6) {
       if (visibleStates.length > peak.count || (visibleStates.length === peak.count && visibility > peak.visibility)) {
         peak = { frame, count: visibleStates.length, visibility };
       }
-      if (peak.count === travelVisibleLimit && visibleStates.length < peak.count) break;
+      if (peak.count === travelFlightLimit && visibleStates.length < peak.count) break;
     }
-    return { ...peak, limit: travelVisibleLimit };
-  }, [fps, cycles]);
+    return { ...peak, limit: travelFlightLimit };
+  }, fps);
 }
 
-const TRAVEL_PRESET_DURATION_SECONDS = 2;
-
 async function firstRenderedTravelFrame(page, fps = 60) {
-  return page.evaluate(([rate, durationSeconds]) => {
-    const frameCount = durationSeconds * rate * 6;
+  return page.evaluate(rate => {
+    const frameCount = SHOWCASE_PRESET.durationMs * rate / 1000;
     for (let frame = 0; frame < frameCount; frame += 1) {
       const elapsed = frame * 1000 / rate;
       const visibleState = travelStatesAt(elapsed)
@@ -74,7 +72,7 @@ async function firstRenderedTravelFrame(page, fps = 60) {
       }
     }
     return null;
-  }, [fps, TRAVEL_PRESET_DURATION_SECONDS]);
+  }, fps);
 }
 
 function travelPixels(page) {
@@ -168,6 +166,18 @@ test("spatially distinct travel wakes are repeatable and follow decoded directio
   }, [visiblePeak.frame, 30]);
   expect(visibleLinkIndexes).toHaveLength(visiblePeak.limit);
   expect(new Set(visibleLinkIndexes).size).toBe(visiblePeak.limit);
+  const loopStates = await page.evaluate(([frame, rate]) => {
+    const elapsed = frame * 1000 / rate;
+    const snapshot = value => travelStatesAt(value).map(state => ({
+      linkIndex: state.episode.linkIndex,
+      startsAt: state.episode.startsAt,
+      progress: state.progress,
+      visibility: state.visibility,
+      route: state.episode.route,
+    }));
+    return [snapshot(elapsed), snapshot(elapsed + SHOWCASE_PRESET.durationMs)];
+  }, [visiblePeak.frame, 30]);
+  expect(loopStates[1]).toEqual(loopStates[0]);
   await renderClipFrame(page, visiblePeak.frame, 30);
   const pixels = await travelPixels(page);
   expect(pixels.opaque).toBeGreaterThan(40);
@@ -185,14 +195,17 @@ test("spatially distinct travel wakes are repeatable and follow decoded directio
 test("one full turn loops seamlessly at any capture rate", async ({ page }) => {
   const preset = await openShowcaseClip(page);
   expect(preset.status).toBe("ok");
-  await renderClipFrame(page, 0);
-  const start = await page.screenshot();
-  expect(await travelPixels(page)).toEqual({ opaque: 0, spanX: 0, spanY: 0 });
-  await renderClipFrame(page, 1799);
-  expect(await travelPixels(page)).toEqual({ opaque: 0, spanX: 0, spanY: 0 });
-  await renderClipFrame(page, 1800);
-  const wrapped = await page.screenshot();
-  expect(wrapped.equals(start)).toBe(true);
+  for (const fps of [30, 60]) {
+    const loopFrame = preset.durationMs * fps / 1000;
+    await renderClipFrame(page, 0, fps);
+    const start = await page.screenshot();
+    expect(await travelPixels(page)).toEqual({ opaque: 0, spanX: 0, spanY: 0 });
+    await renderClipFrame(page, loopFrame - 1, fps);
+    expect(await travelPixels(page)).toEqual({ opaque: 0, spanX: 0, spanY: 0 });
+    await renderClipFrame(page, loopFrame, fps);
+    const wrapped = await page.screenshot();
+    expect(wrapped.equals(start)).toBe(true);
+  }
 });
 
 test("reduced motion suppresses travel streaks in clip mode", async ({ page }) => {

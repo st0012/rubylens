@@ -59,13 +59,14 @@ const CONCURRENT_LINKS = [
   [1, 0],
   [2, 10],
   [3, 19],
+  [4, 18],
 ];
 
-function concurrentFixtureModel(links = CONCURRENT_LINKS) {
+function concurrentFixtureModel(links = CONCURRENT_LINKS, dependencyCount = 4_980) {
   const namespaces = Array.from({ length: 20 }, (_, index) =>
     namespaceRow(100 + index, index % 4 === 0 ? 1 : 0)
   );
-  const dependencyStars = Array.from({ length: 4_980 }, (_, index) =>
+  const dependencyStars = Array.from({ length: dependencyCount }, (_, index) =>
     [500 + index, 0, 1, 1, 0, 0, 1, 1]
   );
   return minimalModel({
@@ -80,9 +81,16 @@ function concurrentFixtureModel(links = CONCURRENT_LINKS) {
   });
 }
 
-function launchEpisodes(runtime, elapsed = 0) {
-  return runtime.travelAdmissionPlanAt(elapsed).episodes
+function launchEpisodes(runtime, through = 2_000) {
+  return runtime.travelEpisodesThrough(through)
     .map(episode => ({ linkIndex: episode.linkIndex, startsAt: episode.startsAt }))
+    .sort((left, right) => left.startsAt - right.startsAt);
+}
+
+function admittedLaunchEpisodes(runtime, through = 2_000) {
+  return runtime.travelEpisodesThrough(through)
+    .filter(episode => episode.route)
+    .map(episode => ({ linkIndex: episode.linkIndex, startsAt: episode.startsAt, route: episode.route }))
     .sort((left, right) => left.startsAt - right.startsAt);
 }
 
@@ -107,7 +115,8 @@ function drawableTravelStates(runtime, elapsed) {
 
 function mostDevelopedConcurrentTime(runtime, minimum = 2) {
   let best = null;
-  for (let elapsed = 0; elapsed < runtime.TRAVEL_PRESET.cycleDurationMs; elapsed += 1) {
+  const end = 24_000;
+  for (let elapsed = 0; elapsed < end; elapsed += 1) {
     const states = runtime.travelStatesAt(elapsed);
     if (states.length < minimum) continue;
     const score = Math.min(...states.map(state => state.visibility));
@@ -119,7 +128,8 @@ function mostDevelopedConcurrentTime(runtime, minimum = 2) {
 
 function firstVisibleTravelOverlap(runtime, minimum = 2, step = 5) {
   let best = null;
-  for (let elapsed = 0; elapsed < runtime.TRAVEL_PRESET.cycleDurationMs; elapsed += step) {
+  const end = 24_000;
+  for (let elapsed = 0; elapsed < end; elapsed += step) {
     const visibleStates = drawableTravelStates(runtime, elapsed);
     if (visibleStates.length < minimum) continue;
     const score = Math.min(...visibleStates.map(state =>
@@ -232,53 +242,99 @@ describe("constant-reference travel links", () => {
   it("scales traffic with the rendered project population", () => {
     const runtime = loadRuntime(fixtureModel());
 
-    expect(runtime.travelLaunchCountForPointCount(499)).toBe(1);
-    expect(runtime.travelLaunchCountForPointCount(500)).toBe(2);
-    expect(runtime.travelLaunchCountForPointCount(4_999)).toBe(2);
-    expect(runtime.travelLaunchCountForPointCount(5_000)).toBe(3);
-    expect(runtime.travelLaunchCountForPointCount(99_999)).toBe(3);
-    expect(runtime.travelLaunchCountForPointCount(100_000)).toBe(4);
-    expect(runtime.travelLaunchCount).toBe(1);
-    expect(runtime.travelVisibleLimit).toBe(1);
+    expect(runtime.travelFlightLimitForPointCount(499)).toBe(1);
+    expect(runtime.travelFlightLimitForPointCount(500)).toBe(2);
+    expect(runtime.travelFlightLimitForPointCount(4_999)).toBe(2);
+    expect(runtime.travelFlightLimitForPointCount(5_000)).toBe(2);
+    expect(runtime.travelFlightLimitForPointCount(99_999)).toBe(2);
+    expect(runtime.travelFlightLimitForPointCount(100_000)).toBe(2);
+    expect(runtime.travelFlightLimit).toBe(1);
   });
 
-  it("runs deterministic, randomly spaced launches with real overlap and a hard cap", () => {
+  it("stagger starts and endings continuously while keeping a hard simultaneous cap", () => {
     const runtime = loadRuntime(concurrentFixtureModel());
-    const episodes = launchEpisodes(runtime);
-    const secondCycle = launchEpisodes(
-      runtime,
-      runtime.TRAVEL_PRESET.cycleDurationMs,
-    );
+    runtime.state.zoom = 3;
     const repeatedRuntime = loadRuntime(concurrentFixtureModel());
+    repeatedRuntime.state.zoom = 3;
+    const duration = 59_900;
+    const episodes = admittedLaunchEpisodes(runtime, duration);
+    const repeatedEpisodes = admittedLaunchEpisodes(repeatedRuntime, duration)
+      .map(({ linkIndex, startsAt }) => ({ linkIndex, startsAt }));
+    const alternateModel = concurrentFixtureModel();
+    alternateModel.morphology = [...alternateModel.morphology.slice(0, 9), 8];
+    const alternateRuntime = loadRuntime(alternateModel);
+    alternateRuntime.state.zoom = 3;
+    const alternateEpisodes = admittedLaunchEpisodes(alternateRuntime, duration)
+      .map(({ linkIndex, startsAt }) => ({ linkIndex, startsAt }));
 
-    expect(runtime.TRAVEL_PRESET.cycleDurationMs).toBe(2_000);
-    expect(runtime.travelLaunchCount).toBe(3);
-    expect(runtime.travelVisibleLimit).toBe(2);
-    expect(episodes).toHaveLength(runtime.travelLaunchCount);
-    expect(secondCycle).toHaveLength(runtime.travelLaunchCount);
-    expect(new Set(episodes.map(episode => episode.linkIndex)).size).toBe(3);
-    expect(launchEpisodes(repeatedRuntime)).toEqual(episodes);
-    expect(launchEpisodes(
-      repeatedRuntime,
-      repeatedRuntime.TRAVEL_PRESET.cycleDurationMs,
-    )).toEqual(secondCycle);
-
-    const launchIntervals = episodes.slice(1).map((episode, index) =>
-      episode.startsAt - episodes[index].startsAt
+    expect(runtime.travelFlightLimit).toBe(2);
+    expect(repeatedEpisodes).toEqual(
+      episodes.map(({ linkIndex, startsAt }) => ({ linkIndex, startsAt })),
     );
-    expect(Math.abs(launchIntervals[0] - launchIntervals[1])).toBeGreaterThan(1);
+    expect(alternateEpisodes).not.toEqual(repeatedEpisodes);
 
+    const starts = episodes.map(episode => episode.startsAt);
+    const launchIntervals = starts.slice(1).map((start, index) => start - starts[index]);
+    expect(Math.min(...launchIntervals)).toBeGreaterThan(100);
+    expect(Math.max(...launchIntervals)).toBeGreaterThan(Math.min(...launchIntervals) * 1.5);
+    expect(new Set(launchIntervals.map(interval => Math.round(interval))).size).toBeGreaterThan(20);
+    const crossing = episodes.find(episode =>
+      Math.floor(episode.startsAt / 2_000) !==
+        Math.floor((episode.startsAt + runtime.TRAVEL_PRESET.flightDurationMs) / 2_000)
+    );
+    expect(crossing).toBeDefined();
+    const crossedBoundary = Math.ceil(crossing.startsAt / 2_000) * 2_000;
+    const crossingStates = [-1, 0, 1].map(offset =>
+      stateForEpisode(runtime, crossedBoundary + offset, crossing)
+    );
+    expect(crossingStates.every(state => state?.episode.route === crossing.route)).toBe(true);
+    expect(crossingStates.map(state => state.progress)).toEqual(
+      [...crossingStates.map(state => state.progress)].sort((left, right) => left - right),
+    );
+
+    const events = episodes.flatMap(episode => [
+      { at: episode.startsAt, kind: "start", episode },
+      { at: episode.startsAt + runtime.TRAVEL_PRESET.flightDurationMs, kind: "end", episode },
+    ]).sort((left, right) => left.at - right.at || (left.kind === "end" ? -1 : 1));
+    const active = new Set();
     let peakConcurrency = 0;
-    for (let elapsed = 0; elapsed < runtime.TRAVEL_PRESET.cycleDurationMs; elapsed += 1) {
-      const states = runtime.travelStatesAt(elapsed);
-      peakConcurrency = Math.max(peakConcurrency, states.length);
-      expect(states.length).toBeLessThanOrEqual(runtime.travelVisibleLimit);
-      expect(new Set(states.map(state => state.episode.linkIndex)).size).toBe(states.length);
+    for (const event of events) {
+      if (event.kind === "end") {
+        active.delete(event.episode);
+        continue;
+      }
+      const link = runtime.constantReferenceLinks[event.episode.linkIndex];
+      for (const other of active) {
+        const otherLink = runtime.constantReferenceLinks[other.linkIndex];
+        expect([
+          otherLink.departureIndex,
+          otherLink.arrivalIndex,
+        ]).not.toContain(link.departureIndex);
+        expect([
+          otherLink.departureIndex,
+          otherLink.arrivalIndex,
+        ]).not.toContain(link.arrivalIndex);
+      }
+      active.add(event.episode);
+      peakConcurrency = Math.max(peakConcurrency, active.size);
+      expect(active.size).toBeLessThanOrEqual(runtime.travelFlightLimit);
     }
-    expect(peakConcurrency).toBe(runtime.travelVisibleLimit);
-    expect(runtime.travelStatesAt(0)).toEqual([]);
-    expect(runtime.travelStatesAt(runtime.TRAVEL_PRESET.cycleDurationMs - 0.001)).toEqual([]);
-    expect(runtime.travelStatesAt(runtime.TRAVEL_PRESET.cycleDurationMs)).toEqual([]);
+    expect(peakConcurrency).toBe(runtime.travelFlightLimit);
+
+    const occupiedBoundaries = Array.from({ length: 29 }, (_, index) =>
+      runtime.travelStatesAt((index + 1) * 2_000).length
+    ).filter(Boolean);
+    expect(occupiedBoundaries.length).toBeGreaterThan(24);
+    const steadyStart = 5_000;
+    const steadyEnd = 55_000;
+    const occupiedMs = episodes.reduce((total, episode) =>
+      total + Math.max(0, Math.min(steadyEnd, episode.startsAt + runtime.TRAVEL_PRESET.flightDurationMs) -
+        Math.max(steadyStart, episode.startsAt)), 0);
+    expect(occupiedMs / (steadyEnd - steadyStart)).toBeGreaterThan(
+      runtime.travelFlightLimit * 0.75,
+    );
+    expect(runtime.travelStatesAt(59_999)).toEqual([]);
+    expect(runtime.travelStatesAt(60_000)).toEqual([]);
   });
 
   it("freezes a route between the projected launch and arrival positions", () => {
@@ -286,7 +342,8 @@ describe("constant-reference travel links", () => {
     runtime.state.zoom = 3;
     const initialYaw = runtime.state.yaw;
     const direction = runtime.screenRotationYawSign(runtime.state.pitch);
-    const episode = runtime.travelAdmissionPlanAt(0).episodes.find(candidate => candidate.route);
+    runtime.travelEpisodesThrough(0);
+    const episode = runtime.travelEpisodesThrough(2_000).find(candidate => candidate.route);
     const projectAt = (renderIndex, elapsed) => {
       runtime.state.yaw = initialYaw + direction * runtime.DRIFT_RADIANS_PER_SECOND * elapsed / 1000;
       return runtime.projectScenePoint(renderIndex, runtime.viewMatrix());
@@ -305,41 +362,36 @@ describe("constant-reference travel links", () => {
   it("restarts from a clean launch delay after a manual camera change", () => {
     const runtime = loadRuntime(concurrentFixtureModel());
     runtime.state.zoom = 3;
-    const activeAt = firstVisibleTravelOverlap(runtime);
+    const activeAt = firstVisibleTravelOverlap(runtime, runtime.travelFlightLimit);
 
     runtime.context2D.reset();
     runtime.drawTravelOverlay(activeAt, true);
     expect(runtime.context2D.strokes).toHaveLength(
-      runtime.travelVisibleLimit * (runtime.TRAVEL_PRESET.tailSegments + 1),
+      runtime.travelFlightLimit * (runtime.TRAVEL_PRESET.tailSegments + 1),
     );
     runtime.zoomBetween(3.5, runtime.state.sceneRight / 2, runtime.state.sceneBottom / 2);
     runtime.context2D.reset();
     runtime.drawTravelOverlay(5, true);
     expect(runtime.context2D.strokes).toEqual([]);
-    expect(runtime.travelAdmissionPlanAt(5).episodes).toHaveLength(runtime.travelLaunchCount);
+    const resetEpisodes = runtime.travelEpisodesThrough(2_000);
+    expect(resetEpisodes.length).toBeGreaterThan(0);
+    expect(resetEpisodes[0].startsAt).toBeGreaterThan(5);
   });
 
   it("keeps the Explorer travel clock monotonic through routine jank cadence", () => {
     const runtime = loadRuntime(concurrentFixtureModel());
-    const timestamps = [1_000, 1_050, 1_110, 1_190, 1_290, 1_340];
+    const timestamps = Array.from({ length: 20 }, (_, index) => 1_000 + index * 50);
     const elapsed = timestamps.map(timestamp => runtime.explorerTravelElapsedAt(timestamp, true));
     const firstFrame = 1_000 / 60;
 
-    const expectedElapsed = [
-      firstFrame,
-      firstFrame + 50,
-      firstFrame + 100,
-      firstFrame + 150,
-      firstFrame + 200,
-      firstFrame + 250,
-    ];
+    const expectedElapsed = timestamps.map((_, index) => firstFrame + index * 50);
     elapsed.forEach((value, index) => expect(value).toBeCloseTo(expectedElapsed[index], 12));
     const progress = elapsed
       .map(value => runtime.travelStatesAt(value)[0]?.progress)
       .filter(value => value !== undefined);
     expect(progress.length).toBeGreaterThan(1);
     expect(progress.every((value, index) => index === 0 || value > progress[index - 1])).toBe(true);
-    expect(runtime.explorerTravelElapsedAt(2_000, true)).toBe(expectedElapsed.at(-1) + 50);
+    expect(runtime.explorerTravelElapsedAt(2_000, true)).toBeCloseTo(expectedElapsed.at(-1) + 50, 12);
     expect(runtime.explorerTravelElapsedAt(2_100, false)).toBe(0);
     runtime.context2D.reset();
     runtime.drawTravelOverlay(0, false);
@@ -361,7 +413,7 @@ describe("constant-reference travel links", () => {
       expect(runtime.advanceExplorerDrift(timestamp)).toBe(true);
       const elapsed = runtime.explorerTravelElapsedAt(timestamp, true);
       if (!origin) {
-        runtime.travelAdmissionPlanAt(elapsed);
+        runtime.travelEpisodesThrough(elapsed);
         origin = { elapsed, yaw: runtime.state.yaw };
       }
       const expectedYaw = origin.yaw + direction * runtime.DRIFT_RADIANS_PER_SECOND *
@@ -396,57 +448,67 @@ describe("constant-reference travel links", () => {
       [1, 0],
     ]));
     runtime.state.zoom = 3;
-    const preferredCategories = [];
-    const admittedWorkspaceCycles = [];
-
-    expect(runtime.travelLaunchCount).toBe(1);
-    for (let cycle = 0; cycle < 6; cycle += 1) {
-      const cycleStart = cycle * runtime.TRAVEL_PRESET.cycleDurationMs;
+    const preferredCategories = Array.from({ length: 12 }, (_, episodeIndex) => {
       const preferredLink = runtime.constantReferenceLinks[
-        runtime.travelLinkCandidatesForSlot(cycle, 0, new Set())[0]
+        runtime.travelLinkCandidatesForEpisode(episodeIndex, new Set())[0]
       ];
-      preferredCategories.push(
-        runtime.travelEndpointCategory(preferredLink.departureIndex) === "dependencies"
-          ? "dependencies"
-          : "workspace",
-      );
-      const plan = runtime.travelAdmissionPlanAt(cycleStart);
-      const snapshot = plan.episodes.map(episode => ({
-        linkIndex: episode.linkIndex,
-        startsAt: episode.startsAt,
-        admitted: Boolean(episode.route),
-      }));
-      const repeated = runtime.travelAdmissionPlanAt(cycleStart + 1_000);
-      expect(repeated.episodes.map(episode => ({
-        linkIndex: episode.linkIndex,
-        startsAt: episode.startsAt,
-        admitted: Boolean(episode.route),
-      }))).toEqual(snapshot);
-      expect(launchEpisodes(
-        runtime,
-        cycleStart,
-      )).toHaveLength(runtime.travelLaunchCount);
+      return runtime.travelEndpointCategory(preferredLink.departureIndex) === "dependencies"
+        ? "dependencies"
+        : "workspace";
+    });
+    const episodes = runtime.travelEpisodesThrough(12_000);
+    const firstHalf = runtime.travelEpisodesThrough(6_000);
 
-      snapshot.forEach(episode => {
-        const link = runtime.constantReferenceLinks[episode.linkIndex];
-        const dependencyLinked = runtime.travelEndpointCategory(link.departureIndex) === "dependencies" ||
-          runtime.travelEndpointCategory(link.arrivalIndex) === "dependencies";
-        if (!dependencyLinked && episode.admitted) admittedWorkspaceCycles.push(cycle);
-      });
-    }
-
-    expect(preferredCategories.filter(category => category === "dependencies")).toHaveLength(4);
-    expect(preferredCategories.filter(category => category === "workspace")).toHaveLength(2);
-    expect(admittedWorkspaceCycles).not.toEqual([]);
+    expect(runtime.travelFlightLimit).toBe(1);
+    expect(preferredCategories.filter(category => category === "dependencies")).toHaveLength(9);
+    expect(preferredCategories.filter(category => category === "workspace")).toHaveLength(3);
+    expect(firstHalf).toEqual(episodes.filter(episode => episode.startsAt <= 6_000));
+    expect(episodes.some(episode => {
+      const link = runtime.constantReferenceLinks[episode.linkIndex];
+      return episode.route && runtime.travelEndpointCategory(link.departureIndex) !== "dependencies";
+    })).toBe(true);
     const sparse = launchEpisodes(loadRuntime(fixtureModel(LINKS.slice(0, 2))));
-    expect(sparse).toHaveLength(1);
-    expect([0, 1]).toContain(sparse[0].linkIndex);
+    expect(sparse.length).toBeGreaterThan(0);
+    expect(sparse.every(episode => [0, 1].includes(episode.linkIndex))).toBe(true);
+  });
+
+  it("rejects shared endpoints across overlapping launches", () => {
+    const runtime = loadRuntime(concurrentFixtureModel([
+      [1, 0],
+      [2, 0],
+      [2, 10],
+      [3, 19],
+      [4, 18],
+      [5, 17],
+    ]));
+    runtime.state.zoom = 3;
+    runtime.travelEpisodesThrough(20_000);
+    let sawOverlap = false;
+    for (let elapsed = 0; elapsed < 20_000; elapsed += 25) {
+      const states = runtime.travelStatesAt(elapsed);
+      if (states.length > 1) sawOverlap = true;
+      for (let left = 0; left < states.length; left += 1) {
+        const leftLink = runtime.constantReferenceLinks[states[left].episode.linkIndex];
+        for (let right = left + 1; right < states.length; right += 1) {
+          const rightLink = runtime.constantReferenceLinks[states[right].episode.linkIndex];
+          expect([
+            leftLink.departureIndex,
+            leftLink.arrivalIndex,
+          ]).not.toContain(rightLink.departureIndex);
+          expect([
+            leftLink.departureIndex,
+            leftLink.arrivalIndex,
+          ]).not.toContain(rightLink.arrivalIndex);
+        }
+      }
+    }
+    expect(sawOverlap).toBe(true);
   });
 
   it("bends each frozen route by the configured arc height", () => {
     const runtime = loadRuntime(concurrentFixtureModel([CONCURRENT_LINKS[0]]));
     runtime.state.zoom = 3;
-    const route = runtime.travelAdmissionPlanAt(0).episodes.find(episode => episode.route).route;
+    const route = runtime.travelEpisodesThrough(2_000).find(episode => episode.route).route;
     const distance = Math.hypot(
       route.arrival[0] - route.departure[0],
       route.arrival[1] - route.departure[1],
@@ -493,8 +555,14 @@ describe("constant-reference travel links", () => {
     const startsAt = episode.startsAt;
     const endsAt = startsAt + runtime.TRAVEL_PRESET.flightDurationMs;
 
-    expect(runtime.TRAVEL_PRESET.flightDurationMs).toBe(1_300);
-    expect(runtime.TRAVEL_PRESET.launchWindowMs).toBe(800);
+    expect(runtime.TRAVEL_PRESET.flightDurationMs).toBe(2_200);
+    expect(runtime.TRAVEL_PRESET.initialDelayMin).toBe(0.2);
+    expect(runtime.TRAVEL_PRESET.initialDelayRange).toBe(0.5);
+    expect(runtime.TRAVEL_PRESET.intervalMin).toBe(0.55);
+    expect(runtime.TRAVEL_PRESET.intervalRange).toBe(0.75);
+    expect(runtime.TRAVEL_PRESET.handoffGapMinMs).toBe(24);
+    expect(runtime.TRAVEL_PRESET.handoffGapRangeMs).toBe(126);
+    expect(runtime.TRAVEL_PRESET.loopQuietMs).toBe(80);
     expect(runtime.TRAVEL_PRESET.minimumVisibility).toBe(0.04);
     expect(runtime.TRAVEL_PRESET.arcHeightPercent).toBe(24);
     expect(runtime.TRAVEL_PRESET.arcHeightMin).toBe(16);
@@ -515,10 +583,8 @@ describe("constant-reference travel links", () => {
     expect(runtime.TRAVEL_PRESET.tipAlpha).toBe(0.3);
     expect(runtime.TRAVEL_PRESET.tipGlowAlpha).toBe(0.07);
     expect(runtime.TRAVEL_PRESET.tipGlowBlur).toBe(1.4);
-    expect(
-      runtime.TRAVEL_PRESET.startJitterChannel +
-        runtime.TRAVEL_PRESET.randomCyclePeriod * runtime.travelLaunchCountForPointCount(100_000),
-    ).toBeLessThanOrEqual(runtime.TRAVEL_PRESET.arcDirectionChannel);
+    expect(runtime.TRAVEL_PRESET).not.toHaveProperty("cycleDurationMs");
+    expect(runtime.TRAVEL_PRESET).not.toHaveProperty("launchWindowMs");
     expect(runtime.TRAVEL_PRESET).not.toHaveProperty("headRadius");
     const quarter = stateAtRawProgress(runtime, episode, 0.25);
     const halfway = stateAtRawProgress(runtime, episode, 0.5);
@@ -534,15 +600,15 @@ describe("constant-reference travel links", () => {
   it("renders only the size-scaled concurrent, same-hue meteor wakes with tiny linear heads", () => {
     const runtime = loadRuntime(concurrentFixtureModel());
     runtime.state.zoom = 3;
-    const activeAt = firstVisibleTravelOverlap(runtime);
+    const activeAt = firstVisibleTravelOverlap(runtime, runtime.travelFlightLimit);
     runtime.context2D.reset();
 
     runtime.drawTravelOverlay(activeAt, true);
     const visibleStates = drawableTravelStates(runtime, activeAt);
     const links = visibleStates.map(state => runtime.constantReferenceLinks[state.episode.linkIndex]);
     const strokesPerFlight = runtime.TRAVEL_PRESET.tailSegments + 1;
-    expect(runtime.travelVisibleLimit).toBe(2);
-    expect(links).toHaveLength(runtime.travelVisibleLimit);
+    expect(runtime.travelFlightLimit).toBe(2);
+    expect(links).toHaveLength(runtime.travelFlightLimit);
     expect(runtime.context2D.strokes).toHaveLength(links.length * strokesPerFlight);
     expect(runtime.context2D.arcs).toEqual([]);
     expect(runtime.context2D.fills).toBe(0);
@@ -582,15 +648,29 @@ describe("constant-reference travel links", () => {
     expect(Math.max(...tailToTipRatios)).toBeGreaterThan(10);
   });
 
+  it("keeps large-project traffic at the two-flight cap", () => {
+    const links = Array.from({ length: 20 }, (_, index) => [index, 20 + index]);
+    const runtime = loadRuntime(concurrentFixtureModel(links, 99_980));
+    runtime.state.zoom = 3;
+    const activeAt = firstVisibleTravelOverlap(runtime, 2);
+
+    runtime.context2D.reset();
+    runtime.drawTravelOverlay(activeAt, true);
+
+    expect(runtime.travelFlightLimit).toBe(2);
+    expect(drawableTravelStates(runtime, activeAt)).toHaveLength(2);
+    expect(runtime.context2D.strokes).toHaveLength(2 * (runtime.TRAVEL_PRESET.tailSegments + 1));
+  });
+
   it("draws only the admitted concurrent trails, then clears and suppresses them for reduced motion", () => {
     const runtime = loadRuntime(concurrentFixtureModel());
     runtime.state.zoom = 3;
-    const activeAt = firstVisibleTravelOverlap(runtime);
+    const activeAt = firstVisibleTravelOverlap(runtime, runtime.travelFlightLimit);
 
     runtime.context2D.reset();
     runtime.drawTravelOverlay(activeAt, true);
     expect(runtime.context2D.strokes).toHaveLength(
-      runtime.travelVisibleLimit * (runtime.TRAVEL_PRESET.tailSegments + 1),
+      runtime.travelFlightLimit * (runtime.TRAVEL_PRESET.tailSegments + 1),
     );
     runtime.context2D.reset();
     runtime.drawTravelOverlay(activeAt, false);

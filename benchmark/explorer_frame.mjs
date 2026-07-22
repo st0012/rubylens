@@ -228,14 +228,9 @@ function benchmarkScript() {
       const firstDrawableTravelOverlap = () => {
         if (!constantReferenceLinks.length) return null;
         const frameMs = 1000 / 60;
-        const visibleFlights = travelVisibleLimit;
-        const cycleCount = Math.ceil(constantReferenceLinks.length / travelLaunchCount);
-        for (let cycle = 0; cycle < cycleCount; cycle += 1) {
-          const cycleStart = cycle * TRAVEL_PRESET.cycleDurationMs;
-          const cycleEnd = cycleStart + TRAVEL_PRESET.cycleDurationMs;
-          for (let elapsed = cycleStart; elapsed < cycleEnd; elapsed += frameMs) {
-            if (drawableTravelStatesAt(elapsed).length === visibleFlights) return elapsed;
-          }
+        const visibleFlights = travelFlightLimit;
+        for (let elapsed = 0; elapsed < SHOWCASE_PRESET.durationMs; elapsed += frameMs) {
+          if (drawableTravelStatesAt(elapsed).length === visibleFlights) return elapsed;
         }
         return null;
       };
@@ -251,7 +246,7 @@ function benchmarkScript() {
         const syntheticFrameMs = 1000 / 60;
         const travelStart = firstDrawableTravelOverlap();
         if (travelStart === null) {
-          const error = "bench: no drawable " + travelVisibleLimit + "-flight overlap found";
+          const error = "bench: no drawable " + travelFlightLimit + "-flight overlap found";
           window.__RUBYLENS_BENCH__ = { status: "error", error, config: BENCH };
           banner.textContent = error;
           throw new Error(error);
@@ -260,7 +255,6 @@ function benchmarkScript() {
         const resetDrivenClock = () => {
           clock = travelStart;
           lastDriftTimestamp = travelStart;
-          resetExplorerTravel();
           explorerTravelElapsed = travelStart;
           explorerTravelLastTimestamp = travelStart;
         };
