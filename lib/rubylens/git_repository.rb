@@ -22,19 +22,25 @@ module RubyLens
     end
 
     def selected_files
-      output, status = capture("ls-files", "-z", "--cached", "--others", "--exclude-standard")
+      arguments = ["ls-files", "-z", "--cached", "--others", "--exclude-standard"]
+      unless @target_root == @git_root
+        relative_target = @target_root.relative_path_from(@git_root)
+        arguments.concat(["--", ":(literal)#{relative_target}"])
+      end
+      output, status = capture(*arguments)
       raise GitError, "failed to enumerate tracked and unignored files" unless status.success?
 
+      git_root = @git_root.to_s
+      target_root = @target_root.to_s
       output.split("\0").filter_map do |relative_to_git|
         next unless INDEXABLE_EXTENSIONS.include?(File.extname(relative_to_git))
 
-        absolute = @git_root.join(relative_to_git).cleanpath
-        next unless Paths.inside?(absolute, @target_root)
-        next unless absolute.file?
-        resolved = absolute.realpath
-        next unless Paths.inside?(resolved, @target_root.realpath)
+        absolute = File.join(git_root, relative_to_git)
+        next unless File.file?(absolute)
+        resolved = File.realpath(absolute)
+        next unless Paths.inside?(resolved, target_root)
 
-        resolved.to_s
+        resolved
       rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP
         nil
       end.sort
