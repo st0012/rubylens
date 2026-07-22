@@ -966,7 +966,17 @@
     // innerRadius matches the bulge's outer edge — corePosition's bulge radial
     // law caps at 17, and the tests disc starts there — so lanes never cut
     // through bulge stars and dust begins where arms actually live.
-    const DUST_PRESET = Object.freeze({ maxAbsorption: .5, laneWidth: 2.4, laneOffset: -.16, innerRadius: 17, segmentLength: 9, brokenChannel: 150 });
+    const DUST_PRESET = Object.freeze({
+      maxAbsorption: .5,
+      laneWidth: 2.4,
+      laneOffset: -.16,
+      innerRadius: 17,
+      fadeInSpan: 5,
+      outerFadeStart: 44,
+      outerFadeEnd: 58,
+      segmentLength: 9,
+      brokenChannel: 150,
+    });
     const smoothstep = (low, high, value) => {
       const t = clamp((value - low) / (high - low), 0, 1);
       return t * t * (3 - 2 * t);
@@ -979,7 +989,8 @@
       const barred = morphology.family === MORPHOLOGY_FAMILY.barredSpiral;
       // Lanes hug arms, and barred arms only exist beyond the bar tips.
       const laneStart = barred ? Math.max(DUST_PRESET.innerRadius, barRadius) : DUST_PRESET.innerRadius;
-      const window = smoothstep(laneStart, laneStart + 5, radial) * (1 - smoothstep(44, 58, radial));
+      const window = smoothstep(laneStart, laneStart + DUST_PRESET.fadeInSpan, radial) *
+        (1 - smoothstep(DUST_PRESET.outerFadeStart, DUST_PRESET.outerFadeEnd, radial));
       if (window <= 0) return 0;
       const pointTheta = Math.atan2(z, x);
       let density = 0;
