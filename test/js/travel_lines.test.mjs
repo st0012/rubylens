@@ -337,26 +337,78 @@ describe("constant-reference travel links", () => {
     expect(runtime.travelStatesAt(60_000)).toEqual([]);
   });
 
-  it("freezes a route between the projected launch and arrival positions", () => {
+  it("keeps an active route attached to both projected stars as the camera rotates", () => {
     const runtime = loadRuntime(concurrentFixtureModel([CONCURRENT_LINKS[0]]));
     runtime.state.zoom = 3;
     const initialYaw = runtime.state.yaw;
     const direction = runtime.screenRotationYawSign(runtime.state.pitch);
     runtime.travelEpisodesThrough(0);
     const episode = runtime.travelEpisodesThrough(2_000).find(candidate => candidate.route);
-    const projectAt = (renderIndex, elapsed) => {
-      runtime.state.yaw = initialYaw + direction * runtime.DRIFT_RADIANS_PER_SECOND * elapsed / 1000;
-      return runtime.projectScenePoint(renderIndex, runtime.viewMatrix());
-    };
     const link = runtime.constantReferenceLinks[episode.linkIndex];
-    const expectedDeparture = projectAt(link.departureIndex, episode.startsAt);
-    const expectedArrival = projectAt(
-      link.arrivalIndex,
-      episode.startsAt + runtime.TRAVEL_PRESET.flightDurationMs,
-    );
+    const arcSide = route => {
+      const dx = route.arrival[0] - route.departure[0];
+      const dy = route.arrival[1] - route.departure[1];
+      return Math.sign(
+        dx * (route.controlY - route.departure[1]) -
+          dy * (route.controlX - route.departure[0]),
+      );
+    };
+    const routes = [0.15, 0.5, 0.85].map(rawProgress => {
+      const elapsed = episode.startsAt + runtime.TRAVEL_PRESET.flightDurationMs * rawProgress;
+      const route = runtime.travelRouteAt(episode, elapsed);
+      runtime.state.yaw = initialYaw + direction * runtime.DRIFT_RADIANS_PER_SECOND * elapsed / 1000;
+      const expectedDeparture = runtime.projectScenePoint(link.departureIndex, runtime.viewMatrix());
+      const expectedArrival = runtime.projectScenePoint(link.arrivalIndex, runtime.viewMatrix());
 
-    episode.route.departure.forEach((value, index) => expect(value).toBeCloseTo(expectedDeparture[index], 10));
-    episode.route.arrival.forEach((value, index) => expect(value).toBeCloseTo(expectedArrival[index], 10));
+      route.departure.forEach((value, index) => expect(value).toBeCloseTo(expectedDeparture[index], 10));
+      route.arrival.forEach((value, index) => expect(value).toBeCloseTo(expectedArrival[index], 10));
+      expect(arcSide(route)).toBe(arcSide(episode.route));
+      return route;
+    });
+
+    expect(routes[0].departure).not.toEqual(routes.at(-1).departure);
+    expect(routes[0].arrival).not.toEqual(routes.at(-1).arrival);
+    episode.route.departure.forEach((value, index) => expect(value).toBeCloseTo(routes[1].departure[index], 10));
+    episode.route.arrival.forEach((value, index) => expect(value).toBeCloseTo(routes[1].arrival[index], 10));
+
+    const elapsed = episode.startsAt + runtime.TRAVEL_PRESET.flightDurationMs * 0.7;
+    const state = stateForEpisode(runtime, elapsed, episode);
+    const route = runtime.travelRouteAt(episode, elapsed);
+    const distance = Math.hypot(
+      route.arrival[0] - route.departure[0],
+      route.arrival[1] - route.departure[1],
+    );
+    const wakeEnd = Math.max(
+      0,
+      state.progress - runtime.TRAVEL_PRESET.headLengthPx *
+        (1 - runtime.TRAVEL_PRESET.tailHeadOverlap) / distance,
+    );
+    const tailStart = Math.max(
+      0,
+      wakeEnd - runtime.TRAVEL_PRESET.tailFraction,
+      wakeEnd - runtime.TRAVEL_PRESET.tailLengthPx / distance,
+    );
+    const expectedStart = [
+      runtime.quadraticCoordinate(route.departure[0], route.controlX, route.arrival[0], tailStart),
+      runtime.quadraticCoordinate(route.departure[1], route.controlY, route.arrival[1], tailStart),
+    ];
+    const frozenStart = [
+      runtime.quadraticCoordinate(
+        episode.route.departure[0], episode.route.controlX, episode.route.arrival[0], tailStart,
+      ),
+      runtime.quadraticCoordinate(
+        episode.route.departure[1], episode.route.controlY, episode.route.arrival[1], tailStart,
+      ),
+    ];
+    runtime.context2D.reset();
+    runtime.drawTravelOverlay(elapsed, true);
+    runtime.context2D.strokes[0].from.forEach((value, index) =>
+      expect(value).toBeCloseTo(expectedStart[index], 10)
+    );
+    expect(Math.hypot(
+      runtime.context2D.strokes[0].from[0] - frozenStart[0],
+      runtime.context2D.strokes[0].from[1] - frozenStart[1],
+    )).toBeGreaterThan(0.1);
   });
 
   it("restarts from a clean launch delay after a manual camera change", () => {
@@ -367,8 +419,9 @@ describe("constant-reference travel links", () => {
     runtime.context2D.reset();
     runtime.drawTravelOverlay(activeAt, true);
     expect(runtime.context2D.strokes).toHaveLength(
-      runtime.travelFlightLimit * (runtime.TRAVEL_PRESET.tailSegments + 1),
+      runtime.travelFlightLimit * runtime.TRAVEL_PRESET.tailSegments,
     );
+    expect(runtime.context2D.fills).toBe(runtime.travelFlightLimit);
     runtime.zoomBetween(3.5, runtime.state.sceneRight / 2, runtime.state.sceneBottom / 2);
     runtime.context2D.reset();
     runtime.drawTravelOverlay(5, true);
@@ -505,7 +558,7 @@ describe("constant-reference travel links", () => {
     expect(sawOverlap).toBe(true);
   });
 
-  it("bends each frozen route by the configured arc height", () => {
+  it("bends each admitted route by the configured arc height", () => {
     const runtime = loadRuntime(concurrentFixtureModel([CONCURRENT_LINKS[0]]));
     runtime.state.zoom = 3;
     const route = runtime.travelEpisodesThrough(2_000).find(episode => episode.route).route;
@@ -573,16 +626,18 @@ describe("constant-reference travel links", () => {
     expect(stateForEpisode(runtime, endsAt + 0.001, episode)).toBeUndefined();
     expect(runtime.TRAVEL_PRESET.tailFraction).toBe(0.7);
     expect(runtime.TRAVEL_PRESET.tailSegments).toBe(24);
-    expect(runtime.TRAVEL_PRESET.tailLengthPx).toBe(168);
-    expect(runtime.TRAVEL_PRESET.lineWidth).toBe(2.2);
+    expect(runtime.TRAVEL_PRESET.tailLengthPx).toBe(218.4);
+    expect(runtime.TRAVEL_PRESET.lineWidth).toBe(2.86);
     expect(runtime.TRAVEL_PRESET.tailAlpha).toBe(0.38);
     expect(runtime.TRAVEL_PRESET.tailHaloAlpha).toBe(0.09);
-    expect(runtime.TRAVEL_PRESET.tailHaloBlur).toBe(2.2);
-    expect(runtime.TRAVEL_PRESET.tipLengthPx).toBe(1.5);
-    expect(runtime.TRAVEL_PRESET.tipWidth).toBe(0.64);
-    expect(runtime.TRAVEL_PRESET.tipAlpha).toBe(0.3);
-    expect(runtime.TRAVEL_PRESET.tipGlowAlpha).toBe(0.07);
-    expect(runtime.TRAVEL_PRESET.tipGlowBlur).toBe(1.4);
+    expect(runtime.TRAVEL_PRESET.tailHaloBlur).toBe(2.86);
+    expect(runtime.TRAVEL_PRESET.tailHeadOverlap).toBe(0.82);
+    expect(runtime.TRAVEL_PRESET.headLengthPx).toBe(9.75);
+    expect(runtime.TRAVEL_PRESET.headWidthPx).toBe(2.73);
+    expect(runtime.TRAVEL_PRESET.headAlpha).toBe(0.64);
+    expect(runtime.TRAVEL_PRESET.headGlowAlpha).toBe(0.12);
+    expect(runtime.TRAVEL_PRESET.headGlowBlur).toBe(4.42);
+    expect(runtime.TRAVEL_PRESET).not.toHaveProperty("tipLengthPx");
     expect(runtime.TRAVEL_PRESET).not.toHaveProperty("cycleDurationMs");
     expect(runtime.TRAVEL_PRESET).not.toHaveProperty("launchWindowMs");
     expect(runtime.TRAVEL_PRESET).not.toHaveProperty("headRadius");
@@ -597,7 +652,7 @@ describe("constant-reference travel links", () => {
     expect(stateAtRawProgress(runtime, episode, 0.95).visibility).toBeLessThan(1);
   });
 
-  it("renders only the size-scaled concurrent, same-hue meteor wakes with tiny linear heads", () => {
+  it("renders only the size-scaled concurrent, same-hue meteor wakes with single drop heads", () => {
     const runtime = loadRuntime(concurrentFixtureModel());
     runtime.state.zoom = 3;
     const activeAt = firstVisibleTravelOverlap(runtime, runtime.travelFlightLimit);
@@ -606,16 +661,17 @@ describe("constant-reference travel links", () => {
     runtime.drawTravelOverlay(activeAt, true);
     const visibleStates = drawableTravelStates(runtime, activeAt);
     const links = visibleStates.map(state => runtime.constantReferenceLinks[state.episode.linkIndex]);
-    const strokesPerFlight = runtime.TRAVEL_PRESET.tailSegments + 1;
+    const strokesPerFlight = runtime.TRAVEL_PRESET.tailSegments;
     expect(runtime.travelFlightLimit).toBe(2);
     expect(links).toHaveLength(runtime.travelFlightLimit);
     expect(runtime.context2D.strokes).toHaveLength(links.length * strokesPerFlight);
     expect(runtime.context2D.arcs).toEqual([]);
-    expect(runtime.context2D.fills).toBe(0);
+    expect(runtime.context2D.fills).toBe(links.length);
+    expect(runtime.context2D.fillPaths).toHaveLength(links.length);
     expect(new Set(visibleStates.map(state => state.episode.linkIndex)).size).toBe(links.length);
 
     const renderedTailLengths = [];
-    const tailToTipRatios = [];
+    const tailToHeadRatios = [];
     const categoryRgb = {
       core: "244,82,132",
       tests: "87,204,255",
@@ -623,29 +679,69 @@ describe("constant-reference travel links", () => {
     };
     for (let index = 0; index < links.length; index += 1) {
       const strokes = runtime.context2D.strokes.slice(index * strokesPerFlight, (index + 1) * strokesPerFlight);
-      const tail = strokes.slice(0, -1);
-      const tip = strokes.at(-1);
+      const tail = strokes;
+      const head = runtime.context2D.fillPaths[index];
+      const state = visibleStates[index];
+      const route = runtime.travelRouteAt(state.episode, activeAt);
       const renderedTailLength = tail.reduce((sum, stroke) => sum + stroke.length, 0);
       const peakTailWidth = Math.max(...tail.map(stroke => stroke.lineWidth));
       const expectedRgb = categoryRgb[runtime.travelEndpointCategory(links[index].departureIndex)];
       renderedTailLengths.push(renderedTailLength);
-      tailToTipRatios.push(renderedTailLength / tip.length);
+      tailToHeadRatios.push(renderedTailLength / runtime.TRAVEL_PRESET.headLengthPx);
 
       expect(renderedTailLength).toBeGreaterThan(12);
       expect(peakTailWidth).toBeLessThanOrEqual(runtime.TRAVEL_PRESET.lineWidth);
       expect(tail[0].lineWidth).toBeLessThan(peakTailWidth);
-      expect(tail.at(-1).lineWidth).toBeLessThan(peakTailWidth);
+      expect(tail.at(-1).lineWidth).toBeCloseTo(peakTailWidth, 12);
       expect(tail.every(stroke => stroke.lineCap === "round")).toBe(true);
-      expect(strokes.every(stroke => stroke.strokeStyle.startsWith(`rgba(${expectedRgb},`))).toBe(true);
-      expect(strokes.every(stroke => stroke.shadowColor.startsWith(`rgba(${expectedRgb},`))).toBe(true);
-      expect(strokes.every(stroke => !stroke.strokeStyle.includes("255,248,244"))).toBe(true);
-      expect(tip.length).toBeLessThanOrEqual(4);
-      expect(tip.lineWidth).toBe(runtime.TRAVEL_PRESET.tipWidth);
-      expect(tip.shadowBlur).toBe(runtime.TRAVEL_PRESET.tipGlowBlur);
-      expect(renderedTailLength / tip.length).toBeGreaterThan(6);
+      expect(tail.every(stroke => stroke.strokeStyle.startsWith(`rgba(${expectedRgb},`))).toBe(true);
+      expect(tail.every(stroke => stroke.shadowColor.startsWith(`rgba(${expectedRgb},`))).toBe(true);
+      expect(tail.every(stroke => !stroke.strokeStyle.includes("255,248,244"))).toBe(true);
+      expect(head.fillStyle.startsWith(`rgba(${expectedRgb},`)).toBe(true);
+      expect(head.shadowColor.startsWith(`rgba(${expectedRgb},`)).toBe(true);
+      expect(head.shadowBlur).toBe(runtime.TRAVEL_PRESET.headGlowBlur);
+      expect(head.closed).toBe(true);
+      expect(head.commands.map(command => command[0])).toEqual([
+        "moveTo",
+        "bezierCurveTo",
+        "bezierCurveTo",
+        "bezierCurveTo",
+        "bezierCurveTo",
+        "closePath",
+      ]);
+      expect(head.commands[0][1]).toBe(-runtime.TRAVEL_PRESET.headLengthPx);
+      expect(head.commands[0][2]).toBe(0);
+      expect(head.commands[2].slice(-2)).toEqual([0, 0]);
+      expect(head.commands[1].at(-1)).toBeCloseTo(-runtime.TRAVEL_PRESET.headWidthPx / 2, 12);
+      expect(head.commands[3].at(-1)).toBeCloseTo(runtime.TRAVEL_PRESET.headWidthPx / 2, 12);
+      const expectedHead = [
+        runtime.quadraticCoordinate(route.departure[0], route.controlX, route.arrival[0], state.progress),
+        runtime.quadraticCoordinate(route.departure[1], route.controlY, route.arrival[1], state.progress),
+      ];
+      const inverseProgress = 1 - state.progress;
+      const tangent = [
+        2 * inverseProgress * (route.controlX - route.departure[0]) +
+          2 * state.progress * (route.arrival[0] - route.controlX),
+        2 * inverseProgress * (route.controlY - route.departure[1]) +
+          2 * state.progress * (route.arrival[1] - route.controlY),
+      ];
+      const expectedAngle = Math.atan2(tangent[1], tangent[0]);
+      head.translation.forEach((coordinate, at) => expect(coordinate).toBeCloseTo(expectedHead[at], 10));
+      expect(head.rotation).toBeCloseTo(expectedAngle, 12);
+      const direction = [Math.cos(head.rotation), Math.sin(head.rotation)];
+      const rear = [
+        head.translation[0] - direction[0] * runtime.TRAVEL_PRESET.headLengthPx,
+        head.translation[1] - direction[1] * runtime.TRAVEL_PRESET.headLengthPx,
+      ];
+      const tailEnd = tail.at(-1).to;
+      const overlap = ((tailEnd[0] - rear[0]) * direction[0] +
+        (tailEnd[1] - rear[1]) * direction[1]) / runtime.TRAVEL_PRESET.headLengthPx;
+      expect(overlap).toBeGreaterThan(0.7);
+      expect(overlap).toBeLessThan(1.05);
     }
     expect(Math.max(...renderedTailLengths)).toBeGreaterThan(30);
-    expect(Math.max(...tailToTipRatios)).toBeGreaterThan(10);
+    expect(Math.max(...tailToHeadRatios)).toBeGreaterThan(3);
+    expect(runtime.TRAVEL_PRESET.tailLengthPx / runtime.TRAVEL_PRESET.headLengthPx).toBeGreaterThan(20);
   });
 
   it("keeps large-project traffic at the two-flight cap", () => {
@@ -659,7 +755,8 @@ describe("constant-reference travel links", () => {
 
     expect(runtime.travelFlightLimit).toBe(2);
     expect(drawableTravelStates(runtime, activeAt)).toHaveLength(2);
-    expect(runtime.context2D.strokes).toHaveLength(2 * (runtime.TRAVEL_PRESET.tailSegments + 1));
+    expect(runtime.context2D.strokes).toHaveLength(2 * runtime.TRAVEL_PRESET.tailSegments);
+    expect(runtime.context2D.fills).toBe(2);
   });
 
   it("draws only the admitted concurrent trails, then clears and suppresses them for reduced motion", () => {
@@ -670,11 +767,13 @@ describe("constant-reference travel links", () => {
     runtime.context2D.reset();
     runtime.drawTravelOverlay(activeAt, true);
     expect(runtime.context2D.strokes).toHaveLength(
-      runtime.travelFlightLimit * (runtime.TRAVEL_PRESET.tailSegments + 1),
+      runtime.travelFlightLimit * runtime.TRAVEL_PRESET.tailSegments,
     );
+    expect(runtime.context2D.fills).toBe(runtime.travelFlightLimit);
     runtime.context2D.reset();
     runtime.drawTravelOverlay(activeAt, false);
     expect(runtime.context2D.strokes).toEqual([]);
+    expect(runtime.context2D.fills).toBe(0);
 
     const originalMatchMedia = window.matchMedia;
     window.matchMedia = query => query === "(prefers-reduced-motion: reduce)"
@@ -696,6 +795,7 @@ describe("constant-reference travel links", () => {
       reducedRuntime.context2D.reset();
       reducedRuntime.drawTravelOverlay(reducedActiveAt, true);
       expect(reducedRuntime.context2D.strokes).toEqual([]);
+      expect(reducedRuntime.context2D.fills).toBe(0);
     } finally {
       window.matchMedia = originalMatchMedia;
     }

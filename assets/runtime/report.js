@@ -148,16 +148,17 @@
       "arcHeightMin": 16,
       "arcHeightMax": 120,
       "tailSegments": 24,
-      "tailLengthPx": 168,
-      "lineWidth": 2.2,
+      "tailLengthPx": 218.4,
+      "lineWidth": 2.86,
       "tailAlpha": 0.38,
       "tailHaloAlpha": 0.09,
-      "tailHaloBlur": 2.2,
-      "tipLengthPx": 1.5,
-      "tipWidth": 0.64,
-      "tipAlpha": 0.3,
-      "tipGlowAlpha": 0.07,
-      "tipGlowBlur": 1.4,
+      "tailHaloBlur": 2.86,
+      "tailHeadOverlap": 0.82,
+      "headLengthPx": 9.75,
+      "headWidthPx": 2.73,
+      "headAlpha": 0.64,
+      "headGlowAlpha": 0.12,
+      "headGlowBlur": 4.42,
       "initialDelayChannel": 13,
       "intervalChannel": 29,
       "handoffGapChannel": 43,
@@ -3147,14 +3148,11 @@
       );
     }
 
-    function prepareTravelGeometry(link, episodeIndex, departure, arrival, right, bottom, inset = 8) {
-      const visible = point => point[0] >= inset && point[0] <= right - inset && point[1] >= inset && point[1] <= bottom - inset;
-      if (!visible(departure) || !visible(arrival)) return null;
-
+    function travelGeometry(departure, arrival, arcDirection) {
       const dx = arrival[0] - departure[0];
       const dy = arrival[1] - departure[1];
       const distance = Math.hypot(dx, dy);
-      if (distance < TRAVEL_PRESET.minimumRouteLengthPx) return null;
+      if (distance < 1) return null;
 
       const midpointX = (departure[0] + arrival[0]) / 2;
       const midpointY = (departure[1] + arrival[1]) / 2;
@@ -3162,15 +3160,30 @@
         TRAVEL_PRESET.arcHeightMax,
         Math.max(TRAVEL_PRESET.arcHeightMin, distance * TRAVEL_PRESET.arcHeightPercent / 100),
       );
-      const perpendicularX = -dy / distance * arcHeight;
-      const perpendicularY = dx / distance * arcHeight;
-      const positiveX = midpointX + perpendicularX;
-      const positiveY = midpointY + perpendicularY;
-      const negativeX = midpointX - perpendicularX;
-      const negativeY = midpointY - perpendicularY;
+      const direction = arcDirection < 0 ? -1 : 1;
+      return {
+        departure,
+        arrival,
+        controlX: midpointX - dy / distance * arcHeight * direction,
+        controlY: midpointY + dx / distance * arcHeight * direction,
+      };
+    }
+
+    function prepareTravelGeometry(link, episodeIndex, departure, arrival, right, bottom, inset = 8) {
+      const visible = point => point[0] >= inset && point[0] <= right - inset && point[1] >= inset && point[1] <= bottom - inset;
+      if (!visible(departure) || !visible(arrival)) return null;
+
+      const positiveRoute = travelGeometry(departure, arrival, 1);
+      if (!positiveRoute) return null;
+      const distance = Math.hypot(arrival[0] - departure[0], arrival[1] - departure[1]);
+      if (distance < TRAVEL_PRESET.minimumRouteLengthPx) return null;
+      const midpointX = (departure[0] + arrival[0]) / 2;
+      const midpointY = (departure[1] + arrival[1]) / 2;
+      const negativeX = midpointX * 2 - positiveRoute.controlX;
+      const negativeY = midpointY * 2 - positiveRoute.controlY;
       const centerX = right / 2;
       const centerY = bottom / 2;
-      const positiveClearance = Math.hypot(positiveX - centerX, positiveY - centerY);
+      const positiveClearance = Math.hypot(positiveRoute.controlX - centerX, positiveRoute.controlY - centerY);
       const negativeClearance = Math.hypot(negativeX - centerX, negativeY - centerY);
       const linkSeed = hash((link.arrivalIndex ^ Math.imul(link.departureIndex + 1, 0x9e3779b9)) >>> 0);
       const seededDirection = unit(
@@ -3180,12 +3193,7 @@
       const arcDirection = Math.abs(positiveClearance - negativeClearance) < 1
         ? seededDirection
         : positiveClearance > negativeClearance ? 1 : -1;
-      return {
-        departure,
-        arrival,
-        controlX: midpointX + perpendicularX * arcDirection,
-        controlY: midpointY + perpendicularY * arcDirection,
-      };
+      return arcDirection > 0 ? positiveRoute : travelGeometry(departure, arrival, -1);
     }
 
     function beginExplorerTravelCamera(elapsed) {
@@ -3220,39 +3228,26 @@
       return explorerTravelCameraOrigin.spinElapsed + elapsed;
     }
 
-    function prepareFrozenTravelRoute(episodeIndex, episode, right, bottom) {
+    function travelCameraMatrix(camera) {
+      return [
+        Math.cos(camera.yaw),
+        Math.sin(camera.yaw),
+        Math.cos(camera.pitch),
+        Math.sin(camera.pitch),
+      ];
+    }
+
+    function prepareTravelRoute(episodeIndex, episode, right, bottom) {
       const link = constantReferenceLinks[episode.linkIndex];
       const departureCategory = travelEndpointCategory(link.departureIndex);
       const arrivalCategory = travelEndpointCategory(link.arrivalIndex);
       if (!visibleCategories[departureCategory] || !visibleCategories[arrivalCategory]) return null;
-      const departureCamera = travelCameraAt(episode.startsAt);
-      const arrivalCamera = travelCameraAt(episode.startsAt + TRAVEL_PRESET.flightDurationMs);
-      const departureMatrix = [
-        Math.cos(departureCamera.yaw),
-        Math.sin(departureCamera.yaw),
-        Math.cos(departureCamera.pitch),
-        Math.sin(departureCamera.pitch),
-      ];
-      const arrivalMatrix = [
-        Math.cos(arrivalCamera.yaw),
-        Math.sin(arrivalCamera.yaw),
-        Math.cos(arrivalCamera.pitch),
-        Math.sin(arrivalCamera.pitch),
-      ];
-      const departure = projectScenePoint(
-        link.departureIndex,
-        departureMatrix,
-        [0, 0, 0],
-        departureCamera,
-        travelSpinElapsedAt(episode.startsAt),
-      );
-      const arrival = projectScenePoint(
-        link.arrivalIndex,
-        arrivalMatrix,
-        [0, 0, 0],
-        arrivalCamera,
-        travelSpinElapsedAt(episode.startsAt + TRAVEL_PRESET.flightDurationMs),
-      );
+      const midpoint = episode.startsAt + TRAVEL_PRESET.flightDurationMs / 2;
+      const camera = travelCameraAt(midpoint);
+      const matrix = travelCameraMatrix(camera);
+      const spinElapsed = travelSpinElapsedAt(midpoint);
+      const departure = projectScenePoint(link.departureIndex, matrix, [0, 0, 0], camera, spinElapsed);
+      const arrival = projectScenePoint(link.arrivalIndex, matrix, [0, 0, 0], camera, spinElapsed);
       if (!departure || !arrival) return null;
       const route = prepareTravelGeometry(
         link,
@@ -3264,6 +3259,23 @@
         TRAVEL_PRESET.admissionInsetPx,
       );
       return route && travelCurveFits(route, right, bottom, TRAVEL_PRESET.admissionInsetPx) ? route : null;
+    }
+
+    function travelRouteAt(episode, elapsed) {
+      if (!episode.route) return null;
+      const link = constantReferenceLinks[episode.linkIndex];
+      const camera = travelCameraAt(elapsed);
+      const matrix = travelCameraMatrix(camera);
+      const spinElapsed = travelSpinElapsedAt(elapsed);
+      const departure = projectScenePoint(link.departureIndex, matrix, [0, 0, 0], camera, spinElapsed);
+      const arrival = projectScenePoint(link.arrivalIndex, matrix, [0, 0, 0], camera, spinElapsed);
+      if (!departure || !arrival) return null;
+      const admitted = episode.route;
+      const admittedDx = admitted.arrival[0] - admitted.departure[0];
+      const admittedDy = admitted.arrival[1] - admitted.departure[1];
+      const arcCrossProduct = admittedDx * (admitted.controlY - admitted.departure[1]) -
+        admittedDy * (admitted.controlX - admitted.departure[0]);
+      return travelGeometry(departure, arrival, arcCrossProduct < 0 ? -1 : 1);
     }
 
     function ensureTravelEpisodesThrough(elapsed, cameraElapsed) {
@@ -3305,7 +3317,7 @@
           ))) {
             continue;
           }
-          const route = prepareFrozenTravelRoute(episodeIndex, episode, right, bottom);
+          const route = prepareTravelRoute(episodeIndex, episode, right, bottom);
           if (!route) continue;
           episode.route = route;
           chosen = episode;
@@ -3317,8 +3329,27 @@
     }
 
     function travelWakeWeight(position) {
-      if (position <= 0.82) return Math.pow(position / 0.82, 1.65);
-      return 1 - (position - 0.82) / 0.18 * 0.38;
+      return 0.12 + 0.88 * Math.pow(position, 1.45);
+    }
+
+    function drawTravelHead(context, x, y, angle, colourChannels, emphasis) {
+      const length = TRAVEL_PRESET.headLengthPx;
+      const halfWidth = TRAVEL_PRESET.headWidthPx / 2;
+      context.save();
+      context.translate(x, y);
+      context.rotate(angle);
+      context.shadowColor = `rgba(${colourChannels},${(TRAVEL_PRESET.headGlowAlpha * emphasis).toFixed(4)})`;
+      context.shadowBlur = TRAVEL_PRESET.headGlowBlur;
+      context.fillStyle = `rgba(${colourChannels},${(TRAVEL_PRESET.headAlpha * emphasis).toFixed(4)})`;
+      context.beginPath();
+      context.moveTo(-length, 0);
+      context.bezierCurveTo(-length * 0.66, -halfWidth * 0.08, -length * 0.43, -halfWidth, -length * 0.18, -halfWidth);
+      context.bezierCurveTo(-length * 0.06, -halfWidth, 0, -halfWidth * 0.52, 0, 0);
+      context.bezierCurveTo(0, halfWidth * 0.52, -length * 0.06, halfWidth, -length * 0.18, halfWidth);
+      context.bezierCurveTo(-length * 0.43, halfWidth, -length * 0.66, halfWidth * 0.08, -length, 0);
+      context.closePath();
+      context.fill();
+      context.restore();
     }
 
     function travelCategoryAlpha(category) {
@@ -3373,8 +3404,9 @@
       travelContext.lineCap = "round";
       for (const state of states) {
         const { episode, progress, visibility } = state;
-        const route = episode.route;
         if (visibility < TRAVEL_PRESET.minimumVisibility) continue;
+        const route = travelRouteAt(episode, elapsed);
+        if (!route) continue;
         const { departure, arrival, controlX, controlY } = route;
         const distance = Math.hypot(arrival[0] - departure[0], arrival[1] - departure[1]);
         const link = constantReferenceLinks[episode.linkIndex];
@@ -3385,44 +3417,47 @@
         const emphasis = Math.min(travelEmphasis(departureCategory), travelEmphasis(arrivalCategory)) *
           travelCategoryAlpha(departureCategory) * visibility;
 
-        travelContext.shadowColor = `rgba(${departureColourChannels},${(TRAVEL_PRESET.tailHaloAlpha * emphasis).toFixed(4)})`;
         travelContext.shadowBlur = TRAVEL_PRESET.tailHaloBlur;
+        const wakeEnd = Math.max(
+          0,
+          progress - TRAVEL_PRESET.headLengthPx * (1 - TRAVEL_PRESET.tailHeadOverlap) / distance,
+        );
         const drawnTailStart = Math.max(
           0,
-          progress - TRAVEL_PRESET.tailFraction,
-          progress - TRAVEL_PRESET.tailLengthPx / distance,
+          wakeEnd - TRAVEL_PRESET.tailFraction,
+          wakeEnd - TRAVEL_PRESET.tailLengthPx / distance,
         );
         let previousX = quadraticCoordinate(departure[0], controlX, arrival[0], drawnTailStart);
         let previousY = quadraticCoordinate(departure[1], controlY, arrival[1], drawnTailStart);
         for (let segment = 1; segment <= TRAVEL_PRESET.tailSegments; segment += 1) {
           const position = segment / TRAVEL_PRESET.tailSegments;
           const weight = travelWakeWeight(position);
-          const segmentProgress = drawnTailStart + (progress - drawnTailStart) * position;
+          const segmentProgress = drawnTailStart + (wakeEnd - drawnTailStart) * position;
           const x = quadraticCoordinate(departure[0], controlX, arrival[0], segmentProgress);
           const y = quadraticCoordinate(departure[1], controlY, arrival[1], segmentProgress);
           travelContext.beginPath();
           travelContext.moveTo(previousX, previousY);
           travelContext.lineTo(x, y);
+          travelContext.shadowColor = `rgba(${departureColourChannels},${(TRAVEL_PRESET.tailHaloAlpha * emphasis * weight).toFixed(4)})`;
           travelContext.strokeStyle = `rgba(${departureColourChannels},${(TRAVEL_PRESET.tailAlpha * emphasis * weight).toFixed(4)})`;
           travelContext.lineWidth = TRAVEL_PRESET.lineWidth * (0.28 + weight * 0.72);
           travelContext.stroke();
           previousX = x;
           previousY = y;
         }
-        const tipProgress = Math.max(
-          drawnTailStart,
-          progress - Math.min(TRAVEL_PRESET.tailFraction, TRAVEL_PRESET.tipLengthPx / distance),
+        const headX = quadraticCoordinate(departure[0], controlX, arrival[0], progress);
+        const headY = quadraticCoordinate(departure[1], controlY, arrival[1], progress);
+        const inverseProgress = 1 - progress;
+        const tangentX = 2 * inverseProgress * (controlX - departure[0]) + 2 * progress * (arrival[0] - controlX);
+        const tangentY = 2 * inverseProgress * (controlY - departure[1]) + 2 * progress * (arrival[1] - controlY);
+        drawTravelHead(
+          travelContext,
+          headX,
+          headY,
+          Math.atan2(tangentY, tangentX),
+          departureColourChannels,
+          emphasis,
         );
-        const tipStartX = quadraticCoordinate(departure[0], controlX, arrival[0], tipProgress);
-        const tipStartY = quadraticCoordinate(departure[1], controlY, arrival[1], tipProgress);
-        travelContext.shadowColor = `rgba(${departureColourChannels},${(TRAVEL_PRESET.tipGlowAlpha * emphasis).toFixed(4)})`;
-        travelContext.shadowBlur = TRAVEL_PRESET.tipGlowBlur;
-        travelContext.strokeStyle = `rgba(${departureColourChannels},${(TRAVEL_PRESET.tipAlpha * emphasis).toFixed(4)})`;
-        travelContext.lineWidth = TRAVEL_PRESET.tipWidth;
-        travelContext.beginPath();
-        travelContext.moveTo(tipStartX, tipStartY);
-        travelContext.lineTo(previousX, previousY);
-        travelContext.stroke();
         drewTravel = true;
       }
       travelContext.restore();
