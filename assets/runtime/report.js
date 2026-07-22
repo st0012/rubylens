@@ -36,6 +36,7 @@
     const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35;
     const CORE_SCALE_BASELINE = 3_000;
     const DEPENDENCY_CLOUD_THRESHOLD = 18;
+    const DEPENDENCY_HALO_SPACING_SCALE = 1.15;
     const DEPENDENCY_STAR_ALPHA_SCALE = .85;
     const MORPHOLOGY_FAMILY = Object.freeze({ elliptical: 0, lenticular: 1, spiral: 2, barredSpiral: 3, irregular: 4 });
     const MORPHOLOGY_FAMILY_LABELS = Object.freeze(["Elliptical galaxy", "Lenticular galaxy", "Spiral galaxy", "Barred spiral galaxy", "Irregular galaxy"]);
@@ -85,13 +86,17 @@
     // proportional to sqrt(mass / radius^3). The host's tidal gradient adds a
     // weaker distance^-3/2 frequency term. Declaration count is the local mass
     // proxy; the result is compressed to whole turns per Showcase loop so Clip
-    // keeps its exact seam. Direction is independent seeded enrichment.
+    // keeps its exact seam. Direction and the package-local orbital plane are
+    // independent seeded enrichment. Uniform cos(inclination) samples plane
+    // normals isotropically instead of inheriting Core's disc plane.
     const DEPENDENCY_SPIN_RECIPE = Object.freeze({
       selfGravityScale: .25,
       tidalScale: .35,
       minimumTurnsPerLoop: 1,
       maximumTurnsPerLoop: 2,
       directionChannel: 104,
+      inclinationChannel: 105,
+      azimuthChannel: 106,
     });
     const SHOWCASE_WIDESCREEN_LAYOUT_PRESET = Object.freeze({
       "minimumFittedWidth": 1600,
@@ -711,11 +716,41 @@
         systemIndex,
       ];
     });
+    for (const anchors of [systemAnchors, packageAnchors]) {
+      for (const anchor of anchors) {
+        anchor[0] *= DEPENDENCY_HALO_SPACING_SCALE;
+        anchor[1] *= DEPENDENCY_HALO_SPACING_SCALE;
+        anchor[2] *= DEPENDENCY_HALO_SPACING_SCALE;
+      }
+    }
+
+    const IDENTITY_DEPENDENCY_ORIENTATION = Object.freeze([0, 1, 0, 1, 0, 0, 0, 0, 1]);
+    function dependencyOrientation(seed) {
+      const normalY = unit(seed, DEPENDENCY_SPIN_RECIPE.inclinationChannel);
+      const horizontal = Math.sqrt(Math.max(0, 1 - normalY * normalY));
+      const azimuth = unit(seed, DEPENDENCY_SPIN_RECIPE.azimuthChannel) * Math.PI * 2;
+      const cosine = Math.cos(azimuth);
+      const sine = Math.sin(azimuth);
+      return Object.freeze([
+        horizontal * cosine, normalY, horizontal * sine,
+        normalY * cosine, -horizontal, normalY * sine,
+        -sine, 0, cosine,
+      ]);
+    }
+    const packageOrientations = model.packages.map(row => dependencyOrientation(row[0]));
+
+    function orientDependencyOffset(offset, orientation, out = [0, 0, 0]) {
+      out[0] = offset[0] * orientation[3] + offset[1] * orientation[0] + offset[2] * orientation[6];
+      out[1] = offset[0] * orientation[4] + offset[1] * orientation[1] + offset[2] * orientation[7];
+      out[2] = offset[0] * orientation[5] + offset[1] * orientation[2] + offset[2] * orientation[8];
+      return out;
+    }
 
     function dependencySpinTurns(packageRow, anchor) {
       const declarationCount = Math.max(1, Number(packageRow?.[3]) || 0);
       const cloudRadius = Math.max(1e-6, Number(anchor?.[3]) || 0);
-      const coreDistance = Math.max(1e-6, Math.hypot(anchor?.[0] || 0, anchor?.[1] || 0, anchor?.[2] || 0));
+      const coreDistance = Math.max(1e-6, Math.hypot(anchor?.[0] || 0, anchor?.[1] || 0, anchor?.[2] || 0)) /
+        DEPENDENCY_HALO_SPACING_SCALE;
       const selfGravityFrequency = Math.sqrt(declarationCount / cloudRadius ** 3);
       const tidalFrequency = (layoutScale.dependencyInnerRadius / coreDistance) ** 1.5;
       const characteristicFrequency = selfGravityFrequency * DEPENDENCY_SPIN_RECIPE.selfGravityScale +
@@ -735,8 +770,9 @@
 
     function dependencySpunPosition(positionX, positionY, positionZ, packageIndex, elapsed, out = [0, 0, 0]) {
       const anchor = packageAnchors[packageIndex];
+      const orientation = packageOrientations[packageIndex];
       const rate = packageSpinRates[packageIndex];
-      if (!anchor || !Number.isFinite(rate)) {
+      if (!anchor || !orientation || !Number.isFinite(rate)) {
         out[0] = positionX;
         out[1] = positionY;
         out[2] = positionZ;
@@ -747,25 +783,36 @@
       const cosine = Math.cos(angle);
       const sine = Math.sin(angle);
       const offsetX = positionX - anchor[0];
+      const offsetY = positionY - anchor[1];
       const offsetZ = positionZ - anchor[2];
-      out[0] = anchor[0] + offsetX * cosine - offsetZ * sine;
-      out[1] = positionY;
-      out[2] = anchor[2] + offsetX * sine + offsetZ * cosine;
+      const axisX = orientation[0];
+      const axisY = orientation[1];
+      const axisZ = orientation[2];
+      const axial = axisX * offsetX + axisY * offsetY + axisZ * offsetZ;
+      const carry = 1 - cosine;
+      out[0] = anchor[0] + offsetX * cosine + (axisY * offsetZ - axisZ * offsetY) * sine + axisX * axial * carry;
+      out[1] = anchor[1] + offsetY * cosine + (axisZ * offsetX - axisX * offsetZ) * sine + axisY * axial * carry;
+      out[2] = anchor[2] + offsetZ * cosine + (axisX * offsetY - axisY * offsetX) * sine + axisZ * axial * carry;
       return out;
     }
 
     function createDependencySpinTexture(gl) {
       const maximumSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
-      const width = Math.min(maximumSize, Math.max(1, model.packages.length));
-      const height = Math.max(1, Math.ceil(model.packages.length / width));
+      const texelCount = Math.max(1, model.packages.length * 2);
+      const width = Math.min(maximumSize, texelCount);
+      const height = Math.ceil(texelCount / width);
       if (height > maximumSize) throw new Error("Dependency package count exceeds WebGL2 texture capacity");
       const pixels = new Float32Array(width * height * 4);
       packageAnchors.forEach((anchor, index) => {
-        const offset = index * 4;
+        const offset = index * 8;
+        const orientation = packageOrientations[index];
         pixels[offset] = anchor[0];
         pixels[offset + 1] = anchor[1];
         pixels[offset + 2] = anchor[2];
         pixels[offset + 3] = packageSpinRates[index];
+        pixels[offset + 4] = orientation[0];
+        pixels[offset + 5] = orientation[1];
+        pixels[offset + 6] = orientation[2];
       });
       const texture = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -780,11 +827,13 @@
 
     function dependencyPosition(seed, packageIndex) {
       const anchor = packageAnchors[packageIndex] || [0, 0, 0, 2];
+      const orientation = packageOrientations[packageIndex] || IDENTITY_DEPENDENCY_ORIENTATION;
       const offset = dependencyCloudOffset(seed, packageMorphologies[packageIndex], anchor[3]);
+      const oriented = orientDependencyOffset(offset, orientation);
       return [
-        anchor[0] + offset[0],
-        anchor[1] + offset[1],
-        anchor[2] + offset[2],
+        anchor[0] + oriented[0],
+        anchor[1] + oriented[1],
+        anchor[2] + oriented[2],
       ];
     }
 
@@ -1261,18 +1310,16 @@
 
         vec3 dependencySpinPosition(vec3 position, float category, float maxSize, float packageIndex) {
           if (category < 1.5 || maxSize >= 4.0 || packageIndex < 0.0) return position;
-          int index = int(packageIndex + 0.5);
-          ivec2 coordinate = ivec2(index % u_dependencySpinTextureWidth, index / u_dependencySpinTextureWidth);
-          vec4 spin = texelFetch(u_dependencySpins, coordinate, 0);
+          int index = int(packageIndex + 0.5) * 2;
+          ivec2 spinCoordinate = ivec2(index % u_dependencySpinTextureWidth, index / u_dependencySpinTextureWidth);
+          ivec2 axisCoordinate = ivec2((index + 1) % u_dependencySpinTextureWidth, (index + 1) / u_dependencySpinTextureWidth);
+          vec4 spin = texelFetch(u_dependencySpins, spinCoordinate, 0);
+          vec3 axis = texelFetch(u_dependencySpins, axisCoordinate, 0).xyz;
           float angle = spin.w * u_dependencySpinElapsed;
           float cosine = cos(angle);
           float sine = sin(angle);
-          vec2 offset = position.xz - spin.xz;
-          return vec3(
-            spin.x + offset.x * cosine - offset.y * sine,
-            position.y,
-            spin.z + offset.x * sine + offset.y * cosine
-          );
+          vec3 offset = position - spin.xyz;
+          return spin.xyz + offset * cosine + cross(axis, offset) * sine + axis * dot(axis, offset) * (1.0 - cosine);
         }
       `;
 

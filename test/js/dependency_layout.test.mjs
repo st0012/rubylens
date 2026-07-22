@@ -36,6 +36,17 @@ describe("git-source dependency systems", () => {
     expect(runtime.systemAnchors[0]).toHaveLength(5);
   });
 
+  it("spaces cloud centers without changing their internal radii", () => {
+    const unscaled = runtime.dependencyAnchor(303, 2);
+    for (let coordinate = 0; coordinate < 3; coordinate += 1) {
+      expect(runtime.packageAnchors[2][coordinate]).toBeCloseTo(
+        unscaled[coordinate] * runtime.DEPENDENCY_HALO_SPACING_SCALE,
+      );
+    }
+    expect(runtime.packageAnchors[2][3]).toBe(unscaled[3]);
+    expect(runtime.DEPENDENCY_HALO_SPACING_SCALE).toBe(1.15);
+  });
+
   it("lays out deterministically", () => {
     const repeat = loadRuntime(fixtureModel());
     expect(repeat.systemAnchors).toEqual(runtime.systemAnchors);

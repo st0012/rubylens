@@ -213,8 +213,10 @@ to the complete-row WebGL2 path.
     from test stars alone. Accepted consequence: hiding Tests in the Explorer
     dims the arms but no longer removes arm structure entirely.
   - Irr: same clumps, wider spread.
-- **`dependencyAnchor`** — unchanged recipe (satellite systems read well around
-  every family); only its inner radius follows the family's outer extent.
+- **`dependencyAnchor`** — keeps the existing seeded halo placement around
+  every family and its inner radius follows the family's outer extent. After
+  system and package layout, every cloud center expands uniformly from Core by
+  1.15 so pairwise spacing grows without changing any cloud's nominal radius.
 - **`dependencyCloudOffset`** — dispatches on the package's independently
   classified family inside its existing package anchor and nominal radius.
   Spiral arms use a deterministic tapered tail that can extend beyond that
@@ -230,8 +232,11 @@ The accepted morphology change left package/system anchors and grouping,
 category colors, Explorer interactions, Showcase rotation and annotation
 anchoring, and `prefers-reduced-motion` behavior unchanged. A 2026-07-22
 follow-up added rigid package-local rotation without changing those anchors or
-morphology recipes. Its dynamical-timescale derivation, shared GPU transform,
-motion controls, and exact Showcase/Clip loop are specified in
+morphology recipes. A second follow-up gave each package an isotropically
+seeded local plane instead of inheriting the project plane; flattened families
+show the tilt while nearly spherical families remain visually insensitive.
+Its dynamical-timescale derivation, shared GPU transform, motion controls, and
+exact Showcase/Clip loop are specified in
 [Explorer and Showcase rendering](../EXPLORER_SHOWCASE_RENDERING.md).
 
 One project morphology still governs the Core/Test body. Dependency packages
