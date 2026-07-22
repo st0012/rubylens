@@ -60,7 +60,9 @@ class ExplorerRuntimeTest < Minitest::Test
     assert_includes(RUNTIME, "clamp(timestamp - lastDriftTimestamp, 0, MAX_DRIFT_DELTA_MS)")
     assert_includes(RUNTIME, "const driftDelta = screenRotationYawSign(pitch) * DRIFT_RADIANS_PER_SECOND * elapsed / 1000")
     assert_includes(RUNTIME, "cameraFlight.finalTarget.yaw += driftDelta")
-    assert_includes(RUNTIME, "if (cameraFlight || driftAdvanced) requestRender()")
+    assert_includes(RUNTIME, "function advanceDependencySpin(timestamp)")
+    assert_includes(RUNTIME, "dependencySpinElapsed = (dependencySpinElapsed + elapsed) % SHOWCASE_PRESET.durationMs")
+    assert_includes(RUNTIME, "if (cameraFlight || driftAdvanced || spinAdvanced) requestRender()")
     assert_includes(RUNTIME, "lastDriftTimestamp = null")
     assert_includes(RUNTIME, "yaw += dx * .006")
 

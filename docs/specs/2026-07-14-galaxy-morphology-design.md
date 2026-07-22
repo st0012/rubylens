@@ -226,11 +226,13 @@ to the complete-row WebGL2 path.
   the actual silhouette extent (an E7 spheroid is more compact than an Sc
   disc).
 
-Unchanged: package/system anchors and grouping, category colors, Explorer
-interactions (toggles, focus fly-to, pan, drift), Showcase rotation and
-annotation anchoring, and `prefers-reduced-motion` behavior. The accepted
-dependency size/alpha differences between Explorer and Showcase are specified
-separately in [Explorer and Showcase rendering](../EXPLORER_SHOWCASE_RENDERING.md).
+The accepted morphology change left package/system anchors and grouping,
+category colors, Explorer interactions, Showcase rotation and annotation
+anchoring, and `prefers-reduced-motion` behavior unchanged. A 2026-07-22
+follow-up added rigid package-local rotation without changing those anchors or
+morphology recipes. Its dynamical-timescale derivation, shared GPU transform,
+motion controls, and exact Showcase/Clip loop are specified in
+[Explorer and Showcase rendering](../EXPLORER_SHOWCASE_RENDERING.md).
 
 One project morphology still governs the Core/Test body. Dependency packages
 reuse the same visual grammar and classifier implementation, but each family
