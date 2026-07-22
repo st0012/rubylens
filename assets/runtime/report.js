@@ -425,6 +425,17 @@
       ];
     }
 
+    // The arm's center angle at a radius — the one arm-angle law shared by
+    // star placement and the dust lanes that hug those arms.
+    function armCenterTheta(arm, radial) {
+      if (morphology.family === MORPHOLOGY_FAMILY.barredSpiral) {
+        return barredArmTheta(morphology.phaseSeed, morphology.phase, morphology.winding, arm, radial, barRadius);
+      }
+      const origin = ARM_RECIPE.unbarredOriginRadial;
+      return morphology.phase + arm * Math.PI * 2 / morphology.armCount +
+        Math.log(Math.max(radial, origin) / origin) / armTanPitch(morphology.winding);
+    }
+
     // Answers both the arm angle and the point's (possibly adjusted) radius:
     // barred-spiral arms unwind from the bar tips, so arm members that fall
     // inside the bar are respread outward along the arm, densest at the tip.
@@ -438,14 +449,12 @@
         if (barredRing && unit(seed, channel + 5) < ARM_RECIPE.ringMemberShare) {
           return barredRingPlacement(morphology.phase, barRadius, unit(seed, channel + 6), unit(seed, channel + 7));
         }
-        const theta = barredArmTheta(morphology.phaseSeed, morphology.phase, morphology.winding, arm, armRadial, barRadius);
+        const theta = armCenterTheta(arm, armRadial);
         const feather = unit(seed, channel + 2) < ARM_RECIPE.featherShare ? ARM_RECIPE.featherWidth : 1;
         const width = scatter * (ARM_RECIPE.widthFloor + armRadial / 64) * Math.min(1, 36 / armRadial) * feather;
         return [theta + normal(seed, channel + 3) * width, armRadial];
       }
-      const origin = ARM_RECIPE.unbarredOriginRadial;
-      const theta = morphology.phase + arm * Math.PI * 2 / morphology.armCount +
-        Math.log(Math.max(radial, origin) / origin) / armTanPitch(morphology.winding) + normal(seed, channel + 1) * scatter;
+      const theta = armCenterTheta(arm, radial) + normal(seed, channel + 1) * scatter;
       return [theta, radial];
     }
 
@@ -819,6 +828,218 @@
       pool.push(index);
     });
     const packageCount = model.packages.length;
+
+    // Unresolved-glow population. The milky texture of a real galaxy is not a
+    // halo around bright stars; it is millions of separate faint stars too
+    // small to resolve. Haze micro-stars are therefore drawn from the same
+    // deterministic position law as the data marks themselves — corePosition,
+    // testPosition, and dependencyPosition with fresh seeds — so the haze is
+    // literally more of the same stellar population, only fainter: arms stay
+    // crisp, the exponential radial falloff shows, and zooming in resolves the
+    // texture into faint individual stars instead of per-mark blur blobs.
+    // Haze rows live after the data rows in one interleaved buffer, encode
+    // their category as data category + HAZE_CATEGORY_OFFSET, and never enter
+    // interactive points, hit scans, search, or reported scene point counts.
+    const HAZE_CATEGORY_OFFSET = 3;
+    // Tuned constants and unit/normal channels for the haze population, named
+    // in one frozen recipe block per the renderer geometry practices. normal
+    // draws consume their channel and channel + 1.
+    const HAZE_RECIPE = Object.freeze({
+      pointBudget: 90_000,
+      starsPerMark: Object.freeze({ core: 24, tests: 18, dependencyStar: 2 }),
+      sizeChannel: 96,
+      faintChannel: 97,
+      ditherSeedChannel: 120,
+      ditherChannel: 121,
+      poolSeedChannel: 133,      // + category code: core 133, tests 134, dependencies 135
+      clumpCenterChannel: 137,   // + category code
+      clumpMemberChannel: 139,   // + category code; members draw normal channels 1/3/5
+      clumpSize: 14,
+      clumpShare: Object.freeze({ core: .2, tests: .3 }),
+      clumpSpread: Object.freeze({ core: 1.1, tests: 1.4 }),
+      faintFloor: .24,
+      faintSpan: .95,
+      sparkleThreshold: .96,
+      size: Object.freeze({ floor: .16, span: .14 }),
+      sparkleSize: Object.freeze({ floor: .3, span: .18 }),
+      maxSize: 1.2,
+    });
+    function buildHazePoints() {
+      const markCounts = [0, 0, 0];
+      const alphaSums = [0, 0, 0];
+      for (let index = 0; index < scenePointCount; index += 1) {
+        const offset = index * SCENE_POINT_STRIDE;
+        if (sceneData[offset + 6] > 4) continue;
+        const category = sceneData[offset + 5];
+        markCounts[category] += 1;
+        alphaSums[category] += sceneData[offset + 4];
+      }
+      const perMark = [HAZE_RECIPE.starsPerMark.core, HAZE_RECIPE.starsPerMark.tests, HAZE_RECIPE.starsPerMark.dependencyStar];
+      const requested = markCounts[0] * perMark[0] + markCounts[1] * perMark[1] + markCounts[2] * perMark[2];
+      const budgetScale = Math.min(1, HAZE_RECIPE.pointBudget / Math.max(1, requested));
+      const poolCounts = markCounts.map((count, category) => Math.round(count * perMark[category] * budgetScale));
+      // The budget is a hard cap: rounding and dither tails trim, never spill.
+      poolCounts[0] = Math.min(poolCounts[0], HAZE_RECIPE.pointBudget);
+      poolCounts[1] = Math.min(poolCounts[1], HAZE_RECIPE.pointBudget - poolCounts[0]);
+      const meanAlpha = alphaSums.map((sum, category) => (markCounts[category] ? sum / markCounts[category] : 0));
+
+      // Dependency haze resamples per declaration row so each gem cloud keeps
+      // its exact share, morphology, and expansion indexes.
+      const dependencyRows = [];
+      if (poolCounts[2] > 0) {
+        const perStar = perMark[2] * budgetScale;
+        for (let index = 0; index < scenePointCount; index += 1) {
+          const offset = index * SCENE_POINT_STRIDE;
+          if (sceneData[offset + 5] !== categoryCodes.dependencies || sceneData[offset + 6] > 4) continue;
+          const stars = Math.floor(perStar) +
+            (unit(hash(index + 1, HAZE_RECIPE.ditherSeedChannel), HAZE_RECIPE.ditherChannel) < perStar % 1 ? 1 : 0);
+          for (let star = 0; star < stars; star += 1) dependencyRows.push(index * 8 + star);
+        }
+        const dependencyBudget = Math.max(0, HAZE_RECIPE.pointBudget - poolCounts[0] - poolCounts[1]);
+        if (dependencyRows.length > dependencyBudget) dependencyRows.length = dependencyBudget;
+      }
+
+      const hazeCount = poolCounts[0] + poolCounts[1] + dependencyRows.length;
+      const data = new Float32Array(hazeCount * SCENE_POINT_STRIDE);
+      let cursor = 0;
+      const writeHazeStar = (position, category, packageIndex, systemIndex, seed) => {
+        const out = cursor * SCENE_POINT_STRIDE;
+        const faint = unit(seed, HAZE_RECIPE.faintChannel);
+        // faint⁴ keeps most of the field very dim with a small sparkle tail of
+        // brighter, slightly larger resolved stars — the depth hierarchy of a
+        // real star field rather than uniform grain.
+        const sparkle = faint > HAZE_RECIPE.sparkleThreshold;
+        const size = sparkle ? HAZE_RECIPE.sparkleSize : HAZE_RECIPE.size;
+        data[out] = position[0];
+        data[out + 1] = position[1];
+        data[out + 2] = position[2];
+        data[out + 3] = size.floor + size.span * unit(seed, HAZE_RECIPE.sizeChannel);
+        data[out + 4] = meanAlpha[category] * (HAZE_RECIPE.faintFloor + HAZE_RECIPE.faintSpan * faint * faint * faint * faint);
+        data[out + 5] = category + HAZE_CATEGORY_OFFSET;
+        data[out + 6] = HAZE_RECIPE.maxSize;
+        data[out + 7] = packageIndex;
+        data[out + 8] = systemIndex;
+        cursor += 1;
+      };
+      // A fraction of each namespace pool lands in tight clumps resampled from
+      // the same law — the flocculent star-cloud patchiness of a real disc.
+      const writeNamespacePool = (count, category, positionFor, clumpShare, clumpSpread) => {
+        const clumps = Math.floor(count * clumpShare / HAZE_RECIPE.clumpSize);
+        const smooth = count - clumps * HAZE_RECIPE.clumpSize;
+        for (let star = 0; star < smooth; star += 1) {
+          const seed = hash(star + 1, HAZE_RECIPE.poolSeedChannel + category);
+          writeHazeStar(positionFor(seed), category, -1, -1, seed);
+        }
+        for (let clump = 0; clump < clumps; clump += 1) {
+          const center = positionFor(hash(clump + 1, HAZE_RECIPE.clumpCenterChannel + category));
+          for (let member = 0; member < HAZE_RECIPE.clumpSize; member += 1) {
+            const seed = hash(clump * 97 + member + 1, HAZE_RECIPE.clumpMemberChannel + category);
+            writeHazeStar([
+              center[0] + normal(seed, 1) * clumpSpread,
+              center[1] + normal(seed, 3) * clumpSpread * .4,
+              center[2] + normal(seed, 5) * clumpSpread,
+            ], category, -1, -1, seed);
+          }
+        }
+      };
+      writeNamespacePool(poolCounts[0], categoryCodes.core, corePosition, HAZE_RECIPE.clumpShare.core, HAZE_RECIPE.clumpSpread.core * layoutScale.disk);
+      writeNamespacePool(poolCounts[1], categoryCodes.tests, testPosition, HAZE_RECIPE.clumpShare.tests, HAZE_RECIPE.clumpSpread.tests * layoutScale.tests);
+      for (const row of dependencyRows) {
+        const offset = Math.floor(row / 8) * SCENE_POINT_STRIDE;
+        const seed = hash(row + 1, HAZE_RECIPE.poolSeedChannel + categoryCodes.dependencies);
+        writeHazeStar(
+          dependencyPosition(seed, sceneData[offset + 7]),
+          categoryCodes.dependencies,
+          sceneData[offset + 7],
+          sceneData[offset + 8],
+          seed,
+        );
+      }
+      return data;
+    }
+    // Dust absorbs. One broad, broken lane hugs each spiral arm's inner edge
+    // and attenuates the marks and haze behind it by up to half — rule 6 of
+    // docs/STELLAR_DESIGN_RESEARCH.md: dust is derived from the morphology,
+    // broken into segments, and absorbing; never uniform fog and never new
+    // glowing particles. Positions are static in galaxy space, so absorption
+    // is baked into point alphas at build time and costs nothing per frame.
+    // innerRadius matches the bulge's outer edge — corePosition's bulge radial
+    // law caps at 17, and the tests disc starts there — so lanes never cut
+    // through bulge stars and dust begins where arms actually live.
+    const DUST_PRESET = Object.freeze({
+      maxAbsorption: .5,
+      laneWidth: 2.4,
+      laneOffset: -.16,
+      innerRadius: 17,
+      fadeInSpan: 5,
+      outerFadeStart: 44,
+      outerFadeEnd: 58,
+      segmentLength: 9,
+      brokenChannel: 150,
+    });
+    const smoothstep = (low, high, value) => {
+      const t = clamp((value - low) / (high - low), 0, 1);
+      return t * t * (3 - 2 * t);
+    };
+    function dustAttenuation(position, radialScale) {
+      if (!spiralMorphology) return 0;
+      const x = position[0] / radialScale;
+      const z = position[2] / radialScale;
+      const radial = Math.hypot(x, z);
+      const barred = morphology.family === MORPHOLOGY_FAMILY.barredSpiral;
+      // Lanes hug arms, and barred arms only exist beyond the bar tips.
+      const laneStart = barred ? Math.max(DUST_PRESET.innerRadius, barRadius) : DUST_PRESET.innerRadius;
+      const window = smoothstep(laneStart, laneStart + DUST_PRESET.fadeInSpan, radial) *
+        (1 - smoothstep(DUST_PRESET.outerFadeStart, DUST_PRESET.outerFadeEnd, radial));
+      if (window <= 0) return 0;
+      const pointTheta = Math.atan2(z, x);
+      let density = 0;
+      for (let arm = 0; arm < morphology.armCount; arm += 1) {
+        // armCenterTheta is the same law that places arm stars, so the lane
+        // follows the rendered arm — including its seeded jitters and forks.
+        const laneTheta = armCenterTheta(arm, radial) + DUST_PRESET.laneOffset;
+        const delta = Math.atan2(Math.sin(pointTheta - laneTheta), Math.cos(pointTheta - laneTheta));
+        const across = Math.abs(delta) * radial;
+        if (across > DUST_PRESET.laneWidth * 3) continue;
+        const segment = Math.floor((radial + arm * 3.7) / DUST_PRESET.segmentLength);
+        const broken = (.35 + .65 * unit(hash(morphology.phaseSeed + arm * 17 + 1, DUST_PRESET.brokenChannel + segment), 0)) *
+          (.6 + .4 * Math.sin(radial * 1.7 + arm * 2.1));
+        density = Math.max(density, Math.exp(-((across / DUST_PRESET.laneWidth) ** 2)) * clamp(broken, 0, 1));
+      }
+      return DUST_PRESET.maxAbsorption * window * density;
+    }
+    function applyDustLanes(rows, count, categoryColumnOffset) {
+      for (let index = 0; index < count; index += 1) {
+        const offset = index * SCENE_POINT_STRIDE;
+        const category = rows[offset + 5] - categoryColumnOffset;
+        if (category !== categoryCodes.core && category !== categoryCodes.tests) continue;
+        const radialScale = category === categoryCodes.core ? layoutScale.disk : layoutScale.tests;
+        const absorbed = dustAttenuation([rows[offset], rows[offset + 1], rows[offset + 2]], radialScale);
+        if (absorbed > 0) rows[offset + 4] *= 1 - absorbed;
+      }
+    }
+    // Haze and dust exist only to be rendered, so they are built on first use
+    // by an accepted renderer — a browser that takes the WebGL2-unavailable
+    // path never spends the CPU or memory. Data rows come first, haze rows
+    // after: glow and white-hot passes draw only the first scenePointCount
+    // rows, and data render indexes stay pairable with gl_VertexID for
+    // selection.
+    let hazeBufferState = null;
+    function hazeBuffers() {
+      if (!hazeBufferState) {
+        const hazeData = buildHazePoints();
+        applyDustLanes(sceneData, scenePointCount, 0);
+        applyDustLanes(hazeData, hazeData.length / SCENE_POINT_STRIDE, HAZE_CATEGORY_OFFSET);
+        const renderPointData = new Float32Array(sceneData.length + hazeData.length);
+        renderPointData.set(sceneData, 0);
+        renderPointData.set(hazeData, sceneData.length);
+        // Counts are always derived from the buffers at their call sites; the
+        // arrays are the single source of truth for the rendered workload.
+        hazeBufferState = Object.freeze({ hazeData, renderPointData });
+      }
+      return hazeBufferState;
+    }
+
     const embeddedDependencyDeclarations = model.dependencyStars.length;
     let plottedDependencyDeclarations = embeddedDependencyDeclarations;
 
@@ -875,6 +1096,7 @@
       document.documentElement.dataset.explorerUnavailableReason = reason;
       document.documentElement.dataset.plottedDependencyDeclarations = String(plottedDependencyDeclarations);
       document.documentElement.dataset.plottedScenePoints = "0";
+      document.documentElement.dataset.hazePoints = "0";
       if (error) document.documentElement.dataset.explorerRendererError = error.message;
       canvas.setAttribute("aria-label", "Interactive artwork unavailable because WebGL2 is required.");
       disableExplorerControls();
@@ -904,6 +1126,7 @@
       plottedDependencyDeclarations = 0;
       document.documentElement.dataset.plottedDependencyDeclarations = String(plottedDependencyDeclarations);
       document.documentElement.dataset.plottedScenePoints = "0";
+      document.documentElement.dataset.hazePoints = "0";
       document.documentElement.dataset.showcaseMotion = "unavailable";
       document.documentElement.dataset.showcaseReady = "true";
       if (error) document.documentElement.dataset.showcaseRendererError = error.message;
@@ -986,6 +1209,8 @@
         document.documentElement.dataset.showcaseUnavailableReason = "webgl2-point-size-range";
         return null;
       }
+      const { renderPointData } = hazeBuffers();
+      const renderPointCount = renderPointData.length / SCENE_POINT_STRIDE;
 
       const createProgram = (vertexSource, fragmentSource) => createGlProgram(gl, vertexSource, fragmentSource);
 
@@ -1037,6 +1262,8 @@
         }
 
         void main() {
+          bool hazePoint = a_category >= 2.5;
+          float categoryCode = hazePoint ? a_category - 3.0 : a_category;
           float cy = u_trig.x;
           float sy = u_trig.y;
           float cp = u_trig.z;
@@ -1056,23 +1283,23 @@
           }
 
           float size = clamp(a_sizeFactor * perspective, 0.35, a_maxSize);
-          float starAlphaScale = a_category > 1.5 ? float(${SHOWCASE_DEPENDENCY_PRESET.starAlphaScale}) : 1.0;
+          float starAlphaScale = categoryCode > 1.5 ? float(${SHOWCASE_DEPENDENCY_PRESET.starAlphaScale}) : 1.0;
           float visibleAlpha = clamp(a_alpha * starAlphaScale * u_brightness / 100.0, 0.0, 1.0);
           float radius = size;
           float alpha = visibleAlpha;
-          vec3 colour = a_category < 0.5
+          vec3 colour = categoryCode < 0.5
             ? ${glslVec3(colours.core)} / 255.0
-            : (a_category < 1.5 ? ${glslVec3(colours.tests)} / 255.0 : ${glslVec3(colours.dependencies)} / 255.0);
+            : (categoryCode < 1.5 ? ${glslVec3(colours.tests)} / 255.0 : ${glslVec3(colours.dependencies)} / 255.0);
 
           if (u_pass == 0) {
-            if (size <= 1.35 || u_glow <= 0.0) { hidePoint(); return; }
+            if (hazePoint || size <= 1.35 || u_glow <= 0.0) { hidePoint(); return; }
             float glowScale = (3.4 - u_deepDetail * 1.3) * (0.75 + 0.25 * u_glow / 100.0);
             radius = size * glowScale;
             alpha = min(1.0, visibleAlpha * 0.055 * u_glow / 100.0);
           } else if (u_pass == 1) {
             radius = size < 0.85 ? 0.5 : size;
           } else {
-            if (size <= 1.1) { hidePoint(); return; }
+            if (hazePoint || size <= 1.1) { hidePoint(); return; }
             radius = max(0.45 + u_deepDetail * 0.25, size * (0.24 + u_deepDetail * 0.06));
             alpha = min(0.9, visibleAlpha * 1.25);
             colour = ${glslVec3(whiteHotColour)} / 255.0;
@@ -1090,7 +1317,7 @@
       const pointBuffer = gl.createBuffer();
       gl.bindVertexArray(pointVao);
       gl.bindBuffer(gl.ARRAY_BUFFER, pointBuffer);
-      gl.bufferData(gl.ARRAY_BUFFER, sceneData, gl.STATIC_DRAW);
+      gl.bufferData(gl.ARRAY_BUFFER, renderPointData, gl.STATIC_DRAW);
       const stride = SCENE_POINT_STRIDE * Float32Array.BYTES_PER_ELEMENT;
       [[0, 3, 0], [1, 1, 3], [2, 1, 4], [3, 1, 5], [4, 1, 6]].forEach(([location, size, offset]) => {
         gl.enableVertexAttribArray(location);
@@ -1155,7 +1382,7 @@
           gl.uniform1f(pointUniforms.deepDetail, deepDetail);
           for (let pass = 0; pass < 3; pass += 1) {
             gl.uniform1i(pointUniforms.pass, pass);
-            gl.drawArrays(gl.POINTS, 0, scenePointCount);
+            gl.drawArrays(gl.POINTS, 0, pass === 1 ? renderPointCount : scenePointCount);
           }
           gl.bindVertexArray(null);
           gl.disable(gl.BLEND);
@@ -1174,6 +1401,7 @@
       if (showcaseRenderer) {
         document.documentElement.dataset.plottedDependencyDeclarations = String(embeddedDependencyDeclarations);
         document.documentElement.dataset.plottedScenePoints = String(scenePointCount);
+        document.documentElement.dataset.hazePoints = String(hazeBuffers().hazeData.length / SCENE_POINT_STRIDE);
       } else {
         markShowcaseUnavailable(
           document.documentElement.dataset.showcaseUnavailableReason || "webgl2-unavailable",
@@ -1207,6 +1435,8 @@
         document.documentElement.dataset.explorerUnavailableReason = "webgl2-point-size-range";
         return null;
       }
+      const { renderPointData } = hazeBuffers();
+      const renderPointCount = renderPointData.length / SCENE_POINT_STRIDE;
       let rendererDpr = 1;
 
       const backgroundProgram = createGlProgram(gl, FULLSCREEN_TRIANGLE_VERTEX_SOURCE, `#version 300 es
@@ -1265,7 +1495,9 @@
         }
 
         void main() {
-          int category = int(a_category + 0.5);
+          bool hazePoint = a_category >= 2.5;
+          float categoryCode = hazePoint ? a_category - 3.0 : a_category;
+          int category = int(categoryCode + 0.5);
           if (u_categoryVisible[category] < 0.5) { hidePoint(); return; }
           vec3 position = a_position;
           bool expandedPoint = (u_expandedPackage >= 0.0 && a_packageIndex == u_expandedPackage)
@@ -1292,7 +1524,7 @@
           }
 
           float size = clamp(a_sizeFactor * perspective, 0.35, a_maxSize);
-          bool focusedDependencyPoint = expandedPoint && category == 2;
+          bool focusedDependencyPoint = !hazePoint && expandedPoint && category == 2;
           bool focusedDependencyHub = focusedDependencyPoint && a_maxSize > 4.0;
           float emphasis = focusedDependencyPoint || selected ? 1.0 : u_categoryEmphasis[category];
           float focusedAlpha = max(focusedDependencyHub ? 0.34 : 0.289, a_alpha);
@@ -1300,19 +1532,27 @@
           bool detailed = emphasis >= 0.1;
           float radius = size;
           float alpha = visibleAlpha;
-          vec3 colour = a_category < 0.5
+          vec3 colour = categoryCode < 0.5
             ? ${glslVec3(colours.core)} / 255.0
-            : (a_category < 1.5 ? ${glslVec3(colours.tests)} / 255.0 : ${glslVec3(colours.dependencies)} / 255.0);
+            : (categoryCode < 1.5 ? ${glslVec3(colours.tests)} / 255.0 : ${glslVec3(colours.dependencies)} / 255.0);
 
           if (u_pass == 0) {
-            if (size <= 1.35 || !detailed) { hidePoint(); return; }
+            if (hazePoint || size <= 1.35 || !detailed) { hidePoint(); return; }
             float glowScale = focusedDependencyPoint ? 2.2 - u_deepDetail * 0.8 : 3.4 - u_deepDetail * 1.3;
             radius = size * glowScale;
-            alpha = visibleAlpha * (focusedDependencyPoint ? 0.045 : 0.055);
+            alpha = visibleAlpha * (focusedDependencyPoint ? 0.045 : 0.055) * (1.0 - 0.78 * u_deepDetail);
           } else if (u_pass == 1) {
-            radius = (!detailed || size < 0.85) ? 0.5 : size;
+            if (hazePoint) {
+              // Haze escapes the zoom exposure dimming: as marks calm down at
+              // depth, the unresolved field stays lit and reads as resolved
+              // faint stars, the way a telescope resolves the Milky Way.
+              radius = size * (1.0 + 0.4 * u_deepDetail);
+              alpha = a_alpha * emphasis * mix(u_exposure, 1.35, u_deepDetail);
+            } else {
+              radius = (!detailed || size < 0.85) ? 0.5 : size;
+            }
           } else {
-            if (size <= 1.1 || !detailed) { hidePoint(); return; }
+            if (hazePoint || size <= 1.1 || !detailed) { hidePoint(); return; }
             radius = max(0.45 + u_deepDetail * 0.25, size * (0.24 + u_deepDetail * 0.06));
             alpha = min(0.9, visibleAlpha * 1.25);
             colour = ${glslVec3(whiteHotColour)} / 255.0;
@@ -1330,7 +1570,7 @@
       const pointBuffer = gl.createBuffer();
       gl.bindVertexArray(pointVao);
       gl.bindBuffer(gl.ARRAY_BUFFER, pointBuffer);
-      gl.bufferData(gl.ARRAY_BUFFER, sceneData, gl.STATIC_DRAW);
+      gl.bufferData(gl.ARRAY_BUFFER, renderPointData, gl.STATIC_DRAW);
       const stride = SCENE_POINT_STRIDE * Float32Array.BYTES_PER_ELEMENT;
       [[0, 3, 0], [1, 1, 3], [2, 1, 4], [3, 1, 5], [4, 1, 6], [5, 1, 7], [6, 1, 8]].forEach(([location, size, offset]) => {
         gl.enableVertexAttribArray(location);
@@ -1414,7 +1654,7 @@
           gl.uniform1i(pointUniforms.selectedIndex, selectedPoint ? selectedPoint.renderIndex : -1);
           for (let pass = 0; pass < 3; pass += 1) {
             gl.uniform1i(pointUniforms.pass, pass);
-            gl.drawArrays(gl.POINTS, 0, scenePointCount);
+            gl.drawArrays(gl.POINTS, 0, pass === 1 ? renderPointCount : scenePointCount);
           }
           gl.bindVertexArray(null);
           gl.disable(gl.BLEND);
@@ -1436,6 +1676,7 @@
       if (explorerRenderer) {
         document.documentElement.dataset.plottedDependencyDeclarations = String(plottedDependencyDeclarations);
         document.documentElement.dataset.plottedScenePoints = String(scenePointCount);
+        document.documentElement.dataset.hazePoints = String(hazeBuffers().hazeData.length / SCENE_POINT_STRIDE);
       } else {
         markExplorerUnavailable(
           document.documentElement.dataset.explorerUnavailableReason || "webgl2-unavailable",

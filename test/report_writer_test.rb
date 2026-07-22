@@ -178,7 +178,7 @@ class ReportWriterTest < Minitest::Test
       refute_includes(html, 'name="rubylens-artifact" content="showcase"')
       assert_includes(html, '"durationMs": 60000')
       assert_includes(html, "const { sceneData, scenePointCount, interactivePoints, dependencyHubs, packageHubs, systemHubs } = buildPoints()")
-      assert_includes(html, "gl.bufferData(gl.ARRAY_BUFFER, sceneData, gl.STATIC_DRAW)")
+      assert_includes(html, "gl.bufferData(gl.ARRAY_BUFFER, renderPointData, gl.STATIC_DRAW)")
       assert_includes(html, "function applyShowcaseCamera(progress)")
       assert_includes(html, "function renderShowcase(timestamp)")
       assert_includes(html, 'dataset.showcaseRenderer = "unavailable"')

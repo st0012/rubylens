@@ -161,15 +161,17 @@ class ShowcaseContractTest < Minitest::Test
     assert_equal(APPROVED_DEPENDENCY_PRESET, showcase_preset("SHOWCASE_DEPENDENCY_PRESET"))
 
     renderer = runtime_function("createShowcaseRenderer")
-    assert_includes(renderer, "float starAlphaScale = a_category > 1.5 ? float(${SHOWCASE_DEPENDENCY_PRESET.starAlphaScale}) : 1.0;")
+    assert_includes(renderer, "float starAlphaScale = categoryCode > 1.5 ? float(${SHOWCASE_DEPENDENCY_PRESET.starAlphaScale}) : 1.0;")
     assert_includes(renderer, "clamp(a_alpha * starAlphaScale * u_brightness / 100.0, 0.0, 1.0)")
   end
 
   def test_showcase_renders_every_scene_point
     runtime = File.read(RUNTIME_PATH)
     assert_includes(runtime, "const { sceneData, scenePointCount, interactivePoints, dependencyHubs, packageHubs, systemHubs } = buildPoints()")
-    assert_includes(runtime_function("createShowcaseRenderer"), "gl.bufferData(gl.ARRAY_BUFFER, sceneData, gl.STATIC_DRAW)")
-    assert_includes(runtime_function("createShowcaseRenderer"), "gl.drawArrays(gl.POINTS, 0, scenePointCount)")
+    assert_includes(runtime, "renderPointData.set(sceneData, 0)")
+    assert_includes(runtime, "renderPointData.set(hazeData, sceneData.length)")
+    assert_includes(runtime_function("createShowcaseRenderer"), "gl.bufferData(gl.ARRAY_BUFFER, renderPointData, gl.STATIC_DRAW)")
+    assert_includes(runtime_function("createShowcaseRenderer"), "gl.drawArrays(gl.POINTS, 0, pass === 1 ? renderPointCount : scenePointCount)")
     assert_includes(runtime_function("updateGalaxySummary"), '${scenePointCount.toLocaleString("en-US")} ${scenePointCount === 1 ? "star" : "stars"}')
   end
 

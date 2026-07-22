@@ -46,6 +46,42 @@ function maxRadialShare(points) {
   return Math.max(...bins.values()) / points.length;
 }
 
+describe("haze position distribution", () => {
+  // The haze resamples corePosition/testPosition with fresh seeds, so it must
+  // satisfy the same degenerate-density bounds as the data populations above;
+  // the bounded clump fraction (≤30%, 14-star clumps) stays far below the bin
+  // thresholds. A known-bad build that clamps draws or collapses sweeps fails
+  // these bounds exactly as the data-population guards do.
+  it("keeps Sb haze free of angular spikes and radial pile-ups", () => {
+    const namespaceRow = (seed, test) => [seed, 0, test, 2, 1, 0, 4, 9, 3, 1, 0, 5, 2, 1];
+    const namespaces = Array.from({ length: 480 }, (_, index) => namespaceRow(1000 + index * 7, index % 2));
+    const runtime = loadRuntime(minimalModel({
+      totals: { namespaces: namespaces.length, packages: 0, dependencyStars: 0 },
+      namespaceNames: namespaces.map((_, index) => `NS::C${index}`),
+      namespaces,
+      morphology: [2, 0, 261, 3, 128, 500, 0, 0, 0, 0x2222],
+    }));
+    const stride = runtime.SCENE_POINT_STRIDE;
+    const hazeByCategory = category => {
+      const points = [];
+      for (let index = 0; index < runtime.hazePointCount; index += 1) {
+        const offset = index * stride;
+        if (runtime.hazeData[offset + 5] !== category + runtime.HAZE_CATEGORY_OFFSET) continue;
+        points.push([runtime.hazeData[offset], runtime.hazeData[offset + 1], runtime.hazeData[offset + 2]]);
+      }
+      return points;
+    };
+    const coreHaze = hazeByCategory(0);
+    const testHaze = hazeByCategory(1);
+    expect(coreHaze.length).toBeGreaterThan(4000);
+    expect(testHaze.length).toBeGreaterThan(3000);
+    expect(maxRadialShare(coreHaze)).toBeLessThan(.09);
+    expect(maxRadialShare(testHaze)).toBeLessThan(.09);
+    expect(maxAngularShare(testHaze, 2, 24)).toBeLessThan(.075);
+    expect(maxAngularShare(coreHaze, 2, 7.5)).toBeLessThan(.048);
+  });
+});
+
 describe("position distributions", () => {
   for (const scenario of SCENARIOS) {
     it(`keeps ${scenario.name} free of angular spikes and radial pile-ups`, () => {
