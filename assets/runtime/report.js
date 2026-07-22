@@ -1235,11 +1235,14 @@
         void main() {
           if (v_alpha <= 0.0) discard;
           float radial = length(gl_PointCoord - vec2(0.5)) * 2.0;
-          // Negative radius marks a milk sprite: a gaussian puff whose additive
-          // overlap integrates unresolved light into a continuous glow surface.
+          // Negative radius marks a milk sprite: a soft puff whose additive
+          // overlap integrates unresolved light into a continuous glow
+          // surface. (1-r²)² tracks a gaussian closely and stays cheap on the
+          // software rasterizers the milk pass must survive.
           if (v_radius < 0.0) {
             if (radial > 1.0) discard;
-            float milk = v_alpha * exp(-radial * radial * 3.2);
+            float falloff = 1.0 - radial * radial;
+            float milk = v_alpha * falloff * falloff;
             outColor = vec4(v_colour * milk, milk);
             return;
           }
@@ -1317,8 +1320,8 @@
       }
       // The largest active sprite decides the capability floor: the hub glow
       // when the glow pass is on, otherwise the larger of the hub body and the
-      // milk sprite (drawn at half resolution, so its device size is one
-      // hazeMilkRadius).
+      // milk sprite (drawn at quarter resolution, so its device size is half
+      // a hazeMilkRadius).
       const maxSpriteCssSize = Math.max(
         SHOWCASE_PRESET.pointGlowPercent > 0 ? 5.2 * 3.4 * 2 : 5.2 * 2,
         SHOWCASE_PRESET.hazeMilkRadius,
@@ -1438,7 +1441,7 @@
           }
 
           gl_Position = vec4(screen.x / u_resolution.x * 2.0 - 1.0, 1.0 - screen.y / u_resolution.y * 2.0, 0.0, 1.0);
-          gl_PointSize = max(1.0, radius * 2.0) * (u_pass == 3 ? 0.5 : 1.0);
+          gl_PointSize = max(1.0, radius * 2.0) * (u_pass == 3 ? 0.25 : 1.0);
           v_colour = colour;
           v_alpha = alpha;
           v_radius = u_pass == 3 ? -radius : radius;
@@ -1458,17 +1461,17 @@
       gl.bindVertexArray(null);
       const dependencySpins = createDependencySpinTexture(gl);
 
-      // The milk pass accumulates into a half-resolution offscreen target and
-      // is composited up with linear filtering: identical integrated light at
-      // a quarter of the fragment work, which keeps large scenes and software
-      // rasterizers (clip export, CI) inside their frame budgets.
+      // The milk pass accumulates into a quarter-resolution offscreen target
+      // and is composited up with linear filtering: identical integrated light
+      // at a sixteenth of the fragment work, which keeps large scenes and the
+      // software rasterizers CI and clip export run on inside frame budgets.
       const milkTexture = gl.createTexture();
       const milkFramebuffer = gl.createFramebuffer();
       let milkWidth = 0;
       let milkHeight = 0;
       const ensureMilkTarget = () => {
-        const targetWidth = Math.max(1, Math.round(canvas.width / 2));
-        const targetHeight = Math.max(1, Math.round(canvas.height / 2));
+        const targetWidth = Math.max(1, Math.round(canvas.width / 4));
+        const targetHeight = Math.max(1, Math.round(canvas.height / 4));
         if (targetWidth === milkWidth && targetHeight === milkHeight) return;
         milkWidth = targetWidth;
         milkHeight = targetHeight;
