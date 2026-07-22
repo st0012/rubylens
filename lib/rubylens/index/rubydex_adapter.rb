@@ -87,7 +87,7 @@ module RubyLens
           construct_index = ruby_construct_index(declaration)
           workspace_count, tests_only, canonical_site_keys, canonical_scope, package_site_keys =
             summarize_definitions(declaration, is_namespace)
-          reference_count = safe_length(declaration, :references) if canonical_site_keys || package_site_keys
+          reference_count = safe_length(declaration, :references) if package_site_keys
 
           if canonical_site_keys
             canonical_site_keys = canonical_site_keys.uniq if canonical_site_keys.length > 1
@@ -95,7 +95,7 @@ module RubyLens
             canonical_site_keys.each do |uri, start_line, start_column, end_line, end_column|
               workspace_definition_ranges[uri] << [start_line, start_column, end_line, end_column, ordinal]
             end
-            records << [declaration, canonical_site_keys.length, canonical_scope, name, reference_count]
+            records << [declaration, canonical_site_keys.length, canonical_scope, name]
           end
           if construct_index && workspace_count.positive?
             category_stats.fetch(tests_only ? "tests" : "core")[construct_index] += 1
@@ -300,8 +300,6 @@ module RubyLens
         workspace_ranges = workspace.fetch(:definition_ranges, {})
         inbound_counts = Hash.new(0)
         workspace.fetch(:records).each_with_index do |record, index|
-          next if record.fetch(4).zero?
-
           record.fetch(0).references.each do |reference|
             location = begin
               reference.location

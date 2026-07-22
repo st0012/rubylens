@@ -23,7 +23,10 @@ module RubyLens
 
     def selected_files
       arguments = ["ls-files", "-z", "--cached", "--others", "--exclude-standard"]
-      arguments.concat(["--", @target_root.relative_path_from(@git_root).to_s]) unless @target_root == @git_root
+      unless @target_root == @git_root
+        relative_target = @target_root.relative_path_from(@git_root)
+        arguments.concat(["--", ":(literal)#{relative_target}"])
+      end
       output, status = capture(*arguments)
       raise GitError, "failed to enumerate tracked and unignored files" unless status.success?
 
