@@ -87,6 +87,7 @@ module RubyLens
           construct_index = ruby_construct_index(declaration)
           workspace_count, tests_only, canonical_site_keys, canonical_scope, package_site_keys =
             summarize_definitions(declaration, is_namespace)
+          reference_count = safe_length(declaration, :references) if canonical_site_keys || package_site_keys
 
           if canonical_site_keys
             canonical_site_keys = canonical_site_keys.uniq if canonical_site_keys.length > 1
@@ -94,7 +95,7 @@ module RubyLens
             canonical_site_keys.each do |uri, start_line, start_column, end_line, end_column|
               workspace_definition_ranges[uri] << [start_line, start_column, end_line, end_column, ordinal]
             end
-            records << [declaration, canonical_site_keys.length, canonical_scope, name]
+            records << [declaration, canonical_site_keys.length, canonical_scope, name, reference_count]
           end
           if construct_index && workspace_count.positive?
             category_stats.fetch(tests_only ? "tests" : "core")[construct_index] += 1
@@ -107,6 +108,7 @@ module RubyLens
             is_namespace,
             construct_index,
             package_site_keys,
+            reference_count,
           )
         end
 
@@ -250,7 +252,16 @@ module RubyLens
         end
       end
 
-      def collect_dependency_declaration(aggregation, positions, declaration, name, is_namespace, construct_index, package_site_keys)
+      def collect_dependency_declaration(
+        aggregation,
+        positions,
+        declaration,
+        name,
+        is_namespace,
+        construct_index,
+        package_site_keys,
+        reference_count
+      )
         return unless package_site_keys
 
         package_index = nil
@@ -264,7 +275,6 @@ module RubyLens
         end
 
         sites = site_keys.length > 1 ? site_keys.uniq.length : site_keys.length
-        reference_count = safe_length(declaration, :references)
         row = [
           namespace_kind(declaration),
           is_namespace ? [declaration.ancestors.count - 1, 0].max : 0,
@@ -289,19 +299,31 @@ module RubyLens
         namespace_count = workspace.fetch(:namespace_names, ordinal_by_name).length
         workspace_ranges = workspace.fetch(:definition_ranges, {})
         inbound_counts = Hash.new(0)
+        workspace.fetch(:records).each_with_index do |record, index|
+          next if record.fetch(4).zero?
+
+          record.fetch(0).references.each do |reference|
+            location = begin
+              reference.location
+            rescue StandardError
+              next
+            end
+            inbound_counts[index] += 1 if workspace_location?(location)
+          end
+        end
         links = []
         retained_links = Set.new
         attribution_count = 0
 
         graph.constant_references.each do |reference|
+          break if links.length >= CONSTANT_REFERENCE_LINK_LIMIT ||
+            attribution_count >= CONSTANT_REFERENCE_ATTRIBUTION_LIMIT
           next unless reference.is_a?(Rubydex::ResolvedConstantReference)
 
           referenced_name = resolved_constant_reference_name(reference)
           next unless referenced_name
           referenced_ordinal = ordinal_by_name[referenced_name]
-          travel_available = links.length < CONSTANT_REFERENCE_LINK_LIMIT &&
-            attribution_count < CONSTANT_REFERENCE_ATTRIBUTION_LIMIT
-          dependency_ordinal = dependency_ordinal_by_name[referenced_name] if travel_available && !referenced_ordinal
+          dependency_ordinal = dependency_ordinal_by_name[referenced_name] unless referenced_ordinal
           next unless referenced_ordinal || dependency_ordinal
 
           location = begin
@@ -310,9 +332,6 @@ module RubyLens
             next
           end
           next unless workspace_location?(location)
-
-          inbound_counts[referenced_ordinal] += 1 if referenced_ordinal
-          next unless travel_available
 
           attribution_count += 1
 

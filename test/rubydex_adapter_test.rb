@@ -366,7 +366,8 @@ class RubydexAdapterTest < Minitest::Test
     reference.stubs(:location).returns(location)
     reference.stubs(:declaration).returns(stub(name: "Target"))
     adapter = RubyLens::Index::RubydexAdapter.new(stub(workspace_path?: true))
-    workspace = { records: [], ordinal_by_name: { "Target" => 0 } }
+    target = stub(references: [reference])
+    workspace = { records: [[target, 1, 0, "Target", 1]], ordinal_by_name: { "Target" => 0 } }
 
     summary = adapter.send(:workspace_reference_summary, stub(constant_references: [reference]), workspace)
 
@@ -412,7 +413,10 @@ class RubydexAdapterTest < Minitest::Test
     attribution_limit = RubyLens::Index::RubydexAdapter::CONSTANT_REFERENCE_ATTRIBUTION_LIMIT
     references = Array.new(attribution_limit, dependency_reference) << late_workspace_reference
     workspace = {
-      records: [[nil, 1, 0]],
+      records: [
+        [stub(references: []), 1, 0, "Origin", 0],
+        [stub(references: [late_workspace_reference]), 1, 0, "LateTarget", 1],
+      ],
       definition_ranges: { uri => [[1, 0, 10, 0, 0]] },
       namespace_names: ["Origin", "LateTarget"],
       ordinal_by_name: { "Origin" => 0, "LateTarget" => 1 },
@@ -456,7 +460,7 @@ class RubydexAdapterTest < Minitest::Test
       path == "/workspace/source.rb"
     end
     workspace = {
-      records: [[nil, 1, 0]],
+      records: [[stub(references: []), 1, 0, "Origin", 0]],
       definition_ranges: { workspace_uri => [[1, 0, 10, 0, 0]] },
       namespace_names: ["Origin"],
       ordinal_by_name: { "Origin" => 0 },

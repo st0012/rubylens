@@ -33,6 +33,22 @@ class GitRepositoryTest < Minitest::Test
     end
   end
 
+  def test_selected_files_limits_git_enumeration_to_a_nested_target
+    Dir.mktmpdir("rubylens-git-") do |directory|
+      target = File.join(directory, "component")
+      FileUtils.mkdir_p(target)
+      system("git", "-C", directory, "init", "--quiet", exception: true)
+      inside = File.join(target, "inside.rb")
+      outside = File.join(directory, "outside.rb")
+      File.write(inside, "Inside = 1\n")
+      File.write(outside, "Outside = 1\n")
+
+      selected = RubyLens::GitRepository.new(target).selected_files
+
+      assert_equal([File.realpath(inside)], selected)
+    end
+  end
+
   def test_adds_default_report_to_local_git_excludes_once
     Dir.mktmpdir("rubylens-git-") do |directory|
       system("git", "-C", directory, "init", "--quiet", exception: true)
