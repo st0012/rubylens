@@ -70,7 +70,9 @@
       "centerXPercent": 49,
       "centerYPercent": 67,
       "starBrightnessPercent": 75,
-      "pointGlowPercent": 35,
+      "pointGlowPercent": 0,
+      "hazeMilkRadius": 12,
+      "hazeMilkGainPercent": 24,
       "backgroundGlowPercent": 200,
       "textScalePercent": 80,
       "layoutReferenceWidth": 720,
@@ -1233,6 +1235,17 @@
         void main() {
           if (v_alpha <= 0.0) discard;
           float radial = length(gl_PointCoord - vec2(0.5)) * 2.0;
+          // Negative radius marks a milk sprite: a soft puff whose additive
+          // overlap integrates unresolved light into a continuous glow
+          // surface. (1-r²)² tracks a gaussian closely and stays cheap on the
+          // software rasterizers the milk pass must survive.
+          if (v_radius < 0.0) {
+            if (radial > 1.0) discard;
+            float falloff = 1.0 - radial * radial;
+            float milk = v_alpha * falloff * falloff;
+            outColor = vec4(v_colour * milk, milk);
+            return;
+          }
           float feather = min(1.0, 1.0 / max(v_radius, 1.0));
           float coverage = 1.0 - smoothstep(1.0 - feather, 1.0, radial);
           if (coverage <= 0.0) discard;
@@ -1305,8 +1318,14 @@
         document.documentElement.dataset.showcaseUnavailableReason = "webgl2-unavailable";
         return null;
       }
-      // Largest sprite is an unexpanded hub glow: radius 5.2 * 3.4 CSS pixels.
-      const maxSpriteCssSize = 5.2 * 3.4 * 2 + 2;
+      // The largest active sprite decides the capability floor: the hub glow
+      // when the glow pass is on, otherwise the larger of the hub body and the
+      // milk sprite (drawn at quarter resolution, so its device size is half
+      // a hazeMilkRadius).
+      const maxSpriteCssSize = Math.max(
+        SHOWCASE_PRESET.pointGlowPercent > 0 ? 5.2 * 3.4 * 2 : 5.2 * 2,
+        SHOWCASE_PRESET.hazeMilkRadius / 2,
+      ) + 2;
       const pointSizeRange = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE);
       if (pointSizeRange[1] < maxSpriteCssSize) {
         document.documentElement.dataset.showcaseUnavailableReason = "webgl2-point-size-range";
@@ -1397,12 +1416,22 @@
             ? ${glslVec3(colours.core)} / 255.0
             : (categoryCode < 1.5 ? ${glslVec3(colours.tests)} / 255.0 : ${glslVec3(colours.dependencies)} / 255.0);
 
-          if (u_pass == 0) {
+          if (u_pass == 3) {
+            // Milk pass: on the fixed far camera the unresolved population
+            // presents as its integrated light — big, ultra-faint gaussian
+            // sprites whose overlap forms a continuous glow tracing the
+            // real density law, not individual resolved points. It renders
+            // into a half-resolution target, so device sizes are halved.
+            if (!hazePoint) { hidePoint(); return; }
+            radius = float(${SHOWCASE_PRESET.hazeMilkRadius});
+            alpha = visibleAlpha * float(${SHOWCASE_PRESET.hazeMilkGainPercent}) / 100.0;
+          } else if (u_pass == 0) {
             if (hazePoint || size <= 1.35 || u_glow <= 0.0) { hidePoint(); return; }
             float glowScale = (3.4 - u_deepDetail * 1.3) * (0.75 + 0.25 * u_glow / 100.0);
             radius = size * glowScale;
             alpha = min(1.0, visibleAlpha * 0.055 * u_glow / 100.0);
           } else if (u_pass == 1) {
+            if (hazePoint) { hidePoint(); return; }
             radius = size < 0.85 ? 0.5 : size;
           } else {
             if (hazePoint || size <= 1.1) { hidePoint(); return; }
@@ -1412,10 +1441,10 @@
           }
 
           gl_Position = vec4(screen.x / u_resolution.x * 2.0 - 1.0, 1.0 - screen.y / u_resolution.y * 2.0, 0.0, 1.0);
-          gl_PointSize = max(1.0, radius * 2.0);
+          gl_PointSize = max(1.0, radius * 2.0) * (u_pass == 3 ? 0.25 : 1.0);
           v_colour = colour;
           v_alpha = alpha;
-          v_radius = radius;
+          v_radius = u_pass == 3 ? -radius : radius;
         }
       `, POINT_FRAGMENT_SOURCE);
 
@@ -1431,6 +1460,43 @@
       });
       gl.bindVertexArray(null);
       const dependencySpins = createDependencySpinTexture(gl);
+
+      // The milk pass accumulates into a quarter-resolution offscreen target
+      // and is composited up with linear filtering: identical integrated light
+      // at a sixteenth of the fragment work, which keeps large scenes and the
+      // software rasterizers CI and clip export run on inside frame budgets.
+      const milkTexture = gl.createTexture();
+      const milkFramebuffer = gl.createFramebuffer();
+      let milkWidth = 0;
+      let milkHeight = 0;
+      const ensureMilkTarget = () => {
+        const targetWidth = Math.max(1, Math.round(canvas.width / 4));
+        const targetHeight = Math.max(1, Math.round(canvas.height / 4));
+        if (targetWidth === milkWidth && targetHeight === milkHeight) return;
+        milkWidth = targetWidth;
+        milkHeight = targetHeight;
+        gl.bindTexture(gl.TEXTURE_2D, milkTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, milkWidth, milkHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, milkFramebuffer);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, milkTexture, 0);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      };
+      const milkCompositeProgram = createProgram(FULLSCREEN_TRIANGLE_VERTEX_SOURCE, `#version 300 es
+        precision highp float;
+        uniform sampler2D u_milk;
+        uniform vec2 u_resolution;
+        out vec4 outColor;
+        void main() { outColor = texture(u_milk, gl_FragCoord.xy / u_resolution); }
+      `);
+      const milkCompositeUniforms = {
+        milk: gl.getUniformLocation(milkCompositeProgram, "u_milk"),
+        resolution: gl.getUniformLocation(milkCompositeProgram, "u_resolution"),
+      };
 
       const backgroundUniforms = {
         resolution: gl.getUniformLocation(backgroundProgram, "u_resolution"),
@@ -1464,6 +1530,7 @@
           canvas.width = Math.round(viewportWidth);
           canvas.height = Math.round(viewportHeight);
           gl.viewport(0, 0, canvas.width, canvas.height);
+          ensureMilkTarget();
         },
         render() {
           const deepDetail = clamp(Math.log2(Math.max(1, zoom)) / 5, 0, 1);
@@ -1495,9 +1562,29 @@
           gl.uniform1f(pointUniforms.brightness, SHOWCASE_PRESET.starBrightnessPercent);
           gl.uniform1f(pointUniforms.glow, SHOWCASE_PRESET.pointGlowPercent);
           gl.uniform1f(pointUniforms.deepDetail, deepDetail);
+
+          ensureMilkTarget();
+          gl.bindFramebuffer(gl.FRAMEBUFFER, milkFramebuffer);
+          gl.viewport(0, 0, milkWidth, milkHeight);
+          gl.clearColor(0, 0, 0, 0);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+          gl.uniform1i(pointUniforms.pass, 3);
+          gl.drawArrays(gl.POINTS, scenePointCount, renderPointCount - scenePointCount);
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+          gl.viewport(0, 0, canvas.width, canvas.height);
+          gl.useProgram(milkCompositeProgram);
+          gl.bindVertexArray(null);
+          gl.activeTexture(gl.TEXTURE1);
+          gl.bindTexture(gl.TEXTURE_2D, milkTexture);
+          gl.uniform1i(milkCompositeUniforms.milk, 1);
+          gl.uniform2f(milkCompositeUniforms.resolution, canvas.width, canvas.height);
+          gl.drawArrays(gl.TRIANGLES, 0, 3);
+          gl.useProgram(pointProgram);
+          gl.bindVertexArray(pointVao);
+
           for (let pass = 0; pass < 3; pass += 1) {
             gl.uniform1i(pointUniforms.pass, pass);
-            gl.drawArrays(gl.POINTS, 0, pass === 1 ? renderPointCount : scenePointCount);
+            gl.drawArrays(gl.POINTS, 0, scenePointCount);
           }
           gl.bindVertexArray(null);
           gl.disable(gl.BLEND);
