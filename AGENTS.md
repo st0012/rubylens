@@ -2,6 +2,25 @@
 
 Documentation map for RubyLens. Start with [README.md](README.md) for usage and development setup.
 
+## Working conventions
+
+Maintainer preferences for agents working in this repository.
+
+Code:
+
+- Make invalid states unrepresentable instead of guarding against them. When something "cannot happen," first ask why it can be expressed at all; prefer removing the redundant representation over validating it.
+- No one-line delegator methods — inline the underlying call at each call site, even when it is wordier.
+- Cheap identity markers (like the payload `schema` fields) are worth keeping, but only with their purpose documented in a correctly named home (see [docs/SCHEMAS.md](docs/SCHEMAS.md)).
+
+Workflow:
+
+- Never post GitHub comments, review replies, or reactions on the maintainer's behalf. Respond to review feedback with code changes and report conclusions in the conversation.
+- Communicate in plain, concise English.
+- Open pull requests only when asked, and leave the working branch green and pushed at all times.
+- Verification is empirical, not just green tests: prove behavior-preserving changes by generating artifacts from both versions and comparing the embedded data and rendered pixels, and prove features by running them end to end.
+- Diagnose before assuming a regression — reproduce first; missing output is often environmental (for example, dependency gems not installed in the generating bundle).
+- When the maintainer challenges a piece of code, defend it with a concrete argument or delete it.
+
 ## Contracts
 
 - [PRODUCT.md](PRODUCT.md) — the product contract: surfaces, meaning and scale, privacy, and non-goals.
