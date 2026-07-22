@@ -46,14 +46,18 @@ class ClipRendererE2ETest < Minitest::Test
     dependency_stars = Array.new(stars) do |index|
       [seed.call, index % packages, index % 6, 1 + (index % 2), index % 3, index % 25, index % 60, index % 15]
     end
+    constant_reference_links = Array.new([[namespaces - 1, 0].max, 8].min) do |index|
+      [index, index + 1]
+    end
     {
-      "schema" => "rubylens.showcase.v6",
+      "schema" => "rubylens.showcase.v7",
       "projectName" => "Clip E2E Fixture",
       "details" => false,
       "domains" => { "ancestorDepth" => 9, "definitionSites" => 3, "reopenings" => 2,
                      "descendants" => 30, "references" => 80, "members" => 20 },
       "morphology" => [2, 0, 240, 3, 105, 380, 0, 0, 0, 42],
       "namespaces" => rows,
+      "constantReferenceLinks" => constant_reference_links,
       "packages" => package_rows,
       "packageMorphologies" => package_morphologies,
       "dependencySystems" => [[seed.call, 0]],

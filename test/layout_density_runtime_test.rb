@@ -12,7 +12,7 @@ class LayoutDensityRuntimeTest < Minitest::Test
     assert_includes(RUNTIME, "gl.uniform1f(pointUniforms.cameraDistance, cameraDistance);")
     assert_includes(RUNTIME, "gl.uniform1f(pointUniforms.cameraFocalLength, cameraFocalLength);")
     assert_includes(RUNTIME, "const depth = cameraDistance - z2;")
-    assert_includes(RUNTIME, "const perspective = cameraFocalLength / depth * zoom;")
+    assert_includes(RUNTIME, "const perspective = cameraFocalLength / depth * (camera?.zoom ?? zoom);")
     assert_includes(RUNTIME, "function contextualSelectionCameraTarget(point, preferredZoom = point.hub ? 4 : point.category === \"dependencies\" ? 5 : 7) {")
     assert_includes(RUNTIME, "const coreFitZoom = Math.min(sceneRight, sceneBottom) * .28 * cameraDistance / (layoutScale.coreOuterRadius * cameraFocalLength);")
   end

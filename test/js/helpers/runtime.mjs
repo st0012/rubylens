@@ -30,8 +30,14 @@ const EXPORTS = `;return ({
   SCENE_POINT_STRIDE, categoryCodes, sceneData, scenePointCount,
   interactivePoints, dependencyHubs, packageHubs, systemHubs,
   ensureHitScanRows, hitTestProjected, ensureSearchIndex, searchRenderedPoints,
-  project, viewMatrix, visibleCategories,
-  DEPENDENCY_STAR_ALPHA_SCALE: 0.85,
+  project, projectScenePoint, viewMatrix, visibleCategories,
+  TRAVEL_PRESET, travelLaunchCountForPointCount, travelLaunchCount, travelVisibleLimit,
+  constantReferenceLinks, travelEndpointCategory, travelLinkCandidatesForSlot, travelStatesAt,
+  travelCurveFits, quadraticCoordinate,
+  advanceExplorerDrift, explorerTravelElapsedAt, travelAdmissionPlanAt, zoomBetween,
+  screenRotationYawSign, drawTravelOverlay,
+  DRIFT_RADIANS_PER_SECOND, MAX_DRIFT_DELTA_MS,
+  DEPENDENCY_EXPANSION, DEPENDENCY_STAR_ALPHA_SCALE: 0.85,
   state: {
     get yaw() { return yaw; }, set yaw(v) { yaw = v; },
     get pitch() { return pitch; }, set pitch(v) { pitch = v; },
@@ -47,18 +53,75 @@ const EXPORTS = `;return ({
     get focusedCategory() { return focusedCategory; }, set focusedCategory(v) { focusedCategory = v; },
     get expandedPackageIndex() { return expandedPackageIndex; }, set expandedPackageIndex(v) { expandedPackageIndex = v; },
     get expandedSystemIndex() { return expandedSystemIndex; }, set expandedSystemIndex(v) { expandedSystemIndex = v; },
+    get drifting() { return drifting; }, set drifting(v) { drifting = v; },
+    get lastDriftTimestamp() { return lastDriftTimestamp; }, set lastDriftTimestamp(v) { lastDriftTimestamp = v; },
   },
 })`;
 
-const CONTEXT_2D_STUB = {
-  setTransform() {}, clearRect() {}, beginPath() {}, arc() {}, stroke() {},
-  getImageData() { return { data: new Uint8ClampedArray(4) }; },
-  globalAlpha: 1, globalCompositeOperation: "source-over", strokeStyle: "", lineWidth: 1,
-};
+function createContext2DStub() {
+  const savedStates = [];
+  const drawingProperties = [
+    "globalAlpha", "globalCompositeOperation", "lineCap", "strokeStyle",
+    "fillStyle", "lineWidth", "shadowColor", "shadowBlur",
+  ];
+  const context = {
+    strokes: [],
+    arcs: [],
+    fills: 0,
+    pathStart: null,
+    pathEnd: null,
+    setTransform() {},
+    clearRect() {},
+    beginPath() { this.pathStart = null; this.pathEnd = null; },
+    arc(...args) { this.arcs.push(args); },
+    fill() { this.fills += 1; },
+    moveTo(x, y) { this.pathStart = [x, y]; this.pathEnd = [x, y]; },
+    lineTo(x, y) { this.pathEnd = [x, y]; },
+    stroke() {
+      const from = this.pathStart;
+      const to = this.pathEnd;
+      this.strokes.push({
+        from,
+        to,
+        length: from && to ? Math.hypot(to[0] - from[0], to[1] - from[1]) : 0,
+        lineWidth: this.lineWidth,
+        lineCap: this.lineCap,
+        strokeStyle: this.strokeStyle,
+        shadowColor: this.shadowColor,
+        shadowBlur: this.shadowBlur,
+      });
+    },
+    save() {
+      savedStates.push(Object.fromEntries(drawingProperties.map(property => [property, this[property]])));
+    },
+    restore() {
+      const state = savedStates.pop();
+      if (state) Object.assign(this, state);
+    },
+    reset() {
+      this.strokes.length = 0;
+      this.arcs.length = 0;
+      this.fills = 0;
+      this.pathStart = null;
+      this.pathEnd = null;
+      savedStates.length = 0;
+    },
+    getImageData() { return { data: new Uint8ClampedArray(4) }; },
+    globalAlpha: 1,
+    globalCompositeOperation: "source-over",
+    lineCap: "butt",
+    strokeStyle: "",
+    fillStyle: "",
+    lineWidth: 1,
+    shadowColor: "",
+    shadowBlur: 0,
+  };
+  return context;
+}
 
 export function minimalModel(overrides = {}) {
   return {
-    schema: "rubylens.art.v12",
+    schema: "rubylens.art.v13",
     projectName: "Fixture",
     morphology: [2, 0, 240, 3, 105, 380, 0, 0, 0, 7],
     totals: { namespaces: 0, packages: 0, dependencyStars: 0 },
@@ -71,6 +134,7 @@ export function minimalModel(overrides = {}) {
     packageMorphologies: [],
     dependencySystems: [],
     dependencyStars: [],
+    constantReferenceLinks: [],
     dependencyWarnings: [],
     warningCounts: { manifest: 0, index: 0, integrity: 0 },
     ...overrides,
@@ -81,10 +145,11 @@ export function loadRuntime(model = minimalModel()) {
   document.documentElement.innerHTML = "";
   document.body.innerHTML = BODY;
   delete document.body.dataset.rubylensMode;
+  const context2D = createContext2DStub();
   HTMLCanvasElement.prototype.getContext = function getContext(kind) {
-    return kind === "2d" ? CONTEXT_2D_STUB : null;
+    return kind === "2d" ? context2D : null;
   };
   const encoded = Buffer.from(JSON.stringify(model)).toString("base64");
   const source = RUNTIME.replace("{{MODEL_BASE64}}", encoded);
-  return new Function(`${source}\n${EXPORTS}`)();
+  return Object.assign(new Function(`${source}\n${EXPORTS}`)(), { context2D });
 }

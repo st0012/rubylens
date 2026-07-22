@@ -21,12 +21,12 @@ Three levels of disclosure:
 
 | For | Command | Reveals |
 | --- | --- | --- |
-| Yourself | `rubylens report` | Real class, module, and gem names, fully interactive |
-| Your team or a talk | `rubylens clip --details` | A 60-second looping MP4 with stats and cinematic labels |
-| Anyone | `rubylens clip` | Project name and the galaxy's shape and scale |
+| Yourself | `rubylens report` | Real class, module, and gem names, sparse reference topology, and full interaction |
+| Your team or a talk | `rubylens clip --details` | Project name, shape, scale, sparse reference topology, stats, and selected names |
+| Anyone | `rubylens clip` | Project name, galaxy shape and scale, and sparse anonymous reference topology |
 
 > [!IMPORTANT]
-> Nothing is uploaded and no source code is embedded. Outputs still name your project and can name classes and gems. See [Privacy and sharing](#privacy-and-sharing).
+> Nothing is uploaded and no source code is embedded. Outputs still describe your project: they name it, can name classes and gems, and reveal some relationship topology. See [Privacy and sharing](#privacy-and-sharing).
 
 https://github.com/user-attachments/assets/43570623-6d98-46c9-9303-7faa4035b2a7
 
@@ -57,11 +57,11 @@ RubyLens indexes and renders locally. Generated HTML files contain their scripts
 But the outputs still describe your project:
 
 - Explorer embeds fully qualified class, module, and gem names. It omits source text, comments, paths, and names for individual dependency stars.
-- Minimal Showcase omits code and gem names, but still reveals the project name plus the galaxy's shape and scale.
-- Details Showcase adds aggregate statistics and selected code/dependency names.
+- Minimal Showcase omits code and gem names, but still reveals the project name, the galaxy's shape and scale, and a sparse anonymous sample of constant-reference topology.
+- Details Showcase adds aggregate statistics and selected code/dependency names to the same topology.
 - Clip shows on screen exactly what the recorded Showcase shows, in a format anyone can replay.
 
-Galaxy shape is also information: a package's rendered shape can make the rough makeup of that gem easier to see, even though it reveals no source text.
+Galaxy shape is also information: a package's rendered shape can make the rough makeup of that gem easier to see, even though it reveals no source text. Relationship topology is information too: a travel line means that one rendered namespace contains a resolved reference to another rendered declaration.
 
 Default outputs are written atomically with owner-only `0600` permissions. RubyLens also adds the exact default output and its temporary-file pattern to the repository's local `.git/info/exclude`, so it does not change the shared `.gitignore`.
 
@@ -72,6 +72,8 @@ Custom output paths are written exactly where requested, may replace an existing
 ## Using Explorer
 
 Explorer lets you search and move through Core code, Tests, and Gems while the galaxy continues to drift.
+
+While drift runs, RubyLens scales traffic with the rendered project population: from one launch with one visible flight in very small reports to four launches with at most three visible flights in reports of 100,000 or more points. Each deterministic two-second cycle uses seeded-random starts and favors references to exact Gem declaration stars while keeping workspace-only routes eligible. Very short, off-screen, or shared-endpoint routes are skipped. Each admitted 1.3-second flight keeps one broad arc with a thin same-hue leading edge and a longer, fuller feathered wake. Camera changes, paused drift, and reduced motion clear the flights rather than making them jump or reappear.
 
 - Drag to orbit.
 - Scroll at the cursor to zoom.
@@ -100,7 +102,7 @@ Use `--details` when you want aggregate statistics and one-at-a-time cinematic l
 bundle exec rubylens showcase --details
 ```
 
-Showcase also requires WebGL2. A browser with `prefers-reduced-motion` enabled receives one stable frame with no cinematic labels.
+Both Showcase modes include the same bounded, anonymous travel flights. Showcase also requires WebGL2. A browser with `prefers-reduced-motion` enabled receives one stable frame with no travel flights or cinematic labels.
 
 ## Using Clip
 
@@ -124,7 +126,7 @@ Frames render deterministically off-screen, so nothing flashes across your displ
 - **Tests** are cyan. They represent test classes and modules. RubyLens also adds class-like stars for RSpec `describe` and `context` calls under `spec/` or `specs/`.
 - **Gems** are warm gold. Each gem forms a cloud of anonymous stars. Related gems from the same materialized Git source can appear together as one dependency system.
 
-RubyLens uses Rubydex to find classes, modules, methods, constants, inheritance, reopenings, and references. It does not claim that references form a complete call graph, and it never executes the project or its tests.
+RubyLens uses Rubydex to find classes, modules, methods, constants, inheritance, reopenings, and references. Shuttle flights draw from resolved references whose occurrences belong to Core or Test namespaces; their targets may be another workspace namespace or an exact anonymous Gem declaration star. Core-to-Core, Core-to-Test, Test-to-Core, Test-to-Test, and workspace-to-Gem flights are included; top-level, ambiguous, exact-self, and non-workspace origins are omitted. Flights travel from the referenced declaration to the referrer and show a bounded visual sample, not call edges or a complete relationship graph. RubyLens never executes the project or its tests.
 
 RubyLens analyzes tracked `.rb`, `.rake`, `.rbs`, and `.ru` files inside the target, plus untracked files of those types that Git does not ignore. It reads dependency versions from `Gemfile.lock` and analyzes gem code already installed locally.
 

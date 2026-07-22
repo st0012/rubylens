@@ -16,6 +16,9 @@ module RubyLens
       random = Random.new(@seed)
       morphology = MorphologyClassifier.new(snapshot).call
       namespace_order = (0...snapshot.fetch("namespaces").length).to_a.shuffle(random: random)
+      namespace_index = Array.new(namespace_order.length)
+      namespace_order.each_with_index { |old_index, new_index| namespace_index[old_index] = new_index }
+      constant_reference_rows = valid_constant_reference_rows(snapshot)
       namespaces = namespace_order.map do |index|
         row = snapshot.fetch("namespaces").fetch(index)
         [random.rand(0..0xffff_ffff), *row]
@@ -40,11 +43,31 @@ module RubyLens
         ]
       end
       package_names = package_order.map { |old_index| snapshot.fetch("packages").fetch(old_index).fetch("name") }
+      dependency_offsets = []
+      dependency_count = 0
+      snapshot.fetch("packages").each do |package|
+        dependency_offsets << dependency_count
+        dependency_count += package.fetch("declarations").length
+      end
+      dependency_target_rows = {}.compare_by_identity
+      constant_reference_rows.each do |_referring_index, referenced_index|
+        dependency_ordinal = referenced_index - namespace_order.length
+        next if dependency_ordinal.negative? || dependency_ordinal >= dependency_count
+
+        next_package_index = dependency_offsets.bsearch_index { |offset| offset > dependency_ordinal }
+        old_package_index = (next_package_index || dependency_offsets.length) - 1
+        package = snapshot.fetch("packages").fetch(old_package_index)
+        local_index = dependency_ordinal - dependency_offsets.fetch(old_package_index)
+        dependency_target_rows[package.fetch("declarations").fetch(local_index)] = dependency_ordinal
+      end
       dependencies = []
+      dependency_index = {}
       package_order.each do |old_index|
         package = snapshot.fetch("packages").fetch(old_index)
         declarations = package.fetch("declarations").sort.shuffle(random: random)
         declarations.each do |declaration|
+          original_ordinal = dependency_target_rows[declaration]
+          dependency_index[original_ordinal] = dependencies.length if original_ordinal
           dependencies << [
             random.rand(0..0xffff_ffff),
             package_index.fetch(old_index),
@@ -52,8 +75,13 @@ module RubyLens
           ]
         end
       end
+      constant_reference_links = build_constant_reference_links(
+        constant_reference_rows,
+        namespace_index,
+        dependency_index,
+      )
       {
-        "schema" => "rubylens.art.v12",
+        "schema" => "rubylens.art.v13",
         "projectName" => snapshot.fetch("project_name"),
         "morphology" => [morphology.fetch("family"), *morphology.fetch("knobs")],
         "totals" => {
@@ -65,6 +93,7 @@ module RubyLens
         "categoryStats" => snapshot.fetch("category_stats"),
         "namespaceNames" => namespace_names,
         "namespaces" => namespaces,
+        "constantReferenceLinks" => constant_reference_links,
         "packageNames" => package_names,
         "packages" => packages,
         "packageMorphologies" => package_morphologies,
@@ -83,6 +112,34 @@ module RubyLens
     end
 
     private
+
+    def valid_constant_reference_rows(snapshot)
+      rows = snapshot.fetch("constant_reference_links", [])
+      return [] unless rows.is_a?(Array)
+
+      rows.select do |row|
+        row.is_a?(Array) && row.length == 2 && row.all?(Integer) && row.none?(&:negative?)
+      end
+    end
+
+    def build_constant_reference_links(rows, namespace_index, dependency_index)
+      snapshot_namespace_count = namespace_index.length
+      candidates = rows.filter_map do |row|
+        referring_index, referenced_index = row
+        remapped_referring_index = namespace_index[referring_index]
+        remapped_referenced_index = if referenced_index < snapshot_namespace_count
+          namespace_index[referenced_index]
+        else
+          dependency = dependency_index[referenced_index - snapshot_namespace_count]
+          snapshot_namespace_count + dependency if dependency
+        end
+        next if remapped_referring_index.nil? || remapped_referenced_index.nil?
+
+        [remapped_referring_index, remapped_referenced_index]
+      end
+
+      candidates.shuffle(random: Random.new(@seed ^ 0xC057_A17E))
+    end
 
     def build_dependency_systems(snapshot, package_index)
       system_random = Random.new(@seed ^ 0xD3E5_157E)

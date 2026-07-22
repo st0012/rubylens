@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
+import { FIXTURE_CONSTANT_REFERENCE_LINKS } from "./build_fixtures.mjs";
 
 const FIXTURE = pathToFileURL(join(process.cwd(), "test/browser/.fixtures/showcase.html")).href;
 
@@ -17,6 +18,90 @@ async function openShowcaseClip(page) {
 
 function renderClipFrame(page, frameIndex, fps = 30) {
   return page.evaluate(([index, rate]) => renderShowcaseClipFrame(index, rate), [frameIndex, fps]);
+}
+
+function peakTravelFrame(page, fps = 60) {
+  return page.evaluate(rate => {
+    const frameCount = TRAVEL_PRESET.cycleDurationMs * rate / 1000;
+    let peak = { frame: null, count: 0, score: -1 };
+    for (let frame = 0; frame < frameCount; frame += 1) {
+      const elapsed = frame * 1000 / rate;
+      const states = travelStatesAt(elapsed);
+      const score = states.length
+        ? Math.min(...states.map(state => {
+            const rawProgress = (elapsed - state.episode.startsAt) / TRAVEL_PRESET.flightDurationMs;
+            return Math.min(rawProgress, 1 - rawProgress);
+          }))
+        : -1;
+      if (states.length > peak.count || (states.length === peak.count && score > peak.score)) {
+        peak = { frame, count: states.length, score };
+      }
+    }
+    return { ...peak, limit: travelVisibleLimit };
+  }, fps);
+}
+
+function peakVisibleTravelFrame(page, fps = 30, cycles = 6) {
+  return page.evaluate(([rate, cycleCount]) => {
+    const frameCount = TRAVEL_PRESET.cycleDurationMs * rate / 1000 * cycleCount;
+    let peak = { frame: null, count: 0, visibility: -1 };
+    for (let frame = 0; frame < frameCount; frame += 1) {
+      const elapsed = frame * 1000 / rate;
+      const visibleStates = travelStatesAt(elapsed)
+        .filter(state => state.visibility >= TRAVEL_PRESET.minimumVisibility);
+      const visibility = visibleStates
+        .reduce((minimum, state) => Math.min(minimum, state.visibility), 1);
+      if (visibleStates.length > peak.count || (visibleStates.length === peak.count && visibility > peak.visibility)) {
+        peak = { frame, count: visibleStates.length, visibility };
+      }
+      if (peak.count === travelVisibleLimit && visibleStates.length < peak.count) break;
+    }
+    return { ...peak, limit: travelVisibleLimit };
+  }, [fps, cycles]);
+}
+
+const TRAVEL_PRESET_DURATION_SECONDS = 2;
+
+async function firstRenderedTravelFrame(page, fps = 60) {
+  return page.evaluate(([rate, durationSeconds]) => {
+    const frameCount = durationSeconds * rate * 6;
+    for (let frame = 0; frame < frameCount; frame += 1) {
+      const elapsed = frame * 1000 / rate;
+      const visibleState = travelStatesAt(elapsed)
+        .find(state => state.visibility >= TRAVEL_PRESET.minimumVisibility);
+      if (visibleState) {
+        return { frame, linkIndex: visibleState.episode.linkIndex };
+      }
+    }
+    return null;
+  }, [fps, TRAVEL_PRESET_DURATION_SECONDS]);
+}
+
+function travelPixels(page) {
+  return page.evaluate(() => {
+    const canvas = document.getElementById("travel-cosmos");
+    const { data, width, height } = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height);
+    let opaque = 0;
+    let minX = width;
+    let minY = height;
+    let maxX = -1;
+    let maxY = -1;
+    for (let offset = 3, pixel = 0; offset < data.length; offset += 4, pixel += 1) {
+      if (data[offset] === 0) continue;
+      const x = pixel % width;
+      const y = Math.floor(pixel / width);
+      opaque += 1;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+    return {
+      opaque,
+      spanX: maxX < 0 ? 0 : maxX - minX + 1,
+      spanY: maxY < 0 ? 0 : maxY - minY + 1,
+    };
+  });
 }
 
 test("beginShowcaseClip freezes the live loop and reports the preset", async ({ page }) => {
@@ -46,14 +131,78 @@ test("clip frames are a pure function of frame index", async ({ page }) => {
   expect(other.equals(first)).toBe(false);
 });
 
+test("spatially distinct travel wakes are repeatable and follow decoded directions", async ({ page }) => {
+  const preset = await openShowcaseClip(page);
+  expect(preset.status).toBe("ok");
+  const renderedDirection = await firstRenderedTravelFrame(page);
+  expect(renderedDirection).not.toBeNull();
+  const rawLink = FIXTURE_CONSTANT_REFERENCE_LINKS[renderedDirection.linkIndex];
+  const flight = await page.evaluate(([linkIndex, row]) => {
+    const [referringIndex, referencedIndex] = row;
+    const decoded = constantReferenceLinks[linkIndex];
+    return {
+      decoded: {
+        departureIndex: decoded.departureIndex,
+        arrivalIndex: decoded.arrivalIndex,
+      },
+      expected: {
+        departureIndex: referencedIndex,
+        arrivalIndex: referringIndex,
+      },
+    };
+  }, [renderedDirection.linkIndex, rawLink]);
+  expect(flight.decoded).toEqual(flight.expected);
+
+  await renderClipFrame(page, renderedDirection.frame, 60);
+  expect((await travelPixels(page)).opaque).toBeGreaterThan(0);
+
+  const peak = await peakTravelFrame(page);
+  expect(peak.count).toBe(peak.limit);
+  const visiblePeak = await peakVisibleTravelFrame(page);
+  expect(visiblePeak.count).toBe(visiblePeak.limit);
+  const visibleLinkIndexes = await page.evaluate(([frame, rate]) => {
+    const elapsed = frame * 1000 / rate;
+    return travelStatesAt(elapsed)
+      .filter(state => state.visibility >= TRAVEL_PRESET.minimumVisibility)
+      .map(state => state.episode.linkIndex);
+  }, [visiblePeak.frame, 30]);
+  expect(visibleLinkIndexes).toHaveLength(visiblePeak.limit);
+  expect(new Set(visibleLinkIndexes).size).toBe(visiblePeak.limit);
+  await renderClipFrame(page, visiblePeak.frame, 30);
+  const pixels = await travelPixels(page);
+  expect(pixels.opaque).toBeGreaterThan(40);
+  expect(Math.max(pixels.spanX, pixels.spanY)).toBeGreaterThan(12);
+  await renderClipFrame(page, 0);
+  expect(await travelPixels(page)).toEqual({ opaque: 0, spanX: 0, spanY: 0 });
+  await renderClipFrame(page, visiblePeak.frame, 30);
+  const first = await page.screenshot();
+  await renderClipFrame(page, 0);
+  await renderClipFrame(page, visiblePeak.frame, 30);
+  const second = await page.screenshot();
+  expect(second.equals(first)).toBe(true);
+});
+
 test("one full turn loops seamlessly at any capture rate", async ({ page }) => {
   const preset = await openShowcaseClip(page);
   expect(preset.status).toBe("ok");
   await renderClipFrame(page, 0);
   const start = await page.screenshot();
+  expect(await travelPixels(page)).toEqual({ opaque: 0, spanX: 0, spanY: 0 });
+  await renderClipFrame(page, 1799);
+  expect(await travelPixels(page)).toEqual({ opaque: 0, spanX: 0, spanY: 0 });
   await renderClipFrame(page, 1800);
   const wrapped = await page.screenshot();
   expect(wrapped.equals(start)).toBe(true);
+});
+
+test("reduced motion suppresses travel streaks in clip mode", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const preset = await openShowcaseClip(page);
+  expect(preset.status).toBe("ok");
+  const peak = await peakTravelFrame(page);
+  expect(peak.count).toBe(peak.limit);
+  await renderClipFrame(page, peak.frame, 60);
+  expect(await travelPixels(page)).toEqual({ opaque: 0, spanX: 0, spanY: 0 });
 });
 
 test("annotation opacity follows the synthetic clock, not wall time", async ({ page }) => {

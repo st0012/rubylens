@@ -27,12 +27,13 @@ module RubyLens
       raise Error, "package morphology rows must align with packages" unless package_morphologies.length == packages.length
 
       showcase = {
-        "schema" => "rubylens.showcase.v6",
+        "schema" => "rubylens.showcase.v7",
         "projectName" => @model.fetch("projectName"),
         "details" => @details,
         "domains" => project_hash(@model.fetch("domains"), SIGNAL_FIELDS),
         "morphology" => morphology_row,
         "namespaces" => @model.fetch("namespaces").map { |row| numeric_row(row, 14) },
+        "constantReferenceLinks" => @model.fetch("constantReferenceLinks", []).map { |row| numeric_row(row, 2) },
         "packages" => packages.map { |row| numeric_row(row, 9) },
         "packageMorphologies" => package_morphologies.map { |row| numeric_row(row, 10) },
         "dependencySystems" => @model.fetch("dependencySystems", []).map { |row| numeric_row(row, 2) },

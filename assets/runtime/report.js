@@ -4,6 +4,7 @@
     const showcaseDetails = showcaseMode && model.details === true;
     const interactiveMode = !showcaseMode;
     const canvas = document.getElementById("cosmos");
+    const travelCanvas = showcaseMode ? document.getElementById("travel-cosmos") : canvas;
     const showcaseStage = document.getElementById("showcase-stage");
     const showcaseStatus = document.getElementById("showcase-status");
     const showcaseAnnotation = document.getElementById("cinema-annotation");
@@ -113,6 +114,44 @@
       "safeInsetBottom": 90,
       "labelWidth": 440
     });
+    const TRAVEL_PRESET = Object.freeze({
+      "cycleDurationMs": 2000,
+      "flightDurationMs": 1300,
+      "launchWindowMs": 800,
+      "tailFraction": 0.7,
+      "startFractionMin": 0.3,
+      "startFractionJitter": 0.2,
+      "progressEase": 0.055,
+      "fadeInFraction": 0.12,
+      "fadeOutStart": 0.82,
+      "minimumVisibility": 0.04,
+      "minimumRouteLengthPx": 48,
+      "admissionInsetPx": 16,
+      "admissionCandidateLimit": 12,
+      "arcHeightPercent": 24,
+      "arcHeightMin": 16,
+      "arcHeightMax": 120,
+      "tailSegments": 24,
+      "tailLengthPx": 168,
+      "lineWidth": 2.2,
+      "tailAlpha": 0.38,
+      "tailHaloAlpha": 0.09,
+      "tailHaloBlur": 2.2,
+      "tipLengthPx": 1.5,
+      "tipWidth": 0.64,
+      "tipAlpha": 0.3,
+      "tipGlowAlpha": 0.07,
+      "tipGlowBlur": 1.4,
+      "randomCyclePeriod": 1009,
+      "startJitterChannel": 401,
+      "arcDirectionChannel": 8192
+    });
+    function travelLaunchCountForPointCount(pointCount) {
+      if (pointCount < 500) return 1;
+      if (pointCount < 5_000) return 2;
+      if (pointCount < 100_000) return 3;
+      return 4;
+    }
     const TOP_DOWN_PITCH = Math.PI / 2;
     const CONTEXT_TARGET_X = .32;
     const CONTEXT_CORE_X = .68;
@@ -158,6 +197,26 @@
       return .551 * Math.log(share / (1 - share));
     };
     const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
+    function decodeConstantReferenceLinks(rows) {
+      if (!Array.isArray(rows)) return [];
+      const seen = new Set();
+      const endpointCount = model.namespaces.length + model.dependencyStars.length;
+      return rows.slice(0, 1_024).reduce((links, row) => {
+        if (!Array.isArray(row) || row.length !== 2 || !row.every(Number.isInteger)) return links;
+        const [referringIndex, referencedIndex] = row;
+        if (referringIndex < 0 || referringIndex >= model.namespaces.length) return links;
+        if (referencedIndex < 0 || referencedIndex >= endpointCount) return links;
+        if (referringIndex === referencedIndex) return links;
+        const key = `${referringIndex}:${referencedIndex}`;
+        if (seen.has(key)) return links;
+        seen.add(key);
+        links.push(Object.freeze({
+          departureIndex: referencedIndex,
+          arrivalIndex: referringIndex,
+        }));
+        return links;
+      }, []);
+    }
     function fallbackMorphology(phaseSeed = 0) {
       const normalizedSeed = Number.isInteger(phaseSeed) && phaseSeed >= 0 && phaseSeed <= 0xffff_ffff ? phaseSeed >>> 0 : 0;
       return decodeMorphology([...FALLBACK_MORPHOLOGY_ROW.slice(0, 9), normalizedSeed]);
@@ -735,6 +794,24 @@
       return { sceneData, scenePointCount, interactivePoints, dependencyHubs, packageHubs, systemHubs };
     }
     const { sceneData, scenePointCount, interactivePoints, dependencyHubs, packageHubs, systemHubs } = buildPoints();
+    const travelLaunchCount = travelLaunchCountForPointCount(scenePointCount);
+    const travelVisibleLimit = travelLaunchCount <= 2 ? travelLaunchCount : travelLaunchCount - 1;
+    const constantReferenceLinks = decodeConstantReferenceLinks(model.constantReferenceLinks);
+    delete model.constantReferenceLinks;
+    function travelEndpointCategory(renderIndex) {
+      const categoryCode = sceneData[renderIndex * SCENE_POINT_STRIDE + 5];
+      if (categoryCode === categoryCodes.tests) return "tests";
+      if (categoryCode === categoryCodes.dependencies) return "dependencies";
+      return "core";
+    }
+    const dependencyTravelLinkIndices = [];
+    const workspaceTravelLinkIndices = [];
+    constantReferenceLinks.forEach((link, index) => {
+      const pool = travelEndpointCategory(link.departureIndex) === "dependencies"
+        ? dependencyTravelLinkIndices
+        : workspaceTravelLinkIndices;
+      pool.push(index);
+    });
     const packageCount = model.packages.length;
     const embeddedDependencyDeclarations = model.dependencyStars.length;
     let plottedDependencyDeclarations = embeddedDependencyDeclarations;
@@ -810,6 +887,7 @@
       hideShowcaseAnnotation();
       if (showcaseAnnotation) showcaseAnnotation.hidden = true;
       canvas.hidden = true;
+      travelCanvas.hidden = true;
       canvas.setAttribute("aria-label", "Showcase artwork unavailable because WebGL2 is required.");
       if (showcaseStatus) {
         showcaseStatus.textContent = "WebGL2 is required to display this Showcase.";
@@ -1360,6 +1438,7 @@
       }
     }
     const context = interactiveMode ? canvas.getContext("2d", { alpha: Boolean(explorerRenderer) }) : null;
+    const travelContext = showcaseMode ? travelCanvas.getContext("2d", { alpha: true }) : context;
     const directGemCount = model.packages.filter(row => row[1] === 0).length;
     const transitiveGemCount = packageCount - directGemCount;
     const allRubyMetricIndexes = [0, 1, 2, 3];
@@ -1378,6 +1457,7 @@
     model.dependencyStars = [];
 
     function applyCameraTarget(target) {
+      resetExplorerTravel();
       yaw = target.yaw;
       pitch = target.pitch;
       zoom = clamp(target.zoom, MIN_ZOOM, MAX_ZOOM);
@@ -1827,6 +1907,7 @@
     }
 
     function clearExpandedPackage() {
+      if (expandedSystemIndex !== null || expandedPackageIndex !== null) resetExplorerTravel();
       expandedSystemIndex = null;
       expandedPackageIndex = null;
     }
@@ -1870,6 +1951,7 @@
     }
 
     function setCategoryVisible(category, visible) {
+      if (visibleCategories[category] !== visible) resetExplorerTravel();
       visibleCategories[category] = visible;
       if (visibilityInputs[category]) visibilityInputs[category].checked = visible;
       if (!visible && (selectedPoint?.category === category || focusedCategory === category)) clearExplorationFocus();
@@ -2326,6 +2408,11 @@
         width = SHOWCASE_PRESET.stageWidth;
         height = SHOWCASE_PRESET.stageHeight;
         if (showcaseRenderer) showcaseRenderer.resize(width, height);
+        travelCanvas.width = width;
+        travelCanvas.height = height;
+        travelContext.setTransform(1, 0, 0, 1, 0, 0);
+        travelOverlayDirty = false;
+        travelPlan = null;
         fitShowcaseStage();
         updateSceneViewport();
         if (reducedMotionQuery.matches) applyShowcaseCamera(0);
@@ -2336,6 +2423,8 @@
       width = window.innerWidth; height = window.innerHeight;
       canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
+      travelOverlayDirty = false;
+      resetExplorerTravel();
       if (explorerRenderer) explorerRenderer.resize();
       updateSceneViewport();
       requestRender();
@@ -2356,9 +2445,11 @@
       sceneBottom = Math.max(320, sceneBottom);
       sceneCenterX = sceneRight * .5;
       sceneCenterY = sceneBottom * .53;
+      resetExplorerTravel();
     }
 
     function zoomBetween(nextZoom, fromX, fromY, toX = fromX, toY = fromY) {
+      resetExplorerTravel();
       const clampedZoom = clamp(nextZoom, MIN_ZOOM, MAX_ZOOM);
       const scale = clampedZoom / zoom;
       panX = toX - sceneCenterX - (fromX - sceneCenterX - panX) * scale;
@@ -2367,6 +2458,7 @@
     }
 
     function panBy(dx, dy) {
+      resetExplorerTravel();
       panX += dx;
       panY += dy;
     }
@@ -2451,14 +2543,7 @@
       canvas.classList.toggle("is-pan", panning);
     }
 
-    function project(point, matrix, out) {
-      const position = point.position;
-      let anchor = null;
-      if (expandedPackageIndex !== null && point.packageIndex === expandedPackageIndex) anchor = packageAnchors[expandedPackageIndex];
-      else if (expandedPackageIndex === null && expandedSystemIndex !== null && point.systemIndex === expandedSystemIndex) anchor = systemAnchors[expandedSystemIndex];
-      const positionX = anchor ? anchor[0] + (position[0] - anchor[0]) * DEPENDENCY_EXPANSION : position[0];
-      const positionY = anchor ? anchor[1] + (position[1] - anchor[1]) * DEPENDENCY_EXPANSION : position[1];
-      const positionZ = anchor ? anchor[2] + (position[2] - anchor[2]) * DEPENDENCY_EXPANSION : position[2];
+    function projectCoordinates(positionX, positionY, positionZ, matrix, out, camera = null) {
       const [cy, sy, cp, sp] = matrix;
       const x1 = positionX * cy - positionZ * sy;
       const z1 = positionX * sy + positionZ * cy;
@@ -2466,12 +2551,446 @@
       const z2 = positionY * sp + z1 * cp;
       const depth = cameraDistance - z2;
       if (depth <= 35) return null;
-      const perspective = cameraFocalLength / depth * zoom;
+      const perspective = cameraFocalLength / depth * (camera?.zoom ?? zoom);
       const projected = out || [0, 0, 0];
-      projected[0] = sceneCenterX + panX + x1 * perspective;
-      projected[1] = sceneCenterY + panY + y2 * perspective;
+      projected[0] = sceneCenterX + (camera?.panX ?? panX) + x1 * perspective;
+      projected[1] = sceneCenterY + (camera?.panY ?? panY) + y2 * perspective;
       projected[2] = perspective;
       return projected;
+    }
+
+    function dependencyExpansionAnchor(packageIndex, systemIndex) {
+      if (expandedPackageIndex !== null && packageIndex === expandedPackageIndex) return packageAnchors[expandedPackageIndex];
+      if (expandedPackageIndex === null && expandedSystemIndex !== null && systemIndex === expandedSystemIndex) return systemAnchors[expandedSystemIndex];
+      return null;
+    }
+
+    function projectScenePoint(renderIndex, matrix, out, camera = null) {
+      const offset = renderIndex * SCENE_POINT_STRIDE;
+      const positionX = sceneData[offset];
+      const positionY = sceneData[offset + 1];
+      const positionZ = sceneData[offset + 2];
+      const anchor = dependencyExpansionAnchor(sceneData[offset + 7], sceneData[offset + 8]);
+      return projectCoordinates(
+        anchor ? anchor[0] + (positionX - anchor[0]) * DEPENDENCY_EXPANSION : positionX,
+        anchor ? anchor[1] + (positionY - anchor[1]) * DEPENDENCY_EXPANSION : positionY,
+        anchor ? anchor[2] + (positionZ - anchor[2]) * DEPENDENCY_EXPANSION : positionZ,
+        matrix,
+        out,
+        camera,
+      );
+    }
+
+    function project(point, matrix, out) {
+      const position = point.position;
+      const anchor = dependencyExpansionAnchor(point.packageIndex, point.systemIndex);
+      const positionX = anchor ? anchor[0] + (position[0] - anchor[0]) * DEPENDENCY_EXPANSION : position[0];
+      const positionY = anchor ? anchor[1] + (position[1] - anchor[1]) * DEPENDENCY_EXPANSION : position[1];
+      const positionZ = anchor ? anchor[2] + (position[2] - anchor[2]) * DEPENDENCY_EXPANSION : position[2];
+      return projectCoordinates(positionX, positionY, positionZ, matrix, out);
+    }
+
+    let travelPlan = null;
+    let explorerTravelCameraOrigin = null;
+    let explorerTravelElapsed = 0;
+    let explorerTravelLastTimestamp = null;
+    let travelOverlayDirty = false;
+
+    function resetExplorerTravel() {
+      if (!interactiveMode) return;
+      travelPlan = null;
+      explorerTravelCameraOrigin = null;
+      explorerTravelElapsed = 0;
+      explorerTravelLastTimestamp = null;
+    }
+
+    function travelLinksShareEndpoint(left, right) {
+      return left.departureIndex === right.departureIndex ||
+        left.departureIndex === right.arrivalIndex ||
+        left.arrivalIndex === right.departureIndex ||
+        left.arrivalIndex === right.arrivalIndex;
+    }
+
+    function travelLinkCandidatesForSlot(cycle, slot, selected) {
+      const launchCount = travelLaunchCount;
+      let dependencyPreferred;
+      let primaryStart;
+      if (launchCount === 1) {
+        dependencyPreferred = cycle % 3 !== 2;
+        primaryStart = dependencyPreferred
+          ? cycle - Math.floor((cycle + 1) / 3)
+          : Math.floor(cycle / 3);
+      } else {
+        const workspaceSlot = cycle % launchCount;
+        dependencyPreferred = slot !== workspaceSlot;
+        primaryStart = dependencyPreferred
+          ? cycle * (launchCount - 1) + slot - (slot > workspaceSlot ? 1 : 0)
+          : cycle;
+      }
+      const primaryPool = dependencyPreferred ? dependencyTravelLinkIndices : workspaceTravelLinkIndices;
+      const secondaryPool = dependencyPreferred ? workspaceTravelLinkIndices : dependencyTravelLinkIndices;
+      const secondaryStart = cycle * launchCount + slot;
+      const candidates = [];
+      const avoidSelected = selected.size < constantReferenceLinks.length;
+      for (const [pool, start] of [[primaryPool, primaryStart], [secondaryPool, secondaryStart]]) {
+        for (let offset = 0; offset < pool.length && candidates.length < TRAVEL_PRESET.admissionCandidateLimit; offset += 1) {
+          const linkIndex = pool[(start + offset) % pool.length];
+          if (avoidSelected && selected.has(linkIndex)) continue;
+          candidates.push(linkIndex);
+        }
+      }
+      return candidates;
+    }
+
+    function travelEpisodeStartsAt(cycle, slot, link) {
+      const launchCount = travelLaunchCount;
+      const slotDuration = TRAVEL_PRESET.launchWindowMs / launchCount;
+      const linkSeed = hash((link.arrivalIndex ^ Math.imul(link.departureIndex + 1, 0x9e3779b9)) >>> 0);
+      const startFraction = TRAVEL_PRESET.startFractionMin +
+        unit(
+          linkSeed,
+          TRAVEL_PRESET.startJitterChannel + (cycle % TRAVEL_PRESET.randomCyclePeriod) * launchCount + slot,
+        ) * TRAVEL_PRESET.startFractionJitter;
+      return cycle * TRAVEL_PRESET.cycleDurationMs + slot * slotDuration + slotDuration * startFraction;
+    }
+
+    function travelStatesAt(elapsed) {
+      if (!constantReferenceLinks.length || !Number.isFinite(elapsed)) return [];
+      const normalizedElapsed = Math.max(0, elapsed);
+      const episodes = travelAdmissionPlanAt(normalizedElapsed).episodes;
+      const states = [];
+      for (const episode of episodes) {
+        if (!episode.route) continue;
+        const flightElapsed = normalizedElapsed - episode.startsAt;
+        if (flightElapsed < 0 || flightElapsed >= TRAVEL_PRESET.flightDurationMs) continue;
+        const rawProgress = flightElapsed / TRAVEL_PRESET.flightDurationMs;
+        const progress = rawProgress - TRAVEL_PRESET.progressEase * Math.sin(Math.PI * 2 * rawProgress);
+        const fadeInProgress = Math.min(1, rawProgress / TRAVEL_PRESET.fadeInFraction);
+        const fadeOutProgress = Math.max(0, (rawProgress - TRAVEL_PRESET.fadeOutStart) / (1 - TRAVEL_PRESET.fadeOutStart));
+        const fadeIn = fadeInProgress * fadeInProgress * (3 - 2 * fadeInProgress);
+        const fadeOut = 1 - fadeOutProgress * fadeOutProgress * (3 - 2 * fadeOutProgress);
+        states.push({ episode, progress, visibility: fadeIn * fadeOut });
+      }
+      return states;
+    }
+
+    function travelEmphasis(category) {
+      if (!interactiveMode) return 1;
+      if (expandedPackageIndex !== null || expandedSystemIndex !== null) return contextVisibility.package;
+      if (selectionLocked && selectedPoint) return contextVisibility.selection;
+      if (focusedCategory) return category === focusedCategory ? 1 : contextVisibility.category;
+      return 1;
+    }
+
+    function quadraticCoordinate(start, control, end, progress) {
+      const inverse = 1 - progress;
+      return inverse * inverse * start + 2 * inverse * progress * control + progress * progress * end;
+    }
+
+    function quadraticCoordinateFits(start, control, end, low, high) {
+      let minimum = Math.min(start, end);
+      let maximum = Math.max(start, end);
+      const denominator = start - 2 * control + end;
+      if (Math.abs(denominator) > 1e-9) {
+        const progress = (start - control) / denominator;
+        if (progress > 0 && progress < 1) {
+          const extremum = quadraticCoordinate(start, control, end, progress);
+          minimum = Math.min(minimum, extremum);
+          maximum = Math.max(maximum, extremum);
+        }
+      }
+      return minimum >= low && maximum <= high;
+    }
+
+    function travelCurveFits(route, right, bottom, inset) {
+      return quadraticCoordinateFits(
+        route.departure[0],
+        route.controlX,
+        route.arrival[0],
+        inset,
+        right - inset,
+      ) && quadraticCoordinateFits(
+        route.departure[1],
+        route.controlY,
+        route.arrival[1],
+        inset,
+        bottom - inset,
+      );
+    }
+
+    function prepareTravelGeometry(link, cycle, slot, departure, arrival, right, bottom, inset = 8) {
+      const visible = point => point[0] >= inset && point[0] <= right - inset && point[1] >= inset && point[1] <= bottom - inset;
+      if (!visible(departure) || !visible(arrival)) return null;
+
+      const dx = arrival[0] - departure[0];
+      const dy = arrival[1] - departure[1];
+      const distance = Math.hypot(dx, dy);
+      if (distance < TRAVEL_PRESET.minimumRouteLengthPx) return null;
+
+      const midpointX = (departure[0] + arrival[0]) / 2;
+      const midpointY = (departure[1] + arrival[1]) / 2;
+      const arcHeight = Math.min(
+        TRAVEL_PRESET.arcHeightMax,
+        Math.max(TRAVEL_PRESET.arcHeightMin, distance * TRAVEL_PRESET.arcHeightPercent / 100),
+      );
+      const perpendicularX = -dy / distance * arcHeight;
+      const perpendicularY = dx / distance * arcHeight;
+      const positiveX = midpointX + perpendicularX;
+      const positiveY = midpointY + perpendicularY;
+      const negativeX = midpointX - perpendicularX;
+      const negativeY = midpointY - perpendicularY;
+      const centerX = right / 2;
+      const centerY = bottom / 2;
+      const positiveClearance = Math.hypot(positiveX - centerX, positiveY - centerY);
+      const negativeClearance = Math.hypot(negativeX - centerX, negativeY - centerY);
+      const linkSeed = hash((link.arrivalIndex ^ Math.imul(link.departureIndex + 1, 0x9e3779b9)) >>> 0);
+      const seededDirection = unit(
+        linkSeed,
+        TRAVEL_PRESET.arcDirectionChannel +
+          (cycle % TRAVEL_PRESET.randomCyclePeriod) * travelLaunchCount + slot,
+      ) < 0.5 ? -1 : 1;
+      const arcDirection = Math.abs(positiveClearance - negativeClearance) < 1
+        ? seededDirection
+        : positiveClearance > negativeClearance ? 1 : -1;
+      return {
+        departure,
+        arrival,
+        controlX: midpointX + perpendicularX * arcDirection,
+        controlY: midpointY + perpendicularY * arcDirection,
+      };
+    }
+
+    function beginExplorerTravelCamera(cycle, elapsed) {
+      const originElapsed = cycle * TRAVEL_PRESET.cycleDurationMs;
+      const yawDirection = screenRotationYawSign(pitch);
+      explorerTravelCameraOrigin = {
+        elapsed: originElapsed,
+        yaw: yaw - yawDirection * DRIFT_RADIANS_PER_SECOND * (elapsed - originElapsed) / 1000,
+        yawDirection,
+        pitch,
+        zoom,
+        panX,
+        panY,
+      };
+    }
+
+    function travelCameraAt(elapsed) {
+      if (showcaseMode) return showcaseCameraState(showcaseFrameProgress(elapsed));
+      const origin = explorerTravelCameraOrigin;
+      return {
+        yaw: origin.yaw + origin.yawDirection * DRIFT_RADIANS_PER_SECOND * (elapsed - origin.elapsed) / 1000,
+        pitch: origin.pitch,
+        zoom: origin.zoom,
+        panX: origin.panX,
+        panY: origin.panY,
+      };
+    }
+
+    function prepareFrozenTravelRoute(cycle, slot, episode, right, bottom) {
+      const link = constantReferenceLinks[episode.linkIndex];
+      const departureCategory = travelEndpointCategory(link.departureIndex);
+      const arrivalCategory = travelEndpointCategory(link.arrivalIndex);
+      if (!visibleCategories[departureCategory] || !visibleCategories[arrivalCategory]) return null;
+      const departureCamera = travelCameraAt(episode.startsAt);
+      const arrivalCamera = travelCameraAt(episode.startsAt + TRAVEL_PRESET.flightDurationMs);
+      const departureMatrix = [
+        Math.cos(departureCamera.yaw),
+        Math.sin(departureCamera.yaw),
+        Math.cos(departureCamera.pitch),
+        Math.sin(departureCamera.pitch),
+      ];
+      const arrivalMatrix = [
+        Math.cos(arrivalCamera.yaw),
+        Math.sin(arrivalCamera.yaw),
+        Math.cos(arrivalCamera.pitch),
+        Math.sin(arrivalCamera.pitch),
+      ];
+      const departure = projectScenePoint(link.departureIndex, departureMatrix, [0, 0, 0], departureCamera);
+      const arrival = projectScenePoint(link.arrivalIndex, arrivalMatrix, [0, 0, 0], arrivalCamera);
+      if (!departure || !arrival) return null;
+      const route = prepareTravelGeometry(
+        link,
+        cycle,
+        slot,
+        departure,
+        arrival,
+        right,
+        bottom,
+        TRAVEL_PRESET.admissionInsetPx,
+      );
+      return route && travelCurveFits(route, right, bottom, TRAVEL_PRESET.admissionInsetPx) ? route : null;
+    }
+
+    function travelEpisodesOverlap(left, right) {
+      return left.startsAt < right.startsAt + TRAVEL_PRESET.flightDurationMs &&
+        right.startsAt < left.startsAt + TRAVEL_PRESET.flightDurationMs;
+    }
+
+    function buildTravelPlan(cycle, elapsed) {
+      if (!showcaseMode) beginExplorerTravelCamera(cycle, elapsed);
+      const right = interactiveMode ? sceneRight : width;
+      const bottom = interactiveMode ? sceneBottom : height;
+      const selected = new Set();
+      const episodes = [];
+      for (let slot = 0; slot < travelLaunchCount; slot += 1) {
+        const candidates = travelLinkCandidatesForSlot(cycle, slot, selected);
+        let chosen = null;
+        for (const linkIndex of candidates) {
+          const episode = {
+            linkIndex,
+            startsAt: travelEpisodeStartsAt(cycle, slot, constantReferenceLinks[linkIndex]),
+            route: null,
+          };
+          const overlapping = episodes.filter(other => other.route && travelEpisodesOverlap(other, episode));
+          if (overlapping.length >= travelVisibleLimit) {
+            chosen ||= episode;
+            continue;
+          }
+          if (overlapping.some(other => travelLinksShareEndpoint(
+            constantReferenceLinks[other.linkIndex],
+            constantReferenceLinks[episode.linkIndex],
+          ))) {
+            chosen ||= episode;
+            continue;
+          }
+          const route = prepareFrozenTravelRoute(cycle, slot, episode, right, bottom);
+          if (!route) {
+            chosen ||= episode;
+            continue;
+          }
+          episode.route = route;
+          chosen = episode;
+          break;
+        }
+        if (!chosen) continue;
+        selected.add(chosen.linkIndex);
+        episodes.push(chosen);
+      }
+      return { cycle, episodes };
+    }
+
+    function travelAdmissionPlanAt(elapsed) {
+      const normalizedElapsed = Math.max(0, elapsed);
+      const cycle = Math.floor(normalizedElapsed / TRAVEL_PRESET.cycleDurationMs);
+      if (travelPlan?.cycle !== cycle) travelPlan = buildTravelPlan(cycle, normalizedElapsed);
+      return travelPlan;
+    }
+
+    function travelWakeWeight(position) {
+      if (position <= 0.82) return Math.pow(position / 0.82, 1.65);
+      return 1 - (position - 0.82) / 0.18 * 0.38;
+    }
+
+    function travelCategoryAlpha(category) {
+      if (category === "dependencies") return 0.82;
+      if (category === "tests") return 1.08;
+      return 1;
+    }
+
+    function hideTravelOverlay() {
+      if (travelOverlayDirty) {
+        travelContext.clearRect(0, 0, width, height);
+        travelOverlayDirty = false;
+      }
+    }
+
+    function explorerTravelElapsedAt(timestamp, enabled) {
+      if (!enabled) {
+        resetExplorerTravel();
+        return 0;
+      }
+      if (!Number.isFinite(timestamp)) return explorerTravelElapsed;
+      const delta = explorerTravelLastTimestamp === null
+        ? 1000 / 60
+        : clamp(timestamp - explorerTravelLastTimestamp, 0, MAX_DRIFT_DELTA_MS);
+      explorerTravelElapsed += delta;
+      explorerTravelLastTimestamp = timestamp;
+      return explorerTravelElapsed;
+    }
+
+    function drawTravelOverlay(elapsed, enabled) {
+      if (!enabled || reducedMotionQuery.matches) {
+        hideTravelOverlay();
+        return;
+      }
+      if (!constantReferenceLinks.length || !Number.isFinite(elapsed)) {
+        hideTravelOverlay();
+        return;
+      }
+
+      const states = travelStatesAt(elapsed);
+      if (!states.length) {
+        hideTravelOverlay();
+        return;
+      }
+      if (travelOverlayDirty) {
+        travelContext.clearRect(0, 0, width, height);
+        travelOverlayDirty = false;
+      }
+      let drewTravel = false;
+      travelContext.save();
+      travelContext.globalCompositeOperation = "lighter";
+      travelContext.lineCap = "round";
+      for (const state of states) {
+        const { episode, progress, visibility } = state;
+        const route = episode.route;
+        if (visibility < TRAVEL_PRESET.minimumVisibility) continue;
+        const { departure, arrival, controlX, controlY } = route;
+        const distance = Math.hypot(arrival[0] - departure[0], arrival[1] - departure[1]);
+        const link = constantReferenceLinks[episode.linkIndex];
+        const departureCategory = travelEndpointCategory(link.departureIndex);
+        const arrivalCategory = travelEndpointCategory(link.arrivalIndex);
+        const departureColour = colours[departureCategory];
+        const departureColourChannels = departureColour.join(",");
+        const emphasis = Math.min(travelEmphasis(departureCategory), travelEmphasis(arrivalCategory)) *
+          travelCategoryAlpha(departureCategory) * visibility;
+
+        travelContext.shadowColor = `rgba(${departureColourChannels},${(TRAVEL_PRESET.tailHaloAlpha * emphasis).toFixed(4)})`;
+        travelContext.shadowBlur = TRAVEL_PRESET.tailHaloBlur;
+        const drawnTailStart = Math.max(
+          0,
+          progress - TRAVEL_PRESET.tailFraction,
+          progress - TRAVEL_PRESET.tailLengthPx / distance,
+        );
+        let previousX = quadraticCoordinate(departure[0], controlX, arrival[0], drawnTailStart);
+        let previousY = quadraticCoordinate(departure[1], controlY, arrival[1], drawnTailStart);
+        for (let segment = 1; segment <= TRAVEL_PRESET.tailSegments; segment += 1) {
+          const position = segment / TRAVEL_PRESET.tailSegments;
+          const weight = travelWakeWeight(position);
+          const segmentProgress = drawnTailStart + (progress - drawnTailStart) * position;
+          const x = quadraticCoordinate(departure[0], controlX, arrival[0], segmentProgress);
+          const y = quadraticCoordinate(departure[1], controlY, arrival[1], segmentProgress);
+          travelContext.beginPath();
+          travelContext.moveTo(previousX, previousY);
+          travelContext.lineTo(x, y);
+          travelContext.strokeStyle = `rgba(${departureColourChannels},${(TRAVEL_PRESET.tailAlpha * emphasis * weight).toFixed(4)})`;
+          travelContext.lineWidth = TRAVEL_PRESET.lineWidth * (0.28 + weight * 0.72);
+          travelContext.stroke();
+          previousX = x;
+          previousY = y;
+        }
+        const tipProgress = Math.max(
+          drawnTailStart,
+          progress - Math.min(TRAVEL_PRESET.tailFraction, TRAVEL_PRESET.tipLengthPx / distance),
+        );
+        const tipStartX = quadraticCoordinate(departure[0], controlX, arrival[0], tipProgress);
+        const tipStartY = quadraticCoordinate(departure[1], controlY, arrival[1], tipProgress);
+        travelContext.shadowColor = `rgba(${departureColourChannels},${(TRAVEL_PRESET.tipGlowAlpha * emphasis).toFixed(4)})`;
+        travelContext.shadowBlur = TRAVEL_PRESET.tipGlowBlur;
+        travelContext.strokeStyle = `rgba(${departureColourChannels},${(TRAVEL_PRESET.tipAlpha * emphasis).toFixed(4)})`;
+        travelContext.lineWidth = TRAVEL_PRESET.tipWidth;
+        travelContext.beginPath();
+        travelContext.moveTo(tipStartX, tipStartY);
+        travelContext.lineTo(previousX, previousY);
+        travelContext.stroke();
+        drewTravel = true;
+      }
+      travelContext.restore();
+      if (!drewTravel) {
+        hideTravelOverlay();
+        return;
+      }
+      travelOverlayDirty = true;
     }
 
     function updateZoomReadout() {
@@ -2482,8 +3001,13 @@
       zoomReadout.value = text;
     }
 
-    function updateExplorerOverlay() {
-      context.clearRect(0, 0, width, height);
+    function updateExplorerOverlay(timestamp) {
+      if (constantReferenceLinks.length) {
+        const travelEnabled = drifting && !cameraFlight && !dragging && pointers.size === 0;
+        drawTravelOverlay(explorerTravelElapsedAt(timestamp, travelEnabled), travelEnabled);
+      } else {
+        hideTravelOverlay();
+      }
       if (!selectedPoint) return;
       const screen = screenDataFor(selectedPoint, viewMatrix(), 0);
       if (!screen) return;
@@ -2497,12 +3021,15 @@
       context.strokeStyle = colourStyles[selectedPoint.category]; context.lineWidth = 1; context.stroke();
       context.globalAlpha = 1;
       context.globalCompositeOperation = "source-over";
+      travelOverlayDirty = true;
     }
 
     function render(timestamp) {
       animationFrame = 0;
       if (showcaseMode) {
         if (showcaseRenderer) showcaseRenderer.render();
+        const elapsed = showcaseStartedAt === null ? 0 : Math.max(0, timestamp - showcaseStartedAt);
+        if (constantReferenceLinks.length) drawTravelOverlay(elapsed, Boolean(showcaseRenderer));
         return;
       }
       if (!explorerRenderer) return;
@@ -2510,7 +3037,7 @@
       updateCameraFlight(timestamp);
       updateZoomReadout();
       explorerRenderer.render();
-      updateExplorerOverlay();
+      updateExplorerOverlay(timestamp);
       if (selectedPoint) {
         if (cameraFlight) tooltip.hidden = true;
         else positionTooltip(selectedPoint);
@@ -2522,16 +3049,28 @@
       if (!animationFrame) animationFrame = requestAnimationFrame(render);
     }
 
-    function applyShowcaseCamera(progress) {
+    const showcaseCameraScratch = {};
+
+    function showcaseCameraState(progress, out = {}) {
       const wrapped = ((Number(progress) % 1) + 1) % 1;
       const yawSign = screenRotationYawSign(SHOWCASE_PRESET.elevationDegrees * Math.PI / 180);
       const phase = wrapped * Math.PI * 2 * SHOWCASE_PRESET.turns * yawSign;
       const viewportScale = Math.min(width / SHOWCASE_PRESET.layoutReferenceWidth, height / SHOWCASE_PRESET.layoutReferenceHeight);
-      yaw = SHOWCASE_PRESET.startAngleDegrees * Math.PI / 180 + phase;
-      pitch = (SHOWCASE_PRESET.elevationDegrees + Math.sin(phase) * SHOWCASE_PRESET.elevationSwayDegrees) * Math.PI / 180;
-      zoom = SHOWCASE_PRESET.zoom * (1 + ((1 - Math.cos(phase)) / 2) * SHOWCASE_PRESET.zoomBreathPercent / 100) * viewportScale;
-      panX = 0;
-      panY = 0;
+      out.yaw = SHOWCASE_PRESET.startAngleDegrees * Math.PI / 180 + phase;
+      out.pitch = (SHOWCASE_PRESET.elevationDegrees + Math.sin(phase) * SHOWCASE_PRESET.elevationSwayDegrees) * Math.PI / 180;
+      out.zoom = SHOWCASE_PRESET.zoom * (1 + ((1 - Math.cos(phase)) / 2) * SHOWCASE_PRESET.zoomBreathPercent / 100) * viewportScale;
+      out.panX = 0;
+      out.panY = 0;
+      return out;
+    }
+
+    function applyShowcaseCamera(progress) {
+      const camera = showcaseCameraState(progress, showcaseCameraScratch);
+      yaw = camera.yaw;
+      pitch = camera.pitch;
+      zoom = camera.zoom;
+      panX = camera.panX;
+      panY = camera.panY;
     }
 
     function hideShowcaseAnnotation() {
@@ -2670,6 +3209,7 @@
       showcaseAnnotationSlot = -1;
       activeShowcaseAnnotation = null;
       hideShowcaseAnnotation();
+      drawTravelOverlay(0, false);
       if (showcaseAnnotation) {
         showcaseAnnotation.hidden = !showcaseDetails || !renderedShowcaseAnnotations.length;
         showcaseAnnotation.style.opacity = "0";
@@ -2831,6 +3371,7 @@
       if (Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) > 3) gesture.moved = true;
       if (gesture.mode === "pan") panBy(dx, dy);
       else {
+        resetExplorerTravel();
         yaw += dx * .006;
         pitch = clamp(pitch + dy * .004, -TOP_DOWN_PITCH, TOP_DOWN_PITCH);
       }

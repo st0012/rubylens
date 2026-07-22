@@ -5,23 +5,25 @@ RubyLens turns a Ruby codebase into a private, self-contained stellar map. It is
 ## Product surfaces
 
 - **Explorer (`rubylens report`)** is the interactive artifact. It supports system visibility, spatial navigation, Ruby-node and dependency-system search, hover and selection, and aggregate Ruby metrics.
-- **Showcase (`rubylens showcase`)** is an autonomous presentation. Minimal output shows only the project title and galaxy; explicit `--details` output adds aggregate statistics and capped cinematic labels. It has no controls, hover, selection, search, warning details, or user navigation.
+- **Showcase (`rubylens showcase`)** is an autonomous presentation. Minimal output shows the project title and galaxy, including sparse anonymous travel lines; explicit `--details` output adds aggregate statistics and capped cinematic labels. It has no controls, hover, selection, search, warning details, or user navigation.
 - **Clip (`rubylens clip`)** is the Showcase rendered as a shareable video: one seamless 1080p camera loop as an MP4, for chat and social posts where an HTML file cannot play. It writes the showcase HTML alongside the video, shows exactly what that showcase shows (`--details` included), and renders locally through an installed Chrome/Chromium and ffmpeg — never through a hosted service.
 
-Explorer and Showcase outputs are single offline HTML files, written privately by default; Clip adds a locally rendered MP4 of the Showcase with the same disclosure profile. Reports intentionally embed the project name plus rendered namespace and dependency-system names; source text, comments, paths, dependency-star names, and per-node dependency identities stay out of the presentation model.
+Explorer and Showcase outputs are single offline HTML files, written privately by default; Clip adds a locally rendered MP4 of the Showcase with the same disclosure profile. Explorer intentionally embeds the project name plus rendered namespace and dependency-system names. Showcase strips the full name arrays but retains numeric scene data and a bounded anonymous sample of constant-reference topology. Source text, comments, paths, dependency-star names, and per-node dependency identities stay out of the presentation model.
 
 ## Meaning and scale
 
 - Core and Test points represent rendered Ruby namespaces. Their labels identify classes or modules already present in the report model.
 - Gem systems represent aggregate dependency packages. Materialized multi-package Git sources share one parent system while preserving inspectable package subclouds, roles, and counts. Their individual stars remain anonymous; package focus describes the aggregate rather than a declaration-by-declaration dependency browser.
+- Travel lines sample resolved constant references whose occurrence belongs to a workspace namespace. Core-to-Core, Core-to-Test, Test-to-Core, Test-to-Test, and workspace-to-Gem references are eligible; top-level, ambiguous, exact-self, and non-workspace origins are omitted. A Gem endpoint is the exact anonymous dependency declaration star, never a package or system hub. The stored relationship is workspace referrer to referenced declaration; the flight travels from the referenced declaration to the referrer as a visual metaphor. These lines are neither call edges nor a complete relationship graph.
 - Classes, modules, methods, and constants are Ruby construct counts for the named category or aggregate system. Visual signal metrics and derived morphology guide presentation; they are not architecture, quality, type-checking, or correctness claims.
-- Large reports must remain scalable. Explorer and Showcase render every eligible scene point through WebGL2 or present an explicit unsupported state; search results, warning details, dependency detail, and cinematic labels remain deterministically bounded, and interaction-only work must not become per-frame work.
+- Large reports must remain scalable. Explorer and Showcase render every eligible scene point through WebGL2 or present an explicit unsupported state; search results, warning details, dependency detail, cinematic labels, and travel candidates remain strictly bounded, and interaction-only work must not become per-frame work.
 
 ## Privacy
 
 - Index and render locally by default; never upload source, index data, or report contents without an explicit future opt-in flow.
 - Generated reports ship every script, style, and font locally and must not call CDNs, analytics, telemetry, or remote APIs.
 - Derived names, paths, relationships, dependency lists, and aggregate visual shapes are sensitive even when no source text is included. Package-local morphology can make coarse aggregate composition more visually legible without adding names or raw source data.
+- Minimal Showcase and Clip disclose a sparse anonymous sample of relationship topology through travel lines even though they omit endpoint names.
 - Source snippets and file contents stay out of the model. Any future excerpt feature requires an explicit option with clear sharing warnings.
 - Default outputs are written owner-only to a Git-excluded path, with a warning that sharing the HTML can disclose codebase structure.
 - Clip rendering drives a local headless browser and ffmpeg over loopback only; the video is a recording of the local Showcase and follows the same sharing warnings.

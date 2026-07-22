@@ -137,8 +137,9 @@ class ShowcaseContractTest < Minitest::Test
       JSON.parse(output),
     )
 
-    showcase_camera = runtime_function("applyShowcaseCamera")
+    showcase_camera = runtime_function("showcaseCameraState")
     assert_includes(showcase_camera, "screenRotationYawSign(SHOWCASE_PRESET.elevationDegrees * Math.PI / 180)")
+    assert_includes(runtime_function("applyShowcaseCamera"), "showcaseCameraState(progress, showcaseCameraScratch)")
   end
 
   def test_runtime_uses_the_preset_for_fixed_stage_motion_and_lighting

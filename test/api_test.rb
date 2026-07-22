@@ -10,7 +10,7 @@ class APITest < Minitest::Test
 
       assert(RubyLens::ArtifactMarker.present?(report.output_path, RubyLens::ReportWriter::MARKER))
       report_model = embedded_model(report.output_path)
-      assert_equal("rubylens.art.v12", report_model.fetch("schema"))
+      assert_equal("rubylens.art.v13", report_model.fetch("schema"))
       assert_equal(10, report_model.fetch("morphology").length)
       assert_equal(report_model.fetch("packages").length, report_model.fetch("packageMorphologies").length)
     end
@@ -26,7 +26,7 @@ class APITest < Minitest::Test
       assert(RubyLens::ArtifactMarker.present?(result.output_path, RubyLens::ShowcaseWriter::MARKER))
       assert_operator(result.counts.fetch("namespaces"), :>, 0)
       model = embedded_model(result.output_path)
-      assert_equal("rubylens.showcase.v6", model.fetch("schema"))
+      assert_equal("rubylens.showcase.v7", model.fetch("schema"))
       assert_equal(10, model.fetch("morphology").length)
       assert_equal(model.fetch("packages").length, model.fetch("packageMorphologies").length)
       assert_equal(false, model.fetch("details"))
