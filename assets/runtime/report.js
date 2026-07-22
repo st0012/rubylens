@@ -246,8 +246,54 @@
     const cameraDistance = layoutScale.cameraDistance;
     const cameraFocalLength = layoutScale.cameraFocalLength;
     const barRadius = morphology.barLength * 48;
-    // Roughly a third of barred galaxies are ringed SB(r) systems.
-    const barredRing = morphology.family === MORPHOLOGY_FAMILY.barredSpiral && unit(morphology.phaseSeed, 88) < .3;
+    // Arm recipe shared by the project galaxy and dependency clouds. Seeded
+    // jitters draw from a galaxy's phase seed on the channels below, so each
+    // galaxy varies while every one of its stars agrees.
+    const ARM_RECIPE = Object.freeze({
+      // The winding knob maps linearly to tan(pitch), floored near 7 degrees
+      // and reaching about 24 degrees for the loosest arms.
+      tanPitchFloor: .12,
+      tanPitchIntercept: .43,
+      tanPitchSlope: 1.5,
+      // Per-bar-end pitch (x0.82-1.18) and trailing-side-only takeoff
+      // (0-0.12 rad) jitters keep the arm pair from mirroring.
+      pitchJitterFloor: .82,
+      pitchJitterSpan: .36,
+      pitchChannel: 60,
+      takeoffJitter: .12,
+      takeoffChannel: 66,
+      // Third and fourth arms ride a main arm, then fork off at 1.3-1.8x the
+      // bar radius and open with a 1.4-1.9x looser pitch.
+      forkRadialFloor: 1.3,
+      forkRadialSpan: .5,
+      forkRadialChannel: 72,
+      forkPitchFloor: 1.4,
+      forkPitchSpan: .5,
+      forkPitchChannel: 84,
+      // Roughly a third of barred galaxies are ringed SB(r) systems; rings
+      // take 15% of arm members, hug the bar tips at 1.05-1.15x their
+      // radius, and sit 15% squashed across the bar.
+      ringGalaxyShare: .3,
+      ringGalaxyChannel: 88,
+      ringMemberShare: .15,
+      ringRadialFloor: 1.05,
+      ringRadialSpan: .1,
+      ringSquash: .15,
+      // 22% of arm members feather into a 2.6x wider sheath, and arm width
+      // grows with radius from a .55 base, so arms read as overdensities
+      // rather than rails.
+      featherShare: .22,
+      featherWidth: 2.6,
+      widthFloor: .55,
+      // Unbarred arms sweep from the log-spiral origin radius but admit
+      // members only beyond the minimum, where the spiral has visibly curved
+      // away from its takeoff angle; closer in, members share that angle and
+      // would draw a cross of straight spokes through the core.
+      unbarredOriginRadial: 6,
+      unbarredMinimumRadial: 8,
+    });
+    const barredRing = morphology.family === MORPHOLOGY_FAMILY.barredSpiral &&
+      unit(morphology.phaseSeed, ARM_RECIPE.ringGalaxyChannel) < ARM_RECIPE.ringGalaxyShare;
 
     const irregularClumpCenters = morphology.family === MORPHOLOGY_FAMILY.irregular
       ? Array.from({ length: morphology.clumpCount }, (_, index) => {
@@ -278,8 +324,8 @@
       ];
     }
 
-    // The winding knob maps to a constant pitch angle of roughly 7-24 degrees.
-    const armTanPitch = winding => Math.max(.12, .43 - 1.5 * winding);
+    const armTanPitch = winding =>
+      Math.max(ARM_RECIPE.tanPitchFloor, ARM_RECIPE.tanPitchIntercept - ARM_RECIPE.tanPitchSlope * winding);
 
     // Constant-pitch logarithmic arm angle shared by the project galaxy and
     // dependency clouds: exactly one arm trails each bar end (takeoff jitter
@@ -290,14 +336,17 @@
     function barredArmTheta(phaseSeed, phase, winding, arm, armRadial, tipRadial) {
       const barEnd = arm % 2;
       const branch = Math.floor(arm / 2);
-      const tanPitch = armTanPitch(winding) * (.82 + .36 * unit(phaseSeed, 60 + barEnd));
-      const origin = phase + barEnd * Math.PI + unit(phaseSeed, 66 + barEnd) * .12;
+      const tanPitch = armTanPitch(winding) *
+        (ARM_RECIPE.pitchJitterFloor + ARM_RECIPE.pitchJitterSpan * unit(phaseSeed, ARM_RECIPE.pitchChannel + barEnd));
+      const origin = phase + barEnd * Math.PI + unit(phaseSeed, ARM_RECIPE.takeoffChannel + barEnd) * ARM_RECIPE.takeoffJitter;
       let sweep = Math.log(armRadial / tipRadial) / tanPitch;
       if (branch > 0) {
-        const forkRadial = tipRadial * (1.3 + .5 * unit(phaseSeed, 72 + arm));
+        const forkRadial = tipRadial *
+          (ARM_RECIPE.forkRadialFloor + ARM_RECIPE.forkRadialSpan * unit(phaseSeed, ARM_RECIPE.forkRadialChannel + arm));
         if (armRadial > forkRadial) {
           sweep = Math.log(forkRadial / tipRadial) / tanPitch +
-            Math.log(armRadial / forkRadial) / (tanPitch * (1.4 + .5 * unit(phaseSeed, 84 + arm)));
+            Math.log(armRadial / forkRadial) / (tanPitch *
+              (ARM_RECIPE.forkPitchFloor + ARM_RECIPE.forkPitchSpan * unit(phaseSeed, ARM_RECIPE.forkPitchChannel + arm)));
         }
       }
       return origin + sweep;
@@ -308,7 +357,10 @@
     function barredRingPlacement(phase, tipRadial, radialUnit, thetaUnit) {
       const ringTheta = thetaUnit * Math.PI * 2;
       const across = Math.sin(ringTheta);
-      return [phase + ringTheta, tipRadial * (1.05 + .1 * radialUnit) * (1 - .15 * across * across)];
+      return [
+        phase + ringTheta,
+        tipRadial * (ARM_RECIPE.ringRadialFloor + ARM_RECIPE.ringRadialSpan * radialUnit) * (1 - ARM_RECIPE.ringSquash * across * across),
+      ];
     }
 
     // Answers both the arm angle and the point's (possibly adjusted) radius:
@@ -321,16 +373,17 @@
         const armRadial = radial < barRadius
           ? barRadius + radial / barRadius * (40 - barRadius)
           : radial;
-        if (barredRing && unit(seed, channel + 5) < .15) {
+        if (barredRing && unit(seed, channel + 5) < ARM_RECIPE.ringMemberShare) {
           return barredRingPlacement(morphology.phase, barRadius, unit(seed, channel + 6), unit(seed, channel + 7));
         }
         const theta = barredArmTheta(morphology.phaseSeed, morphology.phase, morphology.winding, arm, armRadial, barRadius);
-        const feather = unit(seed, channel + 2) < .22 ? 2.6 : 1;
-        const width = scatter * (.55 + armRadial / 64) * Math.min(1, 36 / armRadial) * feather;
+        const feather = unit(seed, channel + 2) < ARM_RECIPE.featherShare ? ARM_RECIPE.featherWidth : 1;
+        const width = scatter * (ARM_RECIPE.widthFloor + armRadial / 64) * Math.min(1, 36 / armRadial) * feather;
         return [theta + normal(seed, channel + 3) * width, armRadial];
       }
+      const origin = ARM_RECIPE.unbarredOriginRadial;
       const theta = morphology.phase + arm * Math.PI * 2 / morphology.armCount +
-        Math.log(Math.max(radial, 6) / 6) / armTanPitch(morphology.winding) + normal(seed, channel + 1) * scatter;
+        Math.log(Math.max(radial, origin) / origin) / armTanPitch(morphology.winding) + normal(seed, channel + 1) * scatter;
       return [theta, radial];
     }
 
@@ -375,11 +428,9 @@
     }
 
     function coreDiscUsesArm(seed, bulge, radial) {
-      // Unbarred arms fade out inside the core: inner members would all sit
-      // at their arm's origin angle and draw a cross of straight spokes.
       return !bulge &&
         spiralMorphology &&
-        (morphology.family === MORPHOLOGY_FAMILY.barredSpiral || radial > 8) &&
+        (morphology.family === MORPHOLOGY_FAMILY.barredSpiral || radial > ARM_RECIPE.unbarredMinimumRadial) &&
         unit(seed, 30) < morphology.armFraction;
     }
 
@@ -520,12 +571,12 @@
         const armRadial = radial < tipRadial
           ? tipRadial + rootShare * rootShare * (radius * .92 - tipRadial) * .5
           : radial;
-        if (unit(cloud.phaseSeed, 88) < .3 && unit(seed, 29) < .15) {
+        if (unit(cloud.phaseSeed, ARM_RECIPE.ringGalaxyChannel) < ARM_RECIPE.ringGalaxyShare && unit(seed, 29) < ARM_RECIPE.ringMemberShare) {
           const [ringTheta, ringRadial] = barredRingPlacement(cloud.phase, tipRadial, unit(seed, 30), unit(seed, 31));
           return boundedDependencyOffset(Math.cos(ringTheta) * ringRadial, vertical, Math.sin(ringTheta) * ringRadial, radius);
         }
-        const feather = unit(seed, 28) < .22 ? 2.6 : 1;
-        const width = .16 * (.55 + armRadial / (radius * .92)) * Math.min(1, radius * .52 / armRadial) * feather;
+        const feather = unit(seed, 28) < ARM_RECIPE.featherShare ? ARM_RECIPE.featherWidth : 1;
+        const width = .16 * (ARM_RECIPE.widthFloor + armRadial / (radius * .92)) * Math.min(1, radius * .52 / armRadial) * feather;
         const theta = barredArmTheta(cloud.phaseSeed, cloud.phase, cloud.winding, arm, armRadial, tipRadial) + normal(seed, 23) * width;
         return boundedDependencyOffset(Math.cos(theta) * armRadial, vertical, Math.sin(theta) * armRadial, radius);
       }
