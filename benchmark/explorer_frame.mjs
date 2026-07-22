@@ -328,12 +328,13 @@ function benchmarkScript() {
           status: "done",
           renderer: document.documentElement.dataset.explorerRenderer || "canvas2d",
           points: scenePointCount,
+          renderPoints: scenePointCount + Number(document.documentElement.dataset.hazePoints || 0),
           driven,
           raf,
         };
         window.__RUBYLENS_BENCH__ = result;
         banner.textContent = [
-          "bench: done · " + result.renderer + " · " + result.points.toLocaleString() + " points",
+          "bench: done · " + result.renderer + " · " + result.points.toLocaleString() + " points · " + result.renderPoints.toLocaleString() + " drawn with haze",
           "driven frame ms avg " + driven.frameMs.avg + " (submit " + driven.submitMs.avg + ") -> ~" + driven.estimatedFps + " fps",
           "driven p50 " + driven.frameMs.p50 + " · p95 " + driven.frameMs.p95 + " · p99 " + driven.frameMs.p99 + " · max " + driven.frameMs.max,
           "active travel overlay frames " + driven.activeTravelFrames + "/" + driven.frames,

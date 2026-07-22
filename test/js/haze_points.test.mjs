@@ -50,7 +50,7 @@ describe("buildHazePoints", () => {
 
   it("sizes category pools from mark counts under the global budget", () => {
     expect(runtime.hazePointCount).toBe(poolCounts[0] + poolCounts[1] + poolCounts[2]);
-    expect(runtime.hazePointCount).toBeLessThanOrEqual(runtime.HAZE_POINT_BUDGET);
+    expect(runtime.hazePointCount).toBeLessThanOrEqual(runtime.HAZE_RECIPE.pointBudget);
   });
 
   it("marks every haze row with the offset category and faint bounded attributes", () => {
@@ -111,5 +111,18 @@ describe("buildHazePoints", () => {
   it("generates deterministically across loads", () => {
     const second = loadRuntime(fixtureModel());
     expect(Array.from(second.hazeData)).toEqual(Array.from(runtime.hazeData));
+  });
+
+  it("treats the point budget as a hard cap when demand exceeds it", () => {
+    const namespaceRow = seed => [seed, 0, 0, 2, 1, 0, 4, 9, 3, 1, 0, 5, 2, 1];
+    const namespaces = Array.from({ length: 4000 }, (_, index) => namespaceRow(5000 + index * 3));
+    const crowded = loadRuntime(minimalModel({
+      totals: { namespaces: namespaces.length, packages: 0, dependencyStars: 0 },
+      namespaceNames: namespaces.map((_, index) => `NS::C${index}`),
+      namespaces,
+    }));
+    // 4,000 core marks request 96,000 haze rows; rounding must trim, not spill.
+    expect(crowded.hazePointCount).toBeLessThanOrEqual(crowded.HAZE_RECIPE.pointBudget);
+    expect(crowded.hazePointCount).toBeGreaterThan(crowded.HAZE_RECIPE.pointBudget * .98);
   });
 });

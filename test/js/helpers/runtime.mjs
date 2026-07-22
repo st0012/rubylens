@@ -28,7 +28,7 @@ const EXPORTS = `;return ({
   systemMembers, systemAggregates, systemAnchors, packageAnchors,
   decodePackageMorphology, DEPENDENCY_CLOUD_THRESHOLD,
   SCENE_POINT_STRIDE, categoryCodes, sceneData, scenePointCount,
-  HAZE_CATEGORY_OFFSET, HAZE_POINT_BUDGET, hazeData, hazePointCount, renderPointData, renderPointCount,
+  HAZE_CATEGORY_OFFSET, HAZE_RECIPE, ...hazeBuffers(),
   hash, unit, dustAttenuation, DUST_PRESET,
   interactivePoints, dependencyHubs, packageHubs, systemHubs,
   ensureHitScanRows, hitTestProjected, ensureSearchIndex, searchRenderedPoints,
