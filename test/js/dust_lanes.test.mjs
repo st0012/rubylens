@@ -33,10 +33,13 @@ describe("dustAttenuation", () => {
     expect(weakest).toBeLessThan(0.02);
   });
 
-  it("leaves the bulge dust-free", () => {
-    for (let sample = 0; sample < 12; sample += 1) {
+  it("leaves the bulge dust-free out to its outer edge", () => {
+    // corePosition's bulge radial law caps at 17; every bulge star must stay
+    // untouched no matter how close to an arm lane it sits.
+    for (let sample = 0; sample < 60; sample += 1) {
       const theta = sample * (Math.PI / 6);
-      expect(spiral.dustAttenuation([Math.cos(theta) * 5, 0, Math.sin(theta) * 5], 1)).toBe(0);
+      const radial = 3 + (sample % 5) * 3.5;
+      expect(spiral.dustAttenuation([Math.cos(theta) * radial, 0, Math.sin(theta) * radial], 1)).toBe(0);
     }
   });
 

@@ -860,6 +860,8 @@
       faintFloor: .24,
       faintSpan: .95,
       sparkleThreshold: .96,
+      size: Object.freeze({ floor: .16, span: .14 }),
+      sparkleSize: Object.freeze({ floor: .3, span: .18 }),
       maxSize: 1.2,
     });
     function buildHazePoints() {
@@ -902,18 +904,19 @@
       let cursor = 0;
       const writeHazeStar = (position, category, packageIndex, systemIndex, seed) => {
         const out = cursor * SCENE_POINT_STRIDE;
-        const faint = unit(seed, 97);
+        const faint = unit(seed, HAZE_RECIPE.faintChannel);
         // faint⁴ keeps most of the field very dim with a small sparkle tail of
         // brighter, slightly larger resolved stars — the depth hierarchy of a
         // real star field rather than uniform grain.
-        const sparkle = faint > .96;
+        const sparkle = faint > HAZE_RECIPE.sparkleThreshold;
+        const size = sparkle ? HAZE_RECIPE.sparkleSize : HAZE_RECIPE.size;
         data[out] = position[0];
         data[out + 1] = position[1];
         data[out + 2] = position[2];
-        data[out + 3] = sparkle ? .3 + .18 * unit(seed, 96) : .16 + .14 * unit(seed, 96);
-        data[out + 4] = meanAlpha[category] * (.24 + .95 * faint * faint * faint * faint);
+        data[out + 3] = size.floor + size.span * unit(seed, HAZE_RECIPE.sizeChannel);
+        data[out + 4] = meanAlpha[category] * (HAZE_RECIPE.faintFloor + HAZE_RECIPE.faintSpan * faint * faint * faint * faint);
         data[out + 5] = category + HAZE_CATEGORY_OFFSET;
-        data[out + 6] = 1.2;
+        data[out + 6] = HAZE_RECIPE.maxSize;
         data[out + 7] = packageIndex;
         data[out + 8] = systemIndex;
         cursor += 1;
@@ -921,17 +924,16 @@
       // A fraction of each namespace pool lands in tight clumps resampled from
       // the same law — the flocculent star-cloud patchiness of a real disc.
       const writeNamespacePool = (count, category, positionFor, clumpShare, clumpSpread) => {
-        const clumpSize = 14;
-        const clumps = Math.floor(count * clumpShare / clumpSize);
-        const smooth = count - clumps * clumpSize;
+        const clumps = Math.floor(count * clumpShare / HAZE_RECIPE.clumpSize);
+        const smooth = count - clumps * HAZE_RECIPE.clumpSize;
         for (let star = 0; star < smooth; star += 1) {
-          const seed = hash(star + 1, 133 + category);
+          const seed = hash(star + 1, HAZE_RECIPE.poolSeedChannel + category);
           writeHazeStar(positionFor(seed), category, -1, -1, seed);
         }
         for (let clump = 0; clump < clumps; clump += 1) {
-          const center = positionFor(hash(clump + 1, 137 + category));
-          for (let member = 0; member < clumpSize; member += 1) {
-            const seed = hash(clump * 97 + member + 1, 139 + category);
+          const center = positionFor(hash(clump + 1, HAZE_RECIPE.clumpCenterChannel + category));
+          for (let member = 0; member < HAZE_RECIPE.clumpSize; member += 1) {
+            const seed = hash(clump * 97 + member + 1, HAZE_RECIPE.clumpMemberChannel + category);
             writeHazeStar([
               center[0] + normal(seed, 1) * clumpSpread,
               center[1] + normal(seed, 3) * clumpSpread * .4,
@@ -940,11 +942,11 @@
           }
         }
       };
-      writeNamespacePool(poolCounts[0], categoryCodes.core, corePosition, .2, 1.1 * layoutScale.disk);
-      writeNamespacePool(poolCounts[1], categoryCodes.tests, testPosition, .3, 1.4 * layoutScale.tests);
+      writeNamespacePool(poolCounts[0], categoryCodes.core, corePosition, HAZE_RECIPE.clumpShare.core, HAZE_RECIPE.clumpSpread.core * layoutScale.disk);
+      writeNamespacePool(poolCounts[1], categoryCodes.tests, testPosition, HAZE_RECIPE.clumpShare.tests, HAZE_RECIPE.clumpSpread.tests * layoutScale.tests);
       for (const row of dependencyRows) {
         const offset = Math.floor(row / 8) * SCENE_POINT_STRIDE;
-        const seed = hash(row + 1, 135);
+        const seed = hash(row + 1, HAZE_RECIPE.poolSeedChannel + categoryCodes.dependencies);
         writeHazeStar(
           dependencyPosition(seed, sceneData[offset + 7]),
           categoryCodes.dependencies,
@@ -961,7 +963,10 @@
     // broken into segments, and absorbing; never uniform fog and never new
     // glowing particles. Positions are static in galaxy space, so absorption
     // is baked into point alphas at build time and costs nothing per frame.
-    const DUST_PRESET = Object.freeze({ maxAbsorption: .5, laneWidth: 2.4, laneOffset: -.16, innerRadius: 7, segmentLength: 9, brokenChannel: 150 });
+    // innerRadius matches the bulge's outer edge — corePosition's bulge radial
+    // law caps at 17, and the tests disc starts there — so lanes never cut
+    // through bulge stars and dust begins where arms actually live.
+    const DUST_PRESET = Object.freeze({ maxAbsorption: .5, laneWidth: 2.4, laneOffset: -.16, innerRadius: 17, segmentLength: 9, brokenChannel: 150 });
     const smoothstep = (low, high, value) => {
       const t = clamp((value - low) / (high - low), 0, 1);
       return t * t * (3 - 2 * t);
@@ -1012,18 +1017,14 @@
     function hazeBuffers() {
       if (!hazeBufferState) {
         const hazeData = buildHazePoints();
-        const hazePointCount = hazeData.length / SCENE_POINT_STRIDE;
         applyDustLanes(sceneData, scenePointCount, 0);
-        applyDustLanes(hazeData, hazePointCount, HAZE_CATEGORY_OFFSET);
+        applyDustLanes(hazeData, hazeData.length / SCENE_POINT_STRIDE, HAZE_CATEGORY_OFFSET);
         const renderPointData = new Float32Array(sceneData.length + hazeData.length);
         renderPointData.set(sceneData, 0);
         renderPointData.set(hazeData, sceneData.length);
-        hazeBufferState = Object.freeze({
-          hazeData,
-          hazePointCount,
-          renderPointData,
-          renderPointCount: scenePointCount + hazePointCount,
-        });
+        // Counts are always derived from the buffers at their call sites; the
+        // arrays are the single source of truth for the rendered workload.
+        hazeBufferState = Object.freeze({ hazeData, renderPointData });
       }
       return hazeBufferState;
     }
@@ -1197,7 +1198,8 @@
         document.documentElement.dataset.showcaseUnavailableReason = "webgl2-point-size-range";
         return null;
       }
-      const { renderPointData, renderPointCount } = hazeBuffers();
+      const { renderPointData } = hazeBuffers();
+      const renderPointCount = renderPointData.length / SCENE_POINT_STRIDE;
 
       const createProgram = (vertexSource, fragmentSource) => createGlProgram(gl, vertexSource, fragmentSource);
 
@@ -1388,7 +1390,7 @@
       if (showcaseRenderer) {
         document.documentElement.dataset.plottedDependencyDeclarations = String(embeddedDependencyDeclarations);
         document.documentElement.dataset.plottedScenePoints = String(scenePointCount);
-        document.documentElement.dataset.hazePoints = String(hazeBuffers().hazePointCount);
+        document.documentElement.dataset.hazePoints = String(hazeBuffers().hazeData.length / SCENE_POINT_STRIDE);
       } else {
         markShowcaseUnavailable(
           document.documentElement.dataset.showcaseUnavailableReason || "webgl2-unavailable",
@@ -1422,7 +1424,8 @@
         document.documentElement.dataset.explorerUnavailableReason = "webgl2-point-size-range";
         return null;
       }
-      const { renderPointData, renderPointCount } = hazeBuffers();
+      const { renderPointData } = hazeBuffers();
+      const renderPointCount = renderPointData.length / SCENE_POINT_STRIDE;
       let rendererDpr = 1;
 
       const backgroundProgram = createGlProgram(gl, FULLSCREEN_TRIANGLE_VERTEX_SOURCE, `#version 300 es
@@ -1662,7 +1665,7 @@
       if (explorerRenderer) {
         document.documentElement.dataset.plottedDependencyDeclarations = String(plottedDependencyDeclarations);
         document.documentElement.dataset.plottedScenePoints = String(scenePointCount);
-        document.documentElement.dataset.hazePoints = String(hazeBuffers().hazePointCount);
+        document.documentElement.dataset.hazePoints = String(hazeBuffers().hazeData.length / SCENE_POINT_STRIDE);
       } else {
         markExplorerUnavailable(
           document.documentElement.dataset.explorerUnavailableReason || "webgl2-unavailable",
