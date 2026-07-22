@@ -16,6 +16,12 @@ namespace points + dependency declaration points + package hubs + system hubs
 
 For example, the public-safe Discourse evaluation contained 48,723 namespace points, 165,151 dependency declaration points, 303 package hubs, and no system hubs: 214,177 unique scene points. Each of the three renderer passes draws those same points; the model does not contain three copies.
 
+## Unresolved-glow haze population
+
+The milky texture of a real galaxy is not a halo around bright stars; it is millions of separate faint stars too small to resolve. Both renderers therefore append a render-only haze population (`buildHazePoints`) drawn from the same deterministic position law as the data marks — `corePosition`, `testPosition`, and `dependencyPosition` with fresh seeds — so the haze is literally more of the same stellar population, only fainter: arms stay crisp, the exponential radial falloff shows, and structure is never smeared by per-mark blur kernels. Zooming the Explorer resolves the haze into faint individual stars while the per-mark glow sprites fade out (`u_deepDetail` crossfade), the way a telescope resolves the Milky Way.
+
+Haze pool sizes follow the per-category mark counts (`HAZE_STARS_PER_MARK`) under a global cap (`HAZE_POINT_BUDGET`); haze alpha derives from each category's mean mark alpha. Dependency haze resamples per declaration row and keeps that row's package and system indexes (so it travels with dependency expansion); hubs shed no haze. Every haze row encodes its category as data category plus `HAZE_CATEGORY_OFFSET`. They live after the data rows in the shared GPU buffer and draw only in the body pass; the glow and white-hot passes draw the data rows alone. Haze never enters interactive points, hit scans, search, annotations, or any reported count: `plottedScenePoints` remains data marks only, and the haze size is reported separately as `data-haze-points`.
+
 ## Surface comparison
 
 | Concern | Explorer | Showcase |

@@ -819,6 +819,98 @@
       pool.push(index);
     });
     const packageCount = model.packages.length;
+
+    // Unresolved-glow population. The milky texture of a real galaxy is not a
+    // halo around bright stars; it is millions of separate faint stars too
+    // small to resolve. Haze micro-stars are therefore drawn from the same
+    // deterministic position law as the data marks themselves — corePosition,
+    // testPosition, and dependencyPosition with fresh seeds — so the haze is
+    // literally more of the same stellar population, only fainter: arms stay
+    // crisp, the exponential radial falloff shows, and zooming in resolves the
+    // texture into faint individual stars instead of per-mark blur blobs.
+    // Haze rows live after the data rows in one interleaved buffer, encode
+    // their category as data category + HAZE_CATEGORY_OFFSET, and never enter
+    // interactive points, hit scans, search, or reported scene point counts.
+    const HAZE_CATEGORY_OFFSET = 3;
+    const HAZE_POINT_BUDGET = 90_000;
+    const HAZE_STARS_PER_MARK = Object.freeze({ core: 24, tests: 18, dependencyStar: 2 });
+    function buildHazePoints() {
+      const markCounts = [0, 0, 0];
+      const alphaSums = [0, 0, 0];
+      for (let index = 0; index < scenePointCount; index += 1) {
+        const offset = index * SCENE_POINT_STRIDE;
+        if (sceneData[offset + 6] > 4) continue;
+        const category = sceneData[offset + 5];
+        markCounts[category] += 1;
+        alphaSums[category] += sceneData[offset + 4];
+      }
+      const perMark = [HAZE_STARS_PER_MARK.core, HAZE_STARS_PER_MARK.tests, HAZE_STARS_PER_MARK.dependencyStar];
+      const requested = markCounts[0] * perMark[0] + markCounts[1] * perMark[1] + markCounts[2] * perMark[2];
+      const budgetScale = Math.min(1, HAZE_POINT_BUDGET / Math.max(1, requested));
+      const poolCounts = markCounts.map((count, category) => Math.round(count * perMark[category] * budgetScale));
+      const meanAlpha = alphaSums.map((sum, category) => (markCounts[category] ? sum / markCounts[category] : 0));
+
+      // Dependency haze resamples per declaration row so each gem cloud keeps
+      // its exact share, morphology, and expansion indexes.
+      const dependencyRows = [];
+      if (poolCounts[2] > 0) {
+        const perStar = perMark[2] * budgetScale;
+        for (let index = 0; index < scenePointCount; index += 1) {
+          const offset = index * SCENE_POINT_STRIDE;
+          if (sceneData[offset + 5] !== categoryCodes.dependencies || sceneData[offset + 6] > 4) continue;
+          const stars = Math.floor(perStar) + (unit(hash(index + 1, 120), 121) < perStar % 1 ? 1 : 0);
+          for (let star = 0; star < stars; star += 1) dependencyRows.push(index * 8 + star);
+        }
+      }
+
+      const hazeCount = poolCounts[0] + poolCounts[1] + dependencyRows.length;
+      const data = new Float32Array(hazeCount * SCENE_POINT_STRIDE);
+      let cursor = 0;
+      const writeHazeStar = (position, category, packageIndex, systemIndex, seed) => {
+        const out = cursor * SCENE_POINT_STRIDE;
+        const faint = unit(seed, 97);
+        data[out] = position[0];
+        data[out + 1] = position[1];
+        data[out + 2] = position[2];
+        data[out + 3] = .16 + .14 * unit(seed, 96);
+        data[out + 4] = meanAlpha[category] * (.3 + .7 * faint * faint);
+        data[out + 5] = category + HAZE_CATEGORY_OFFSET;
+        data[out + 6] = 1.2;
+        data[out + 7] = packageIndex;
+        data[out + 8] = systemIndex;
+        cursor += 1;
+      };
+      for (let star = 0; star < poolCounts[0]; star += 1) {
+        const seed = hash(star + 1, 133);
+        writeHazeStar(corePosition(seed), categoryCodes.core, -1, -1, seed);
+      }
+      for (let star = 0; star < poolCounts[1]; star += 1) {
+        const seed = hash(star + 1, 134);
+        writeHazeStar(testPosition(seed), categoryCodes.tests, -1, -1, seed);
+      }
+      for (const row of dependencyRows) {
+        const offset = Math.floor(row / 8) * SCENE_POINT_STRIDE;
+        const seed = hash(row + 1, 135);
+        writeHazeStar(
+          dependencyPosition(seed, sceneData[offset + 7]),
+          categoryCodes.dependencies,
+          sceneData[offset + 7],
+          sceneData[offset + 8],
+          seed,
+        );
+      }
+      return data;
+    }
+    const hazeData = buildHazePoints();
+    const hazePointCount = hazeData.length / SCENE_POINT_STRIDE;
+    // Data rows first, haze rows after: glow and white-hot passes draw only the
+    // first scenePointCount rows, and data render indexes stay pairable with
+    // gl_VertexID for selection.
+    const renderPointData = new Float32Array(sceneData.length + hazeData.length);
+    renderPointData.set(sceneData, 0);
+    renderPointData.set(hazeData, sceneData.length);
+    const renderPointCount = scenePointCount + hazePointCount;
+
     const embeddedDependencyDeclarations = model.dependencyStars.length;
     let plottedDependencyDeclarations = embeddedDependencyDeclarations;
 
@@ -875,6 +967,7 @@
       document.documentElement.dataset.explorerUnavailableReason = reason;
       document.documentElement.dataset.plottedDependencyDeclarations = String(plottedDependencyDeclarations);
       document.documentElement.dataset.plottedScenePoints = "0";
+      document.documentElement.dataset.hazePoints = "0";
       if (error) document.documentElement.dataset.explorerRendererError = error.message;
       canvas.setAttribute("aria-label", "Interactive artwork unavailable because WebGL2 is required.");
       disableExplorerControls();
@@ -904,6 +997,7 @@
       plottedDependencyDeclarations = 0;
       document.documentElement.dataset.plottedDependencyDeclarations = String(plottedDependencyDeclarations);
       document.documentElement.dataset.plottedScenePoints = "0";
+      document.documentElement.dataset.hazePoints = "0";
       document.documentElement.dataset.showcaseMotion = "unavailable";
       document.documentElement.dataset.showcaseReady = "true";
       if (error) document.documentElement.dataset.showcaseRendererError = error.message;
@@ -1037,6 +1131,8 @@
         }
 
         void main() {
+          bool hazePoint = a_category >= 2.5;
+          float categoryCode = hazePoint ? a_category - 3.0 : a_category;
           float cy = u_trig.x;
           float sy = u_trig.y;
           float cp = u_trig.z;
@@ -1056,23 +1152,23 @@
           }
 
           float size = clamp(a_sizeFactor * perspective, 0.35, a_maxSize);
-          float starAlphaScale = a_category > 1.5 ? float(${SHOWCASE_DEPENDENCY_PRESET.starAlphaScale}) : 1.0;
+          float starAlphaScale = categoryCode > 1.5 ? float(${SHOWCASE_DEPENDENCY_PRESET.starAlphaScale}) : 1.0;
           float visibleAlpha = clamp(a_alpha * starAlphaScale * u_brightness / 100.0, 0.0, 1.0);
           float radius = size;
           float alpha = visibleAlpha;
-          vec3 colour = a_category < 0.5
+          vec3 colour = categoryCode < 0.5
             ? ${glslVec3(colours.core)} / 255.0
-            : (a_category < 1.5 ? ${glslVec3(colours.tests)} / 255.0 : ${glslVec3(colours.dependencies)} / 255.0);
+            : (categoryCode < 1.5 ? ${glslVec3(colours.tests)} / 255.0 : ${glslVec3(colours.dependencies)} / 255.0);
 
           if (u_pass == 0) {
-            if (size <= 1.35 || u_glow <= 0.0) { hidePoint(); return; }
+            if (hazePoint || size <= 1.35 || u_glow <= 0.0) { hidePoint(); return; }
             float glowScale = (3.4 - u_deepDetail * 1.3) * (0.75 + 0.25 * u_glow / 100.0);
             radius = size * glowScale;
             alpha = min(1.0, visibleAlpha * 0.055 * u_glow / 100.0);
           } else if (u_pass == 1) {
             radius = size < 0.85 ? 0.5 : size;
           } else {
-            if (size <= 1.1) { hidePoint(); return; }
+            if (hazePoint || size <= 1.1) { hidePoint(); return; }
             radius = max(0.45 + u_deepDetail * 0.25, size * (0.24 + u_deepDetail * 0.06));
             alpha = min(0.9, visibleAlpha * 1.25);
             colour = ${glslVec3(whiteHotColour)} / 255.0;
@@ -1090,7 +1186,7 @@
       const pointBuffer = gl.createBuffer();
       gl.bindVertexArray(pointVao);
       gl.bindBuffer(gl.ARRAY_BUFFER, pointBuffer);
-      gl.bufferData(gl.ARRAY_BUFFER, sceneData, gl.STATIC_DRAW);
+      gl.bufferData(gl.ARRAY_BUFFER, renderPointData, gl.STATIC_DRAW);
       const stride = SCENE_POINT_STRIDE * Float32Array.BYTES_PER_ELEMENT;
       [[0, 3, 0], [1, 1, 3], [2, 1, 4], [3, 1, 5], [4, 1, 6]].forEach(([location, size, offset]) => {
         gl.enableVertexAttribArray(location);
@@ -1155,7 +1251,7 @@
           gl.uniform1f(pointUniforms.deepDetail, deepDetail);
           for (let pass = 0; pass < 3; pass += 1) {
             gl.uniform1i(pointUniforms.pass, pass);
-            gl.drawArrays(gl.POINTS, 0, scenePointCount);
+            gl.drawArrays(gl.POINTS, 0, pass === 1 ? renderPointCount : scenePointCount);
           }
           gl.bindVertexArray(null);
           gl.disable(gl.BLEND);
@@ -1174,6 +1270,7 @@
       if (showcaseRenderer) {
         document.documentElement.dataset.plottedDependencyDeclarations = String(embeddedDependencyDeclarations);
         document.documentElement.dataset.plottedScenePoints = String(scenePointCount);
+        document.documentElement.dataset.hazePoints = String(hazePointCount);
       } else {
         markShowcaseUnavailable(
           document.documentElement.dataset.showcaseUnavailableReason || "webgl2-unavailable",
@@ -1265,7 +1362,9 @@
         }
 
         void main() {
-          int category = int(a_category + 0.5);
+          bool hazePoint = a_category >= 2.5;
+          float categoryCode = hazePoint ? a_category - 3.0 : a_category;
+          int category = int(categoryCode + 0.5);
           if (u_categoryVisible[category] < 0.5) { hidePoint(); return; }
           vec3 position = a_position;
           bool expandedPoint = (u_expandedPackage >= 0.0 && a_packageIndex == u_expandedPackage)
@@ -1292,7 +1391,7 @@
           }
 
           float size = clamp(a_sizeFactor * perspective, 0.35, a_maxSize);
-          bool focusedDependencyPoint = expandedPoint && category == 2;
+          bool focusedDependencyPoint = !hazePoint && expandedPoint && category == 2;
           bool focusedDependencyHub = focusedDependencyPoint && a_maxSize > 4.0;
           float emphasis = focusedDependencyPoint || selected ? 1.0 : u_categoryEmphasis[category];
           float focusedAlpha = max(focusedDependencyHub ? 0.34 : 0.289, a_alpha);
@@ -1300,19 +1399,27 @@
           bool detailed = emphasis >= 0.1;
           float radius = size;
           float alpha = visibleAlpha;
-          vec3 colour = a_category < 0.5
+          vec3 colour = categoryCode < 0.5
             ? ${glslVec3(colours.core)} / 255.0
-            : (a_category < 1.5 ? ${glslVec3(colours.tests)} / 255.0 : ${glslVec3(colours.dependencies)} / 255.0);
+            : (categoryCode < 1.5 ? ${glslVec3(colours.tests)} / 255.0 : ${glslVec3(colours.dependencies)} / 255.0);
 
           if (u_pass == 0) {
-            if (size <= 1.35 || !detailed) { hidePoint(); return; }
+            if (hazePoint || size <= 1.35 || !detailed) { hidePoint(); return; }
             float glowScale = focusedDependencyPoint ? 2.2 - u_deepDetail * 0.8 : 3.4 - u_deepDetail * 1.3;
             radius = size * glowScale;
-            alpha = visibleAlpha * (focusedDependencyPoint ? 0.045 : 0.055);
+            alpha = visibleAlpha * (focusedDependencyPoint ? 0.045 : 0.055) * (1.0 - 0.78 * u_deepDetail);
           } else if (u_pass == 1) {
-            radius = (!detailed || size < 0.85) ? 0.5 : size;
+            if (hazePoint) {
+              // Haze escapes the zoom exposure dimming: as marks calm down at
+              // depth, the unresolved field stays lit and reads as resolved
+              // faint stars, the way a telescope resolves the Milky Way.
+              radius = size * (1.0 + 0.4 * u_deepDetail);
+              alpha = a_alpha * emphasis * mix(u_exposure, 1.35, u_deepDetail);
+            } else {
+              radius = (!detailed || size < 0.85) ? 0.5 : size;
+            }
           } else {
-            if (size <= 1.1 || !detailed) { hidePoint(); return; }
+            if (hazePoint || size <= 1.1 || !detailed) { hidePoint(); return; }
             radius = max(0.45 + u_deepDetail * 0.25, size * (0.24 + u_deepDetail * 0.06));
             alpha = min(0.9, visibleAlpha * 1.25);
             colour = ${glslVec3(whiteHotColour)} / 255.0;
@@ -1330,7 +1437,7 @@
       const pointBuffer = gl.createBuffer();
       gl.bindVertexArray(pointVao);
       gl.bindBuffer(gl.ARRAY_BUFFER, pointBuffer);
-      gl.bufferData(gl.ARRAY_BUFFER, sceneData, gl.STATIC_DRAW);
+      gl.bufferData(gl.ARRAY_BUFFER, renderPointData, gl.STATIC_DRAW);
       const stride = SCENE_POINT_STRIDE * Float32Array.BYTES_PER_ELEMENT;
       [[0, 3, 0], [1, 1, 3], [2, 1, 4], [3, 1, 5], [4, 1, 6], [5, 1, 7], [6, 1, 8]].forEach(([location, size, offset]) => {
         gl.enableVertexAttribArray(location);
@@ -1414,7 +1521,7 @@
           gl.uniform1i(pointUniforms.selectedIndex, selectedPoint ? selectedPoint.renderIndex : -1);
           for (let pass = 0; pass < 3; pass += 1) {
             gl.uniform1i(pointUniforms.pass, pass);
-            gl.drawArrays(gl.POINTS, 0, scenePointCount);
+            gl.drawArrays(gl.POINTS, 0, pass === 1 ? renderPointCount : scenePointCount);
           }
           gl.bindVertexArray(null);
           gl.disable(gl.BLEND);
@@ -1436,6 +1543,7 @@
       if (explorerRenderer) {
         document.documentElement.dataset.plottedDependencyDeclarations = String(plottedDependencyDeclarations);
         document.documentElement.dataset.plottedScenePoints = String(scenePointCount);
+        document.documentElement.dataset.hazePoints = String(hazePointCount);
       } else {
         markExplorerUnavailable(
           document.documentElement.dataset.explorerUnavailableReason || "webgl2-unavailable",
