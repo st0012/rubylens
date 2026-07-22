@@ -13,29 +13,21 @@ module RubyLens
       CONSTANT_REFERENCE_LINK_LIMIT = 1_024
       CONSTANT_REFERENCE_ATTRIBUTION_LIMIT = CONSTANT_REFERENCE_LINK_LIMIT * 2
 
-      # Everything the collectors need from one declaration's definitions, gathered in a
-      # single pass so each definition's location crosses the Rubydex boundary once.
-      DefinitionSummary = Data.define(
-        :workspace_count,
-        :workspace_relatives,
-        :canonical_relatives,
-        :canonical_site_keys,
-        :package_site_keys,
-      )
-
       ReferenceSummary = Data.define(:inbound_counts, :links)
 
       def initialize(manifest)
         @manifest = manifest
         @source_path_cache = {}
         @workspace_location_cache = {}
+        @definition_scope_by_uri = {}
+        @package_index_by_uri = {}
         @indexed_package_document_paths = Set.new
       end
 
       def index
         graph = Rubydex::Graph.new(workspace_path: @manifest.root.to_s)
         index_errors = graph.index_all(@manifest.files)
-        @indexed_package_document_paths = indexed_package_document_paths(graph)
+        @indexed_package_document_paths, documents_with_paths = resolve_documents(graph)
         graph.resolve
         integrity_failures = graph.check_integrity
         collected = collect_declarations(graph.declarations)
@@ -43,6 +35,7 @@ module RubyLens
           graph: graph,
           manifest: @manifest,
           package_document_paths: @indexed_package_document_paths,
+          documents_with_paths: documents_with_paths,
         ).call
         workspace = workspace_namespaces(
           collected.fetch(:workspace_records),
@@ -87,27 +80,33 @@ module RubyLens
         dependency_positions = {}
 
         declarations.each do |declaration|
-          next unless model_eligible_declaration?(declaration)
+          name = declaration.name
+          next unless model_eligible_declaration?(declaration, name)
 
-          summary = summarize_definitions(declaration)
-          canonical_site_keys = summary.canonical_site_keys.uniq
-          unless canonical_site_keys.empty?
+          is_namespace = declaration.is_a?(Rubydex::Namespace)
+          construct_index = ruby_construct_index(declaration)
+          workspace_count, tests_only, canonical_site_keys, canonical_scope, package_site_keys =
+            summarize_definitions(declaration, is_namespace)
+
+          if canonical_site_keys
+            canonical_site_keys = canonical_site_keys.uniq if canonical_site_keys.length > 1
             ordinal = records.length
             canonical_site_keys.each do |uri, start_line, start_column, end_line, end_column|
               workspace_definition_ranges[uri] << [start_line, start_column, end_line, end_column, ordinal]
             end
-            records << [
-              declaration,
-              canonical_site_keys.length,
-              scope_from(summary.canonical_relatives),
-            ]
+            records << [declaration, canonical_site_keys.length, canonical_scope, name]
           end
-          collect_category_stat(category_stats, declaration, summary)
+          if construct_index && workspace_count.positive?
+            category_stats.fetch(tests_only ? "tests" : "core")[construct_index] += 1
+          end
           collect_dependency_declaration(
             aggregation,
             dependency_positions,
             declaration,
-            summary,
+            name,
+            is_namespace,
+            construct_index,
+            package_site_keys,
           )
         end
 
@@ -133,52 +132,74 @@ module RubyLens
         }
       end
 
-      def summarize_definitions(declaration)
-        namespace = namespace?(declaration)
+      # One pass over a declaration's definitions gathers everything the
+      # collectors need, so each definition's location and its per-URI
+      # workspace/scope/package answers cross the Rubydex boundary once.
+      # Canonical site keys and package site keys stay nil until a definition
+      # actually contributes to them, since most declarations produce neither.
+      def summarize_definitions(declaration, is_namespace)
         workspace_count = 0
-        workspace_relatives = []
-        canonical_relatives = []
-        canonical_site_keys = []
-        package_site_keys = {}
+        tests_seen = false
+        core_seen = false
+        canonical_tests_seen = false
+        canonical_core_seen = false
+        canonical_site_keys = nil
+        package_site_keys = nil
 
         declaration.definitions.each do |definition|
           location = definition.location
+          site_key = nil
           if workspace_location?(location)
             workspace_count += 1
-            relative = @manifest.relative_workspace_path(source_path(location.uri))
-            workspace_relatives << relative if relative
-            if namespace && canonical_namespace_definition?(declaration, definition)
-              canonical_site_keys << site_key(location)
-              canonical_relatives << relative if relative
+            scope = definition_scope(location.uri)
+            if scope == 1
+              tests_seen = true
+            elsif scope
+              core_seen = true
+            end
+            if is_namespace && canonical_namespace_definition?(declaration, definition)
+              (canonical_site_keys ||= []) << (site_key = location.comparable_values)
+              if scope == 1
+                canonical_tests_seen = true
+              elsif scope
+                canonical_core_seen = true
+              end
             end
           end
           package_index = package_index_for_location(location)
-          (package_site_keys[package_index] ||= []) << site_key(location) if package_index
+          if package_index
+            ((package_site_keys ||= {})[package_index] ||= []) << (site_key || location.comparable_values)
+          end
         end
 
-        DefinitionSummary.new(
-          workspace_count:,
-          workspace_relatives:,
-          canonical_relatives:,
-          canonical_site_keys:,
-          package_site_keys:,
-        )
+        canonical_scope = canonical_tests_seen ? (canonical_core_seen ? 2 : 1) : 0
+        [workspace_count, tests_seen && !core_seen, canonical_site_keys, canonical_scope, package_site_keys]
       end
 
       def workspace_namespaces(records, rspec_groups, definition_ranges = {})
+        namespace_names = []
+        ordinal_by_name = {}
+        records.each_with_index do |record, index|
+          name = record.fetch(3)
+          namespace_names << name
+          ordinal_by_name[name] = index
+        end
         {
           records: records,
           definition_ranges: definition_ranges,
           rspec_groups: rspec_groups,
-          namespace_names: records.map { |declaration, *| declaration.name } + rspec_groups,
-          ordinal_by_name: records.each_with_index.to_h { |(declaration, *), index| [declaration.name, index] },
+          namespace_names: namespace_names + rspec_groups,
+          ordinal_by_name: ordinal_by_name,
         }
       end
 
       def build_workspace_rows(workspace, inbound_references)
-        rows = workspace.fetch(:records).each_with_index.map do |(declaration, sites, scope), index|
+        ordinal_by_name = workspace.fetch(:ordinal_by_name)
+        rows = workspace.fetch(:records).each_with_index.map do |record, index|
+          declaration, sites, scope, name = record
           descendants = declaration.descendants.count do |descendant|
-            descendant.name != declaration.name && workspace.fetch(:ordinal_by_name).key?(descendant.name)
+            descendant_name = descendant.name
+            descendant_name != name && ordinal_by_name.key?(descendant_name)
           end
           member_count, ruby_counts, instance_variable_count = member_statistics(
             declaration,
@@ -229,29 +250,37 @@ module RubyLens
         end
       end
 
-      def collect_dependency_declaration(aggregation, positions, declaration, summary)
-        package_index, site_keys = summary.package_site_keys.max_by do |index, keys|
-          [keys.length, -index]
-        end
-        return unless package_index
+      def collect_dependency_declaration(aggregation, positions, declaration, name, is_namespace, construct_index, package_site_keys)
+        return unless package_site_keys
 
-        sites = site_keys.uniq.length
+        package_index = nil
+        site_keys = nil
+        package_site_keys.each do |index, keys|
+          if site_keys.nil? || keys.length > site_keys.length ||
+              (keys.length == site_keys.length && index < package_index)
+            package_index = index
+            site_keys = keys
+          end
+        end
+
+        sites = site_keys.length > 1 ? site_keys.uniq.length : site_keys.length
+        reference_count = safe_length(declaration, :references)
         row = [
           namespace_kind(declaration),
-          namespace?(declaration) ? [declaration.ancestors.count - 1, 0].max : 0,
+          is_namespace ? [declaration.ancestors.count - 1, 0].max : 0,
           sites,
           [sites - 1, 0].max,
-          namespace?(declaration) ? [declaration.descendants.count - 1, 0].max : 0,
-          safe_length(declaration, :references),
-          namespace?(declaration) ? safe_length(declaration, :members) : 0,
-        ]
+          is_namespace ? [declaration.descendants.count - 1, 0].max : 0,
+          reference_count,
+          is_namespace ? safe_length(declaration, :members) : 0,
+        ].freeze
         local_index = aggregation.add(
           package_index:,
           row:,
-          construct_index: ruby_construct_index(declaration),
+          construct_index:,
         )
-        if constant_reference_target?(declaration) && row.fetch(5).positive?
-          positions[declaration.name] = [package_index, local_index]
+        if reference_count.positive? && constant_reference_target?(declaration, is_namespace)
+          positions[name] = [package_index, local_index]
         end
       end
 
@@ -341,25 +370,38 @@ module RubyLens
       end
 
       def package_index_for_location(location)
-        path = source_path(location.uri)
-        return nil unless path
-        return nil unless @indexed_package_document_paths.include?(path)
-
-        @manifest.package_index_for(path)
+        uri = location.uri
+        @package_index_by_uri.fetch(uri) do
+          path = source_path(uri)
+          @package_index_by_uri[uri] =
+            if path && @indexed_package_document_paths.include?(path)
+              @manifest.package_index_for(path)
+            end
+        end
       end
 
-      def indexed_package_document_paths(graph)
+      # One sweep over the indexed documents resolves each URI once, yielding
+      # both the package-audit set and the [document, path] pairs the RSpec
+      # extractor reuses without re-enumerating documents or re-parsing URIs.
+      def resolve_documents(graph)
         audited = @manifest.packages.flat_map(&:files).to_set
-        graph.documents.each_with_object(Set.new) do |document, paths|
+        package_paths = Set.new
+        documents_with_paths = []
+        graph.documents.each do |document|
           path = source_path(document.uri)
-          paths << path if path && audited.include?(path)
+          next unless path
+
+          documents_with_paths << [document, path]
+          package_paths << path if audited.include?(path)
         end
+        [package_paths, documents_with_paths]
       end
 
       # One sweep over a namespace's direct and singleton members yields the
       # workspace member count, the method/constant construct counts, and the
       # instance-variable count that previously took three walks each re-reading
-      # every member's definitions.
+      # every member's definitions. Membership comes from each member's own
+      # definition locations; the per-URI caches keep that scan cheap.
       def member_statistics(declaration, count_instance_variables:)
         member_count = 0
         instance_variable_count = 0
@@ -368,7 +410,10 @@ module RubyLens
         ruby_counts[own_construct] += 1 if own_construct == 0 || own_construct == 1
 
         seen_names = Set.new
-        walk = lambda do |members, direct|
+        member_groups = [[declaration.members, true]]
+        singleton = declaration.singleton_class
+        member_groups << [singleton.members, false] if singleton
+        member_groups.each do |members, direct|
           members.each do |member|
             next unless seen_names.add?(member.name)
             next unless member.definitions.any? { |definition| workspace_location?(definition.location) }
@@ -381,61 +426,46 @@ module RubyLens
             end
           end
         end
-        walk.call(declaration.members, true)
-        walk.call(declaration.singleton_class.members, false) if declaration.singleton_class
         [member_count, ruby_counts, instance_variable_count]
       rescue StandardError
         [member_count, ruby_counts, instance_variable_count]
-      end
-
-      def collect_category_stat(stats, declaration, summary)
-        construct_index = ruby_construct_index(declaration)
-        return unless construct_index
-        return if summary.workspace_count.zero?
-
-        category = scope_from(summary.workspace_relatives) == 1 ? "tests" : "core"
-        stats.fetch(category)[construct_index] += 1
       end
 
       def workspace_location?(location)
         uri = location.uri
-        return @workspace_location_cache[uri] if @workspace_location_cache.key?(uri)
-
-        path = source_path(uri)
-        @workspace_location_cache[uri] = path ? @manifest.workspace_path?(path) : false
+        @workspace_location_cache.fetch(uri) do
+          path = source_path(uri)
+          @workspace_location_cache[uri] = path ? @manifest.workspace_path?(path) : false
+        end
       rescue StandardError
         false
       end
 
-      def scope_from(relatives)
-        scopes = relatives.map do |relative|
-          relative.split(File::SEPARATOR).any? { |segment| TEST_SEGMENTS.include?(segment) } ? 1 : 0
-        end.uniq
-        scopes.length > 1 ? 2 : scopes.first || 0
+      # 1 for a test-tree file, 0 for any other workspace file, nil when the
+      # URI has no workspace-relative path to classify.
+      def definition_scope(uri)
+        @definition_scope_by_uri.fetch(uri) do
+          relative = @manifest.relative_workspace_path(source_path(uri))
+          @definition_scope_by_uri[uri] =
+            if relative
+              relative.split(File::SEPARATOR).any? { |segment| TEST_SEGMENTS.include?(segment) } ? 1 : 0
+            end
+        end
       end
 
-      def site_key(location)
-        location.comparable_values
-      end
-
-      def namespace?(declaration)
-        declaration.is_a?(Rubydex::Namespace)
-      end
-
-      def constant_reference_target?(declaration)
-        namespace?(declaration) ||
+      def constant_reference_target?(declaration, is_namespace)
+        is_namespace ||
           declaration.is_a?(Rubydex::Constant) ||
           declaration.is_a?(Rubydex::ConstantAlias)
       end
 
-      def model_eligible_declaration?(declaration)
-        name = declaration.name
+      def model_eligible_declaration?(declaration, name = declaration.name)
         return false if name.nil? || name.empty? || name.include?("<anonymous>")
         return false if declaration.is_a?(Rubydex::Todo)
         return true unless declaration.is_a?(Rubydex::SingletonClass)
 
-        !declaration.attached_class.is_a?(Rubydex::SingletonClass) &&
-          !declaration.attached_class.is_a?(Rubydex::Todo)
+        attached = declaration.attached_class
+        !attached.is_a?(Rubydex::SingletonClass) && !attached.is_a?(Rubydex::Todo)
       end
 
       def canonical_namespace_definition?(declaration, definition)
@@ -462,9 +492,9 @@ module RubyLens
       end
 
       def source_path(uri_string)
-        return @source_path_cache[uri_string] if @source_path_cache.key?(uri_string)
-
-        @source_path_cache[uri_string] = SourcePath.from_file_uri(uri_string)
+        @source_path_cache.fetch(uri_string) do
+          @source_path_cache[uri_string] = SourcePath.from_file_uri(uri_string)
+        end
       end
 
       def safe_length(object, method)

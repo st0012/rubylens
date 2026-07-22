@@ -13,10 +13,11 @@ module RubyLens
 
       Result = Data.define(:groups, :method_count)
 
-      def initialize(graph:, manifest:, package_document_paths: Set.new)
+      def initialize(graph:, manifest:, package_document_paths: Set.new, documents_with_paths: nil)
         @graph = graph
         @manifest = manifest
         @package_document_paths = package_document_paths
+        @documents_with_paths = documents_with_paths
       end
 
       def call
@@ -36,10 +37,16 @@ module RubyLens
 
       private
 
+      # The adapter passes its already-resolved [document, path] pairs so the
+      # documents are not re-enumerated and their URIs not re-parsed here;
+      # standalone construction still resolves them from the graph.
       def spec_documents
-        @graph.documents.filter_map do |document|
+        pairs = @documents_with_paths || @graph.documents.filter_map do |document|
           path = SourcePath.from_file_uri(document.uri)
-          next unless path && @manifest.workspace_path?(path)
+          [document, path] if path
+        end
+        pairs.filter_map do |document, path|
+          next unless @manifest.workspace_path?(path)
           next if @package_document_paths.include?(path)
 
           relative = @manifest.relative_workspace_path(path)
