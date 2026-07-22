@@ -26,7 +26,8 @@ const EXPORTS = `;return ({
   layoutMetricsForCoreCount, normalizedSignals, weightedSignal, explorerExposureForZoom,
   corePosition, testPosition, dependencyCloudOffset, dependencyPosition,
   systemMembers, systemAggregates, systemAnchors, packageAnchors,
-  decodePackageMorphology, DEPENDENCY_CLOUD_THRESHOLD,
+  decodePackageMorphology, dependencySpinTurns, dependencySpunPosition, packageSpinRates,
+  DEPENDENCY_CLOUD_THRESHOLD, DEPENDENCY_SPIN_RECIPE, SHOWCASE_PRESET,
   SCENE_POINT_STRIDE, categoryCodes, sceneData, scenePointCount,
   HAZE_CATEGORY_OFFSET, HAZE_RECIPE, ...hazeBuffers(),
   hazePointCount: hazeBuffers().hazeData.length / SCENE_POINT_STRIDE,
@@ -60,6 +61,8 @@ const EXPORTS = `;return ({
     get expandedSystemIndex() { return expandedSystemIndex; }, set expandedSystemIndex(v) { expandedSystemIndex = v; },
     get drifting() { return drifting; }, set drifting(v) { drifting = v; },
     get lastDriftTimestamp() { return lastDriftTimestamp; }, set lastDriftTimestamp(v) { lastDriftTimestamp = v; },
+    get dependencySpinElapsed() { return dependencySpinElapsed; }, set dependencySpinElapsed(v) { dependencySpinElapsed = v; },
+    get lastDependencySpinTimestamp() { return lastDependencySpinTimestamp; }, set lastDependencySpinTimestamp(v) { lastDependencySpinTimestamp = v; },
   },
 })`;
 

@@ -32,7 +32,7 @@
       tests: { ancestorDepth: .18, definitionSites: .25, reopenings: .18, descendants: .42, references: .85, members: .55 },
       dependencies: { ancestorDepth: .12, definitionSites: .35, reopenings: .2, descendants: .32, references: .48, members: .4 },
     };
-    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedSystemIndex = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, showcaseRenderer = null, showcaseAnnotationSlot = -1, activeShowcaseAnnotation = null, clipMode = false;
+    let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedSystemIndex = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, showcaseRenderer = null, showcaseAnnotationSlot = -1, activeShowcaseAnnotation = null, clipMode = false, dependencySpinElapsed = 0;
     const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35;
     const CORE_SCALE_BASELINE = 3_000;
     const DEPENDENCY_CLOUD_THRESHOLD = 18;
@@ -50,6 +50,7 @@
     const SEARCH_BATCH_SIZE = 8;
     const WARNING_ROW_LIMIT = 24;
     let lastDriftTimestamp = null;
+    let lastDependencySpinTimestamp = null;
     let doubleClickTarget = null;
     let searchIndex = null;
     let searchTimer = 0;
@@ -77,6 +78,18 @@
       "mastheadLeft": 44,
       "mastheadTop": 40,
       "mastheadWidth": 632
+    });
+    // Self-gravitating systems have a characteristic angular frequency
+    // proportional to sqrt(mass / radius^3). The host's tidal gradient adds a
+    // weaker distance^-3/2 frequency term. Declaration count is the local mass
+    // proxy; the result is compressed to whole turns per Showcase loop so Clip
+    // keeps its exact seam. Direction is independent seeded enrichment.
+    const DEPENDENCY_SPIN_RECIPE = Object.freeze({
+      selfGravityScale: .25,
+      tidalScale: .35,
+      minimumTurnsPerLoop: 1,
+      maximumTurnsPerLoop: 2,
+      directionChannel: 104,
     });
     const SHOWCASE_WIDESCREEN_LAYOUT_PRESET = Object.freeze({
       "minimumFittedWidth": 1600,
@@ -173,6 +186,7 @@
     const glslVec3 = rgb => `vec3(${rgb.map(channel => channel.toFixed(1)).join(", ")})`;
     const colourStyles = Object.fromEntries(Object.entries(colours).map(([category, rgb]) => [category, `rgb(${rgb.join(",")})`]));
     const projectionScratch = [0, 0, 0];
+    const dependencySpinScratch = [0, 0, 0];
     let zoomReadout = null;
     let zoomReadoutText = "";
     const showcaseAnnotationData = showcaseDetails && Array.isArray(model.annotations)
@@ -695,6 +709,72 @@
       ];
     });
 
+    function dependencySpinTurns(packageRow, anchor) {
+      const declarationCount = Math.max(1, Number(packageRow?.[3]) || 0);
+      const cloudRadius = Math.max(1e-6, Number(anchor?.[3]) || 0);
+      const coreDistance = Math.max(1e-6, Math.hypot(anchor?.[0] || 0, anchor?.[1] || 0, anchor?.[2] || 0));
+      const selfGravityFrequency = Math.sqrt(declarationCount / cloudRadius ** 3);
+      const tidalFrequency = (layoutScale.dependencyInnerRadius / coreDistance) ** 1.5;
+      const characteristicFrequency = selfGravityFrequency * DEPENDENCY_SPIN_RECIPE.selfGravityScale +
+        tidalFrequency * DEPENDENCY_SPIN_RECIPE.tidalScale;
+      return clamp(
+        Math.round(characteristicFrequency),
+        DEPENDENCY_SPIN_RECIPE.minimumTurnsPerLoop,
+        DEPENDENCY_SPIN_RECIPE.maximumTurnsPerLoop,
+      );
+    }
+
+    const packageSpinRates = model.packages.map((row, index) => {
+      const direction = unit(row[0], DEPENDENCY_SPIN_RECIPE.directionChannel) < .5 ? -1 : 1;
+      const turns = dependencySpinTurns(row, packageAnchors[index]);
+      return direction * turns * Math.PI * 2 / (SHOWCASE_PRESET.durationMs / 1000);
+    });
+
+    function dependencySpunPosition(positionX, positionY, positionZ, packageIndex, elapsed, out = [0, 0, 0]) {
+      const anchor = packageAnchors[packageIndex];
+      const rate = packageSpinRates[packageIndex];
+      if (!anchor || !Number.isFinite(rate)) {
+        out[0] = positionX;
+        out[1] = positionY;
+        out[2] = positionZ;
+        return out;
+      }
+      const loopElapsed = ((Number(elapsed) % SHOWCASE_PRESET.durationMs) + SHOWCASE_PRESET.durationMs) % SHOWCASE_PRESET.durationMs;
+      const angle = rate * loopElapsed / 1000;
+      const cosine = Math.cos(angle);
+      const sine = Math.sin(angle);
+      const offsetX = positionX - anchor[0];
+      const offsetZ = positionZ - anchor[2];
+      out[0] = anchor[0] + offsetX * cosine - offsetZ * sine;
+      out[1] = positionY;
+      out[2] = anchor[2] + offsetX * sine + offsetZ * cosine;
+      return out;
+    }
+
+    function createDependencySpinTexture(gl) {
+      const maximumSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+      const width = Math.min(maximumSize, Math.max(1, model.packages.length));
+      const height = Math.max(1, Math.ceil(model.packages.length / width));
+      if (height > maximumSize) throw new Error("Dependency package count exceeds WebGL2 texture capacity");
+      const pixels = new Float32Array(width * height * 4);
+      packageAnchors.forEach((anchor, index) => {
+        const offset = index * 4;
+        pixels[offset] = anchor[0];
+        pixels[offset + 1] = anchor[1];
+        pixels[offset + 2] = anchor[2];
+        pixels[offset + 3] = packageSpinRates[index];
+      });
+      const texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, pixels);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      return Object.freeze({ texture, width });
+    }
+
     function dependencyPosition(seed, packageIndex) {
       const anchor = packageAnchors[packageIndex] || [0, 0, 0, 2];
       const offset = dependencyCloudOffset(seed, packageMorphologies[packageIndex], anchor[3]);
@@ -1160,6 +1240,28 @@
         }
       `;
 
+    const DEPENDENCY_SPIN_VERTEX_SOURCE = `
+        uniform sampler2D u_dependencySpins;
+        uniform int u_dependencySpinTextureWidth;
+        uniform float u_dependencySpinElapsed;
+
+        vec3 dependencySpinPosition(vec3 position, float category, float maxSize, float packageIndex) {
+          if (category < 1.5 || maxSize >= 4.0 || packageIndex < 0.0) return position;
+          int index = int(packageIndex + 0.5);
+          ivec2 coordinate = ivec2(index % u_dependencySpinTextureWidth, index / u_dependencySpinTextureWidth);
+          vec4 spin = texelFetch(u_dependencySpins, coordinate, 0);
+          float angle = spin.w * u_dependencySpinElapsed;
+          float cosine = cos(angle);
+          float sine = sin(angle);
+          vec2 offset = position.xz - spin.xz;
+          return vec3(
+            spin.x + offset.x * cosine - offset.y * sine,
+            position.y,
+            spin.z + offset.x * sine + offset.y * cosine
+          );
+        }
+      `;
+
     function compileGlShader(gl, type, source) {
       const shader = gl.createShader(type);
       gl.shaderSource(shader, source);
@@ -1239,6 +1341,7 @@
         layout(location = 2) in float a_alpha;
         layout(location = 3) in float a_category;
         layout(location = 4) in float a_maxSize;
+        layout(location = 5) in float a_packageIndex;
         uniform vec2 u_resolution;
         uniform vec2 u_center;
         uniform vec4 u_trig;
@@ -1249,6 +1352,7 @@
         uniform float u_glow;
         uniform float u_deepDetail;
         uniform int u_pass;
+        ${DEPENDENCY_SPIN_VERTEX_SOURCE}
         out vec3 v_colour;
         out float v_alpha;
         out float v_radius;
@@ -1264,14 +1368,15 @@
         void main() {
           bool hazePoint = a_category >= 2.5;
           float categoryCode = hazePoint ? a_category - 3.0 : a_category;
+          vec3 position = dependencySpinPosition(a_position, categoryCode, a_maxSize, a_packageIndex);
           float cy = u_trig.x;
           float sy = u_trig.y;
           float cp = u_trig.z;
           float sp = u_trig.w;
-          float x1 = a_position.x * cy - a_position.z * sy;
-          float z1 = a_position.x * sy + a_position.z * cy;
-          float y2 = a_position.y * cp - z1 * sp;
-          float z2 = a_position.y * sp + z1 * cp;
+          float x1 = position.x * cy - position.z * sy;
+          float z1 = position.x * sy + position.z * cy;
+          float y2 = position.y * cp - z1 * sp;
+          float z2 = position.y * sp + z1 * cp;
           float depth = u_cameraDistance - z2;
           if (depth <= 35.0) { hidePoint(); return; }
 
@@ -1319,11 +1424,12 @@
       gl.bindBuffer(gl.ARRAY_BUFFER, pointBuffer);
       gl.bufferData(gl.ARRAY_BUFFER, renderPointData, gl.STATIC_DRAW);
       const stride = SCENE_POINT_STRIDE * Float32Array.BYTES_PER_ELEMENT;
-      [[0, 3, 0], [1, 1, 3], [2, 1, 4], [3, 1, 5], [4, 1, 6]].forEach(([location, size, offset]) => {
+      [[0, 3, 0], [1, 1, 3], [2, 1, 4], [3, 1, 5], [4, 1, 6], [5, 1, 7]].forEach(([location, size, offset]) => {
         gl.enableVertexAttribArray(location);
         gl.vertexAttribPointer(location, size, gl.FLOAT, false, stride, offset * Float32Array.BYTES_PER_ELEMENT);
       });
       gl.bindVertexArray(null);
+      const dependencySpins = createDependencySpinTexture(gl);
 
       const backgroundUniforms = {
         resolution: gl.getUniformLocation(backgroundProgram, "u_resolution"),
@@ -1340,6 +1446,9 @@
         brightness: gl.getUniformLocation(pointProgram, "u_brightness"),
         glow: gl.getUniformLocation(pointProgram, "u_glow"),
         deepDetail: gl.getUniformLocation(pointProgram, "u_deepDetail"),
+        dependencySpins: gl.getUniformLocation(pointProgram, "u_dependencySpins"),
+        dependencySpinTextureWidth: gl.getUniformLocation(pointProgram, "u_dependencySpinTextureWidth"),
+        dependencySpinElapsed: gl.getUniformLocation(pointProgram, "u_dependencySpinElapsed"),
         pass: gl.getUniformLocation(pointProgram, "u_pass"),
       };
       canvas.addEventListener("webglcontextlost", () => {
@@ -1370,6 +1479,11 @@
           gl.blendFunc(gl.ONE, gl.ONE);
           gl.useProgram(pointProgram);
           gl.bindVertexArray(pointVao);
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, dependencySpins.texture);
+          gl.uniform1i(pointUniforms.dependencySpins, 0);
+          gl.uniform1i(pointUniforms.dependencySpinTextureWidth, dependencySpins.width);
+          gl.uniform1f(pointUniforms.dependencySpinElapsed, dependencySpinElapsed / 1000);
           gl.uniform2f(pointUniforms.resolution, width, height);
           gl.uniform2f(pointUniforms.center, sceneCenterX, sceneCenterY);
           const [cy, sy, cp, sp] = viewMatrix();
@@ -1482,6 +1596,7 @@
         uniform float u_expansion;
         uniform int u_selectedIndex;
         uniform int u_pass;
+        ${DEPENDENCY_SPIN_VERTEX_SOURCE}
         out vec3 v_colour;
         out float v_alpha;
         out float v_radius;
@@ -1499,7 +1614,7 @@
           float categoryCode = hazePoint ? a_category - 3.0 : a_category;
           int category = int(categoryCode + 0.5);
           if (u_categoryVisible[category] < 0.5) { hidePoint(); return; }
-          vec3 position = a_position;
+          vec3 position = dependencySpinPosition(a_position, categoryCode, a_maxSize, a_packageIndex);
           bool expandedPoint = (u_expandedPackage >= 0.0 && a_packageIndex == u_expandedPackage)
             || (u_expandedSystem >= 0.0 && a_systemIndex == u_expandedSystem);
           if (expandedPoint) position = u_expandedAnchor + (position - u_expandedAnchor) * u_expansion;
@@ -1577,6 +1692,7 @@
         gl.vertexAttribPointer(location, size, gl.FLOAT, false, stride, offset * Float32Array.BYTES_PER_ELEMENT);
       });
       gl.bindVertexArray(null);
+      const dependencySpins = createDependencySpinTexture(gl);
 
       const backgroundUniforms = {
         resolution: gl.getUniformLocation(backgroundProgram, "u_resolution"),
@@ -1586,7 +1702,8 @@
         "u_resolution", "u_center", "u_sceneBounds", "u_trig", "u_zoom",
         "u_cameraDistance", "u_cameraFocalLength", "u_exposure", "u_deepDetail", "u_dpr",
         "u_categoryVisible", "u_categoryEmphasis", "u_expandedPackage", "u_expandedSystem",
-        "u_expandedAnchor", "u_expansion", "u_selectedIndex", "u_pass",
+        "u_expandedAnchor", "u_expansion", "u_selectedIndex", "u_dependencySpins",
+        "u_dependencySpinTextureWidth", "u_dependencySpinElapsed", "u_pass",
       ].map(name => [name.slice(2), gl.getUniformLocation(pointProgram, name)]));
 
       const categoryEmphasisVector = () => {
@@ -1629,6 +1746,11 @@
           gl.blendFunc(gl.ONE, gl.ONE);
           gl.useProgram(pointProgram);
           gl.bindVertexArray(pointVao);
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, dependencySpins.texture);
+          gl.uniform1i(pointUniforms.dependencySpins, 0);
+          gl.uniform1i(pointUniforms.dependencySpinTextureWidth, dependencySpins.width);
+          gl.uniform1f(pointUniforms.dependencySpinElapsed, dependencySpinElapsed / 1000);
           gl.uniform2f(pointUniforms.resolution, width, height);
           gl.uniform2f(pointUniforms.center, centerX, centerY);
           gl.uniform2f(pointUniforms.sceneBounds, sceneRight, sceneBottom);
@@ -1846,6 +1968,19 @@
         cameraFlight.target.yaw += driftDelta;
         cameraFlight.finalTarget.yaw += driftDelta;
       }
+      return true;
+    }
+
+    function advanceDependencySpin(timestamp) {
+      if (!interactiveMode || !drifting || reducedMotionQuery.matches) {
+        lastDependencySpinTimestamp = null;
+        return false;
+      }
+      const elapsed = lastDependencySpinTimestamp === null
+        ? 1000 / 60
+        : clamp(timestamp - lastDependencySpinTimestamp, 0, MAX_DRIFT_DELTA_MS);
+      lastDependencySpinTimestamp = timestamp;
+      dependencySpinElapsed = (dependencySpinElapsed + elapsed) % SHOWCASE_PRESET.durationMs;
       return true;
     }
 
@@ -2814,12 +2949,20 @@
       return null;
     }
 
-    function projectScenePoint(renderIndex, matrix, out, camera = null) {
+    function projectScenePoint(renderIndex, matrix, out, camera = null, spinElapsed = dependencySpinElapsed) {
       const offset = renderIndex * SCENE_POINT_STRIDE;
-      const positionX = sceneData[offset];
-      const positionY = sceneData[offset + 1];
-      const positionZ = sceneData[offset + 2];
-      const anchor = dependencyExpansionAnchor(sceneData[offset + 7], sceneData[offset + 8]);
+      let positionX = sceneData[offset];
+      let positionY = sceneData[offset + 1];
+      let positionZ = sceneData[offset + 2];
+      const packageIndex = sceneData[offset + 7];
+      const systemIndex = sceneData[offset + 8];
+      if (sceneData[offset + 5] === categoryCodes.dependencies && sceneData[offset + 6] < 4 && packageIndex >= 0) {
+        const spun = dependencySpunPosition(positionX, positionY, positionZ, packageIndex, spinElapsed, dependencySpinScratch);
+        positionX = spun[0];
+        positionY = spun[1];
+        positionZ = spun[2];
+      }
+      const anchor = dependencyExpansionAnchor(packageIndex, systemIndex);
       return projectCoordinates(
         anchor ? anchor[0] + (positionX - anchor[0]) * DEPENDENCY_EXPANSION : positionX,
         anchor ? anchor[1] + (positionY - anchor[1]) * DEPENDENCY_EXPANSION : positionY,
@@ -3056,6 +3199,7 @@
         zoom,
         panX,
         panY,
+        spinElapsed: dependencySpinElapsed - elapsed,
       };
     }
 
@@ -3069,6 +3213,11 @@
         panX: origin.panX,
         panY: origin.panY,
       };
+    }
+
+    function travelSpinElapsedAt(elapsed) {
+      if (showcaseMode) return elapsed;
+      return explorerTravelCameraOrigin.spinElapsed + elapsed;
     }
 
     function prepareFrozenTravelRoute(episodeIndex, episode, right, bottom) {
@@ -3090,8 +3239,20 @@
         Math.cos(arrivalCamera.pitch),
         Math.sin(arrivalCamera.pitch),
       ];
-      const departure = projectScenePoint(link.departureIndex, departureMatrix, [0, 0, 0], departureCamera);
-      const arrival = projectScenePoint(link.arrivalIndex, arrivalMatrix, [0, 0, 0], arrivalCamera);
+      const departure = projectScenePoint(
+        link.departureIndex,
+        departureMatrix,
+        [0, 0, 0],
+        departureCamera,
+        travelSpinElapsedAt(episode.startsAt),
+      );
+      const arrival = projectScenePoint(
+        link.arrivalIndex,
+        arrivalMatrix,
+        [0, 0, 0],
+        arrivalCamera,
+        travelSpinElapsedAt(episode.startsAt + TRAVEL_PRESET.flightDurationMs),
+      );
       if (!departure || !arrival) return null;
       const route = prepareTravelGeometry(
         link,
@@ -3306,13 +3467,15 @@
     function render(timestamp) {
       animationFrame = 0;
       if (showcaseMode) {
-        if (showcaseRenderer) showcaseRenderer.render();
         const elapsed = showcaseStartedAt === null ? 0 : Math.max(0, timestamp - showcaseStartedAt);
+        dependencySpinElapsed = reducedMotionQuery.matches ? 0 : elapsed % SHOWCASE_PRESET.durationMs;
+        if (showcaseRenderer) showcaseRenderer.render();
         if (constantReferenceLinks.length) drawTravelOverlay(elapsed, Boolean(showcaseRenderer));
         return;
       }
       if (!explorerRenderer) return;
       const driftAdvanced = advanceExplorerDrift(timestamp);
+      const spinAdvanced = advanceDependencySpin(timestamp);
       updateCameraFlight(timestamp);
       updateZoomReadout();
       explorerRenderer.render();
@@ -3321,7 +3484,7 @@
         if (cameraFlight) tooltip.hidden = true;
         else positionTooltip(selectedPoint);
       }
-      if (cameraFlight || driftAdvanced) requestRender();
+      if (cameraFlight || driftAdvanced || spinAdvanced) requestRender();
     }
 
     function requestRender() {
@@ -3564,6 +3727,7 @@
       const rendererUnavailable = document.documentElement.dataset.explorerRenderer === "unavailable";
       drifting = interactiveMode && !rendererUnavailable && driftRequested && !reducedMotionQuery.matches;
       lastDriftTimestamp = null;
+      lastDependencySpinTimestamp = null;
       const motion = document.getElementById("motion");
       motion.disabled = rendererUnavailable || reducedMotionQuery.matches;
       if (rendererUnavailable) {

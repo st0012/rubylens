@@ -129,6 +129,24 @@ test("clip frames are a pure function of frame index", async ({ page }) => {
   expect(other.equals(first)).toBe(false);
 });
 
+test("dependency clouds rotate at a fixed camera and close their own loop", async ({ page }) => {
+  const preset = await openShowcaseClip(page);
+  expect(preset.status).toBe("ok");
+  const captureCloudPhase = async elapsed => {
+    await page.evaluate(value => {
+      applyShowcaseCamera(0);
+      render(value);
+    }, elapsed);
+    return page.locator("#cosmos").screenshot();
+  };
+
+  const start = await captureCloudPhase(0);
+  const rotated = await captureCloudPhase(12_345);
+  const looped = await captureCloudPhase(preset.durationMs);
+  expect(rotated.equals(start)).toBe(false);
+  expect(looped.equals(start)).toBe(true);
+});
+
 test("spatially distinct travel wakes are repeatable and follow decoded directions", async ({ page }) => {
   const preset = await openShowcaseClip(page);
   expect(preset.status).toBe("ok");
