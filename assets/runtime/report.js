@@ -1324,7 +1324,7 @@
       // a hazeMilkRadius).
       const maxSpriteCssSize = Math.max(
         SHOWCASE_PRESET.pointGlowPercent > 0 ? 5.2 * 3.4 * 2 : 5.2 * 2,
-        SHOWCASE_PRESET.hazeMilkRadius,
+        SHOWCASE_PRESET.hazeMilkRadius / 2,
       ) + 2;
       const pointSizeRange = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE);
       if (pointSizeRange[1] < maxSpriteCssSize) {
