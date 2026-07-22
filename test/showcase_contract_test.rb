@@ -21,7 +21,9 @@ class ShowcaseContractTest < Minitest::Test
     "centerXPercent" => 49,
     "centerYPercent" => 67,
     "starBrightnessPercent" => 75,
-    "pointGlowPercent" => 35,
+    "pointGlowPercent" => 0,
+    "hazeMilkRadius" => 12,
+    "hazeMilkGainPercent" => 24,
     "backgroundGlowPercent" => 200,
     "textScalePercent" => 80,
     "layoutReferenceWidth" => 720,
@@ -149,7 +151,7 @@ class ShowcaseContractTest < Minitest::Test
       stageWidth stageHeight durationMs targetFps turns startAngleDegrees
       elevationDegrees elevationSwayDegrees zoom zoomBreathPercent centerXPercent
       centerYPercent starBrightnessPercent pointGlowPercent backgroundGlowPercent
-      textScalePercent
+      hazeMilkRadius hazeMilkGainPercent textScalePercent
     ].each do |field|
       assert_includes(runtime, "SHOWCASE_PRESET.#{field}")
     end
@@ -172,6 +174,10 @@ class ShowcaseContractTest < Minitest::Test
     assert_includes(runtime, "renderPointData.set(hazeData, sceneData.length)")
     assert_includes(runtime_function("createShowcaseRenderer"), "gl.bufferData(gl.ARRAY_BUFFER, renderPointData, gl.STATIC_DRAW)")
     assert_includes(runtime_function("createShowcaseRenderer"), "gl.drawArrays(gl.POINTS, 0, pass === 1 ? renderPointCount : scenePointCount)")
+    assert_includes(runtime_function("createShowcaseRenderer"), "radius = float(${SHOWCASE_PRESET.hazeMilkRadius});")
+    assert_includes(runtime_function("createShowcaseRenderer"), "alpha = visibleAlpha * float(${SHOWCASE_PRESET.hazeMilkGainPercent}) / 100.0;")
+    assert_includes(runtime_function("createShowcaseRenderer"), "v_radius = hazePoint ? -radius : radius;")
+    assert_includes(File.read(RUNTIME_PATH), "if (v_radius < 0.0) {")
     assert_includes(runtime_function("updateGalaxySummary"), '${scenePointCount.toLocaleString("en-US")} ${scenePointCount === 1 ? "star" : "stars"}')
   end
 

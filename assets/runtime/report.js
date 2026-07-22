@@ -70,7 +70,9 @@
       "centerXPercent": 49,
       "centerYPercent": 67,
       "starBrightnessPercent": 75,
-      "pointGlowPercent": 35,
+      "pointGlowPercent": 0,
+      "hazeMilkRadius": 12,
+      "hazeMilkGainPercent": 24,
       "backgroundGlowPercent": 200,
       "textScalePercent": 80,
       "layoutReferenceWidth": 720,
@@ -1233,6 +1235,14 @@
         void main() {
           if (v_alpha <= 0.0) discard;
           float radial = length(gl_PointCoord - vec2(0.5)) * 2.0;
+          // Negative radius marks a milk sprite: a gaussian puff whose additive
+          // overlap integrates unresolved light into a continuous glow surface.
+          if (v_radius < 0.0) {
+            if (radial > 1.0) discard;
+            float milk = v_alpha * exp(-radial * radial * 3.2);
+            outColor = vec4(v_colour * milk, milk);
+            return;
+          }
           float feather = min(1.0, 1.0 / max(v_radius, 1.0));
           float coverage = 1.0 - smoothstep(1.0 - feather, 1.0, radial);
           if (coverage <= 0.0) discard;
@@ -1403,7 +1413,16 @@
             radius = size * glowScale;
             alpha = min(1.0, visibleAlpha * 0.055 * u_glow / 100.0);
           } else if (u_pass == 1) {
-            radius = size < 0.85 ? 0.5 : size;
+            if (hazePoint) {
+              // Milk pass: on the fixed far camera the unresolved population
+              // presents as its integrated light — big, ultra-faint gaussian
+              // sprites whose overlap forms a continuous glow tracing the
+              // real density law, not individual resolved points.
+              radius = float(${SHOWCASE_PRESET.hazeMilkRadius});
+              alpha = visibleAlpha * float(${SHOWCASE_PRESET.hazeMilkGainPercent}) / 100.0;
+            } else {
+              radius = size < 0.85 ? 0.5 : size;
+            }
           } else {
             if (hazePoint || size <= 1.1) { hidePoint(); return; }
             radius = max(0.45 + u_deepDetail * 0.25, size * (0.24 + u_deepDetail * 0.06));
@@ -1415,7 +1434,7 @@
           gl_PointSize = max(1.0, radius * 2.0);
           v_colour = colour;
           v_alpha = alpha;
-          v_radius = radius;
+          v_radius = hazePoint ? -radius : radius;
         }
       `, POINT_FRAGMENT_SOURCE);
 
