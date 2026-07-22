@@ -141,7 +141,7 @@ default with a valid package seed when available instead of failing generation.
 
 ## Schema and data flow
 
-### Art model (`rubylens.art.v12`)
+### Art model (introduced in `rubylens.art.v12`; current schema `rubylens.art.v13`)
 
 A new `MorphologyClassifier` (new file `lib/rubylens/morphology_classifier.rb`,
 invoked from `ArtModelBuilder#build`) emits:
@@ -169,7 +169,7 @@ one numeric row aligned with each `packages` row:
 Every row has exactly ten integers. The package name is not part of the row or
 the classification input.
 
-### Showcase model (`rubylens.showcase.v6`)
+### Showcase model (introduced in `rubylens.showcase.v6`; current schema `rubylens.showcase.v7`)
 
 `ShowcaseModel#call` projects the project morphology and aligned package rows
 through the existing `numeric_row` validation:
@@ -292,7 +292,7 @@ and must be treated as sensitive when sharing an artifact.
   stability under small perturbations; ordinary orientation seeds; the large
   smooth-package enrichment threshold and deterministic seed split; fallback on
   malformed input.
-- Schema tests: art v12 project block and package-row alignment; showcase v6
+- Schema tests: current art v13 project block and package-row alignment; showcase v7
   integer row length, alignment, and validation.
 - End-to-end: report and showcase generation include the morphology block and
   parse.

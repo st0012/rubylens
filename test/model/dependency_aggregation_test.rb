@@ -14,7 +14,7 @@ class DependencyAggregationTest < Minitest::Test
       [1, [1, 2, 3, 4, 5, 6, 7], 1],
       [0, [2, 3, 4, 5, 6, 7, 8], 2],
     ]
-    add_rows(aggregation, rows)
+    assert_equal([0, 0, 1], add_rows(aggregation, rows))
 
     packages = aggregation.packages
     assert_equal([2, 1], packages.map { |package| package.fetch(:declarations).length })
@@ -57,7 +57,7 @@ class DependencyAggregationTest < Minitest::Test
   private
 
   def add_rows(aggregation, rows)
-    rows.each do |package_index, row, construct_index|
+    rows.map do |package_index, row, construct_index|
       aggregation.add(package_index:, row:, construct_index:)
     end
   end

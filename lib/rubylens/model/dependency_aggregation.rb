@@ -14,11 +14,13 @@ module RubyLens
       end
 
       def add(package_index:, row:, construct_index:)
+        local_index = @rows[package_index].length
         @ruby_counts[package_index][construct_index] += 1 if construct_index
         SIGNAL_COLUMNS.each_with_index do |column, index|
           @signal_maxima[index] = [@signal_maxima[index], row[column]].max
         end
         @rows[package_index] << row.dup.freeze
+        local_index
       end
 
       def packages

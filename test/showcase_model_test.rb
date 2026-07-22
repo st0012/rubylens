@@ -6,7 +6,7 @@ class ShowcaseModelTest < Minitest::Test
   def test_minimal_projection_omits_statistics_and_private_names
     private_value = "/private/path/Secret::Namespace hidden-gem source comment"
     model = {
-      "schema" => "rubylens.art.v12",
+      "schema" => "rubylens.art.v13",
       "projectName" => "Synthetic App",
       "morphology" => [3, 0, 240, 3, 105, 500, 400, 0, 0, 1234, private_value],
       "totals" => { "namespaces" => 1, "packages" => 1, "dependencyStars" => 1, "future" => private_value },
@@ -14,6 +14,7 @@ class ShowcaseModelTest < Minitest::Test
       "categoryStats" => { "core" => [1, 2, 3, 4], "tests" => [5, 6, 7, 8], "future" => private_value },
       "namespaceNames" => [private_value],
       "namespaces" => [[1, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, private_value]],
+      "constantReferenceLinks" => [[0, 1, private_value]],
       "packageNames" => [private_value],
       "packages" => [[2, 0, 1, 9, 1, 2, 3, 4, 0, private_value]],
       "packageMorphologies" => [[2, 0, 240, 3, 105, 500, 0, 0, 0, 2, private_value]],
@@ -28,13 +29,14 @@ class ShowcaseModelTest < Minitest::Test
     encoded = JSON.generate(showcase)
 
     assert_equal(
-      %w[dependencyStars dependencySystems details domains morphology namespaces packageMorphologies packages projectName schema],
+      %w[constantReferenceLinks dependencyStars dependencySystems details domains morphology namespaces packageMorphologies packages projectName schema],
       showcase.keys.sort,
     )
     assert_equal(false, showcase.fetch("details"))
-    assert_equal("rubylens.showcase.v6", showcase.fetch("schema"))
+    assert_equal("rubylens.showcase.v7", showcase.fetch("schema"))
     assert_equal([3, 0, 240, 3, 105, 500, 400, 0, 0, 1234], showcase.fetch("morphology"))
     assert_equal(14, showcase.fetch("namespaces").first.length)
+    assert_equal([[0, 1]], showcase.fetch("constantReferenceLinks"))
     assert_equal(9, showcase.fetch("packages").first.length)
     assert_equal(10, showcase.fetch("packageMorphologies").first.length)
     assert_equal(2, showcase.fetch("dependencySystems").first.length)
@@ -61,6 +63,7 @@ class ShowcaseModelTest < Minitest::Test
     assert_equal(model.fetch("totals"), first.fetch("totals"))
     assert_equal(model.fetch("categoryStats"), first.fetch("categoryStats"))
     assert_equal(model.fetch("dependencySystems"), first.fetch("dependencySystems"))
+    assert_equal(model.fetch("constantReferenceLinks"), first.fetch("constantReferenceLinks"))
     assert_equal(RubyLens::ShowcaseModel::ANNOTATION_LIMIT, annotations.length)
     assert_equal(%w[core dependencies tests core dependencies tests], annotations.first(6).map { |annotation| annotation.fetch("category") })
     assert_equal(%w[anchor category kind name], annotations.first.keys.sort)
@@ -108,6 +111,20 @@ class ShowcaseModelTest < Minitest::Test
     assert_equal("showcase model rows must contain only numbers", error.message)
   end
 
+  def test_rejects_invalid_constant_reference_link_rows
+    short_model = minimal_model
+    short_model["constantReferenceLinks"] = [[1]]
+
+    error = assert_raises(RubyLens::Error) { RubyLens::ShowcaseModel.new(short_model).call }
+    assert_equal("showcase model row has an unexpected shape", error.message)
+
+    private_model = minimal_model
+    private_model["constantReferenceLinks"] = [[1, "Secret::Namespace"]]
+
+    error = assert_raises(RubyLens::Error) { RubyLens::ShowcaseModel.new(private_model).call }
+    assert_equal("showcase model rows must contain only numbers", error.message)
+  end
+
   def test_rejects_package_morphologies_that_do_not_align_with_packages
     model = minimal_model
     model["packages"] = [[1, 0, 1, 1, 1, 0, 0, 0, -1]]
@@ -148,6 +165,7 @@ class ShowcaseModelTest < Minitest::Test
       "categoryStats" => { "core" => [0, 0, 0, 0], "tests" => [0, 0, 0, 0] },
       "namespaceNames" => ["Synthetic::Node"],
       "namespaces" => [[0] * 14],
+      "constantReferenceLinks" => [],
       "packageNames" => [],
       "packages" => [],
       "packageMorphologies" => [],
@@ -176,6 +194,7 @@ class ShowcaseModelTest < Minitest::Test
       "categoryStats" => { "core" => [count, count / 2, count * 2, count / 3], "tests" => [count, 0, count * 3, 0] },
       "namespaceNames" => namespace_names,
       "namespaces" => namespaces,
+      "constantReferenceLinks" => [[1, 0]],
       "packageNames" => package_names,
       "packages" => packages,
       "packageMorphologies" => package_morphologies,

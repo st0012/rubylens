@@ -6,6 +6,14 @@ import { join } from "node:path";
 
 const ROOT = process.cwd();
 const FIXTURES = join(ROOT, "test/browser/.fixtures");
+export const FIXTURE_CONSTANT_REFERENCE_LINKS = Object.freeze([
+  Object.freeze([700, 1_512]),
+  Object.freeze([901, 700]),
+  Object.freeze([80, 222]),
+  Object.freeze([1_300, 1_950]),
+  Object.freeze([1_100, 1_580]),
+  Object.freeze([620, 210]),
+]);
 
 function mulberry32(seed) {
   let state = seed >>> 0;
@@ -53,7 +61,7 @@ export function fixtureModel({ namespaces = 1500, packages = 12, stars = 2500 } 
   }
   const domains = { ancestorDepth: 9, definitionSites: 3, reopenings: 2, descendants: 30, references: 80, members: 20 };
   return {
-    schema: "rubylens.art.v12",
+    schema: "rubylens.art.v13",
     projectName: "Fixture Cosmos",
     morphology: [2, 0, 240, 3, 105, 380, 0, 0, 0, 42],
     totals: { namespaces, packages, dependencyStars: stars },
@@ -66,6 +74,7 @@ export function fixtureModel({ namespaces = 1500, packages = 12, stars = 2500 } 
     packageMorphologies,
     dependencySystems: [[seed(), 0]],
     dependencyStars,
+    constantReferenceLinks: FIXTURE_CONSTANT_REFERENCE_LINKS,
     dependencyWarnings: [],
     warningCounts: { manifest: 0, index: 0, integrity: 0 },
   };
@@ -89,7 +98,7 @@ export function fixtureShowcaseModel() {
     annotations.push({ category: "dependencies", name, kind: "Dependency gem", anchor: index });
   });
   return {
-    schema: "rubylens.showcase.v6",
+    schema: "rubylens.showcase.v7",
     projectName: model.projectName,
     details: true,
     domains: model.domains,
@@ -99,6 +108,7 @@ export function fixtureShowcaseModel() {
     packageMorphologies: model.packageMorphologies,
     dependencySystems: model.dependencySystems,
     dependencyStars: model.dependencyStars,
+    constantReferenceLinks: model.constantReferenceLinks,
     totals: model.totals,
     categoryStats: model.categoryStats,
     pinnedNamespaceAnchors: [],

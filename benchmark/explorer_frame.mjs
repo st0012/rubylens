@@ -3,11 +3,14 @@
 //
 //   node benchmark/explorer_frame.mjs [output.html]
 //
-// The synthetic model matches rubylens.art.v12 as consumed by the runtime:
+// The synthetic model matches rubylens.art.v13 as consumed by the runtime:
 // NAMESPACES class/module rows (TEST_RATIO of them tests), DEPENDENCY_DECLARATIONS
 // embedded dependency declaration rows across PACKAGES gems, exact aggregate totals, and
-// signal domains derived from the generated rows. Defaults model a codebase
-// with 100,000 classes/modules and over one million total declarations.
+// signal domains derived from the generated rows. The bounded relationship sample
+// defaults to its 1,024-row ceiling; the driven benchmark clock is anchored at
+// peak size-scaled visible overlap so drawing and endpoint-projection costs are measured.
+// Defaults model a codebase with 100,000 classes/modules and
+// over one million total declarations.
 //
 // The appended inline benchmark script (the report CSP permits inline
 // scripts) drives the runtime's render() directly with 60fps-spaced synthetic
@@ -25,7 +28,8 @@ const NAMESPACES = Number(process.env.NAMESPACES || 100_000);
 const TEST_RATIO = Number(process.env.TEST_RATIO || 0.15);
 const PACKAGES = Number(process.env.PACKAGES || 400);
 const DEPENDENCY_DECLARATIONS = Number(process.env.DEPENDENCY_DECLARATIONS || process.env.DEPENDENCY_STARS || 164_000);
-// Multi-gem Git dependency systems (rubylens.art.v12): each groups three
+const CONSTANT_REFERENCE_LINKS = Math.min(1_024, Math.max(0, Number(process.env.CONSTANT_REFERENCE_LINKS || 1_024)));
+// Multi-gem Git dependency systems (rubylens.art.v13): each groups three
 // consecutive packages. Default 0 keeps published benchmark numbers stable.
 const DEPENDENCY_SYSTEMS = Number(process.env.DEPENDENCY_SYSTEMS || 0);
 const SYSTEM_SPAN = 3;
@@ -139,8 +143,26 @@ function buildModel() {
     return [field, maximum];
   }));
 
+  const linkRandom = mulberry32(0xc057a17e);
+  const constantReferenceLinks = [];
+  const seenLinks = new Set();
+  const maximumLinks = NAMESPACES > 0
+    ? Math.min(CONSTANT_REFERENCE_LINKS, NAMESPACES * Math.max(0, NAMESPACES - 1) + NAMESPACES * DEPENDENCY_DECLARATIONS)
+    : 0;
+  while (constantReferenceLinks.length < maximumLinks) {
+    const referencedKind = DEPENDENCY_DECLARATIONS > 0 && (NAMESPACES < 2 || linkRandom() < 0.5) ? 1 : 0;
+    const referringIndex = Math.floor(linkRandom() * NAMESPACES);
+    const referencedIndex = Math.floor(linkRandom() * (referencedKind === 0 ? NAMESPACES : DEPENDENCY_DECLARATIONS));
+    const referencedGlobalIndex = referencedKind === 0 ? referencedIndex : NAMESPACES + referencedIndex;
+    const key = `${referringIndex}:${referencedGlobalIndex}`;
+    if (referencedKind === 0 && referringIndex === referencedIndex) continue;
+    if (seenLinks.has(key)) continue;
+    seenLinks.add(key);
+    constantReferenceLinks.push([referringIndex, referencedGlobalIndex]);
+  }
+
   return {
-    schema: "rubylens.art.v12",
+    schema: "rubylens.art.v13",
     projectName: "Synthetic Metropolis",
     morphology: [2, 0, 210, 4, 100, 600, 0, 0, 0, 0x51a7e11a],
     totals: {
@@ -152,6 +174,7 @@ function buildModel() {
     categoryStats,
     namespaceNames,
     namespaces,
+    constantReferenceLinks,
     packageNames,
     packages,
     packageMorphologies,
@@ -194,11 +217,22 @@ function benchmarkScript() {
       const forcedSync = () => {
         const webglExplorer = document.getElementById("explorer-cosmos");
         const gl = webglExplorer && webglExplorer.getContext("webgl2");
-        if (gl) {
-          const pixel = new Uint8Array(4);
-          return () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+        const pixel = new Uint8Array(4);
+        return () => {
+          if (gl) gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+          context.getImageData(0, 0, 1, 1);
+        };
+      };
+      const drawableTravelStatesAt = elapsed => travelStatesAt(elapsed)
+        .filter(state => state.visibility >= TRAVEL_PRESET.minimumVisibility);
+      const firstDrawableTravelOverlap = () => {
+        if (!constantReferenceLinks.length) return null;
+        const frameMs = 1000 / 60;
+        const visibleFlights = travelFlightLimit;
+        for (let elapsed = 0; elapsed < SHOWCASE_PRESET.durationMs; elapsed += frameMs) {
+          if (drawableTravelStatesAt(elapsed).length === visibleFlights) return elapsed;
         }
-        return () => context.getImageData(0, 0, 1, 1);
+        return null;
       };
       const measureDrivenFrames = onDone => {
         // Hidden tabs can report a 0x0 viewport at load; force real dimensions.
@@ -209,23 +243,43 @@ function benchmarkScript() {
         const sync = forcedSync();
         const submitSamples = [];
         const frameSamples = [];
-        let clock = performance.now();
+        const syntheticFrameMs = 1000 / 60;
+        const travelStart = firstDrawableTravelOverlap();
+        if (travelStart === null) {
+          const error = "bench: no drawable " + travelFlightLimit + "-flight overlap found";
+          window.__RUBYLENS_BENCH__ = { status: "error", error, config: BENCH };
+          banner.textContent = error;
+          throw new Error(error);
+        }
+        let clock = travelStart;
+        const resetDrivenClock = () => {
+          clock = travelStart;
+          lastDriftTimestamp = travelStart;
+          explorerTravelElapsed = travelStart;
+          explorerTravelLastTimestamp = travelStart;
+        };
+        resetDrivenClock();
         let remaining = BENCH.warmupFrames + BENCH.measureFrames;
+        let activeTravelFrames = 0;
         // MessageChannel tasks are exempt from hidden-tab timer throttling.
         const channel = new MessageChannel();
         const scheduleStep = () => channel.port2.postMessage(0);
         const step = () => {
-          clock += 1000 / 60;
+          if (travelStart !== null && remaining === BENCH.measureFrames) {
+            resetDrivenClock();
+          }
+          clock += syntheticFrameMs;
           const startedAt = performance.now();
           render(clock);
           const submitMs = performance.now() - startedAt;
           sync();
-          const frameMs = performance.now() - startedAt;
+          const measuredFrameMs = performance.now() - startedAt;
           if (animationFrame) { cancelAnimationFrame(animationFrame); animationFrame = 0; }
           remaining -= 1;
           if (remaining < BENCH.measureFrames) {
             submitSamples.push(submitMs);
-            frameSamples.push(frameMs);
+            frameSamples.push(measuredFrameMs);
+            if (drawableTravelStatesAt(explorerTravelElapsed).length) activeTravelFrames += 1;
           }
           if (remaining > 0) {
             banner.textContent = "bench: driven frame " + (BENCH.warmupFrames + BENCH.measureFrames - remaining + 1);
@@ -238,6 +292,7 @@ function benchmarkScript() {
             submitMs: stats(submitSamples),
             frameMs: synced,
             estimatedFps: Number((1000 / synced.avg).toFixed(1)),
+            activeTravelFrames,
           });
         };
         channel.port1.onmessage = step;
@@ -281,6 +336,7 @@ function benchmarkScript() {
           "bench: done · " + result.renderer + " · " + result.points.toLocaleString() + " points",
           "driven frame ms avg " + driven.frameMs.avg + " (submit " + driven.submitMs.avg + ") -> ~" + driven.estimatedFps + " fps",
           "driven p50 " + driven.frameMs.p50 + " · p95 " + driven.frameMs.p95 + " · p99 " + driven.frameMs.p99 + " · max " + driven.frameMs.max,
+          "active travel overlay frames " + driven.activeTravelFrames + "/" + driven.frames,
           raf ? "visible rAF avg " + raf.avgFps + " fps · p95 " + raf.deltaMs.p95 + "ms · >20ms x" + raf.framesOver20Ms : "visible rAF skipped (tab hidden)",
         ].join("\\n");
         document.title = "BENCH " + driven.frameMs.avg + "ms ~" + driven.estimatedFps + "fps " + result.renderer;

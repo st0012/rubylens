@@ -10,6 +10,8 @@ module RubyLens
   module Index
     class RubydexAdapter
       TEST_SEGMENTS = %w[test tests spec specs feature features].freeze
+      CONSTANT_REFERENCE_LINK_LIMIT = 1_024
+      CONSTANT_REFERENCE_ATTRIBUTION_LIMIT = CONSTANT_REFERENCE_LINK_LIMIT * 2
 
       # Everything the collectors need from one declaration's definitions, gathered in a
       # single pass so each definition's location crosses the Rubydex boundary once.
@@ -20,6 +22,8 @@ module RubyLens
         :canonical_site_keys,
         :package_site_keys,
       )
+
+      ReferenceSummary = Data.define(:inbound_counts, :links)
 
       def initialize(manifest)
         @manifest = manifest
@@ -40,20 +44,29 @@ module RubyLens
           manifest: @manifest,
           package_document_paths: @indexed_package_document_paths,
         ).call
-        workspace = workspace_namespaces(collected.fetch(:workspace_records), rspec.groups)
-        inbound_references = inbound_workspace_references(graph, workspace.fetch(:ordinal_by_name))
+        workspace = workspace_namespaces(
+          collected.fetch(:workspace_records),
+          rspec.groups,
+          collected.fetch(:workspace_definition_ranges),
+        )
+        reference_summary = workspace_reference_summary(
+          graph,
+          workspace,
+          collected.fetch(:dependency_ordinal_by_name),
+        )
         category_stats = collected.fetch(:category_stats)
         category_stats.fetch("tests")[0] += rspec.groups.length
         category_stats.fetch("tests")[2] += rspec.method_count
 
         {
-          "schema" => "rubylens.snapshot.v8",
+          "schema" => "rubylens.snapshot.v9",
           "project_name" => project_name,
           "namespace_names" => workspace.fetch(:namespace_names),
-          "namespaces" => build_workspace_rows(workspace, inbound_references),
+          "namespaces" => build_workspace_rows(workspace, reference_summary.inbound_counts),
+          "constant_reference_links" => reference_summary.links,
           "category_stats" => category_stats,
-          "dependency_signal_maxima" => collected.fetch(:dependency_aggregation).signal_maxima,
-          "packages" => build_package_rows(collected.fetch(:dependency_aggregation)),
+          "dependency_signal_maxima" => collected.fetch(:dependency_signal_maxima),
+          "packages" => build_package_rows(collected.fetch(:dependency_packages)),
           "dependency_systems" => build_dependency_system_rows,
           "dependency_warnings" => @manifest.respond_to?(:dependency_warnings) ? @manifest.dependency_warnings : [],
           "warning_counts" => {
@@ -70,23 +83,54 @@ module RubyLens
         records = []
         category_stats = { "core" => Array.new(4, 0), "tests" => Array.new(4, 0) }
         aggregation = Model::DependencyAggregation.new(package_count: @manifest.packages.length)
+        workspace_definition_ranges = Hash.new { |hash, uri| hash[uri] = [] }
+        dependency_positions = {}
 
         declarations.each do |declaration|
           next unless model_eligible_declaration?(declaration)
 
           summary = summarize_definitions(declaration)
-          unless summary.canonical_site_keys.empty?
+          canonical_site_keys = summary.canonical_site_keys.uniq
+          unless canonical_site_keys.empty?
+            ordinal = records.length
+            canonical_site_keys.each do |uri, start_line, start_column, end_line, end_column|
+              workspace_definition_ranges[uri] << [start_line, start_column, end_line, end_column, ordinal]
+            end
             records << [
               declaration,
-              summary.canonical_site_keys.uniq.length,
+              canonical_site_keys.length,
               scope_from(summary.canonical_relatives),
             ]
           end
           collect_category_stat(category_stats, declaration, summary)
-          collect_dependency_declaration(aggregation, declaration, summary)
+          collect_dependency_declaration(
+            aggregation,
+            dependency_positions,
+            declaration,
+            summary,
+          )
         end
 
-        { workspace_records: records, category_stats:, dependency_aggregation: aggregation }
+        dependency_packages = aggregation.packages
+        dependency_offsets = []
+        offset = 0
+        dependency_packages.each do |package|
+          dependency_offsets << offset
+          offset += package.fetch(:declarations).length
+        end
+        dependency_ordinal_by_name = dependency_positions.transform_values! do |position|
+          package_index, local_index = position
+          dependency_offsets.fetch(package_index) + local_index
+        end
+
+        {
+          workspace_records: records,
+          workspace_definition_ranges:,
+          category_stats:,
+          dependency_packages:,
+          dependency_signal_maxima: aggregation.signal_maxima,
+          dependency_ordinal_by_name: dependency_ordinal_by_name.freeze,
+        }
       end
 
       def summarize_definitions(declaration)
@@ -121,9 +165,10 @@ module RubyLens
         )
       end
 
-      def workspace_namespaces(records, rspec_groups)
+      def workspace_namespaces(records, rspec_groups, definition_ranges = {})
         {
           records: records,
+          definition_ranges: definition_ranges,
           rspec_groups: rspec_groups,
           namespace_names: records.map { |declaration, *| declaration.name } + rspec_groups,
           ordinal_by_name: records.each_with_index.to_h { |(declaration, *), index| [declaration.name, index] },
@@ -159,8 +204,7 @@ module RubyLens
         [0, 1, *Array.new(11, 0)]
       end
 
-      def build_package_rows(aggregation)
-        aggregates = aggregation.packages
+      def build_package_rows(aggregates)
         @manifest.packages.each_with_index.map do |package, index|
           aggregate = aggregates.fetch(index)
           {
@@ -185,7 +229,7 @@ module RubyLens
         end
       end
 
-      def collect_dependency_declaration(aggregation, declaration, summary)
+      def collect_dependency_declaration(aggregation, positions, declaration, summary)
         package_index, site_keys = summary.package_site_keys.max_by do |index, keys|
           [keys.length, -index]
         end
@@ -201,24 +245,99 @@ module RubyLens
           safe_length(declaration, :references),
           namespace?(declaration) ? safe_length(declaration, :members) : 0,
         ]
-        aggregation.add(
+        local_index = aggregation.add(
           package_index:,
           row:,
           construct_index: ruby_construct_index(declaration),
         )
+        if constant_reference_target?(declaration) && row.fetch(5).positive?
+          positions[declaration.name] = [package_index, local_index]
+        end
       end
 
-      def inbound_workspace_references(graph, ordinal_by_name)
-        graph.constant_references.each_with_object(Hash.new(0)) do |reference, counts|
+      def workspace_reference_summary(graph, workspace, dependency_ordinal_by_name = {})
+        ordinal_by_name = workspace.fetch(:ordinal_by_name)
+        namespace_count = workspace.fetch(:namespace_names, ordinal_by_name).length
+        workspace_ranges = workspace.fetch(:definition_ranges, {})
+        inbound_counts = Hash.new(0)
+        links = []
+        retained_links = Set.new
+        attribution_count = 0
+
+        graph.constant_references.each do |reference|
           next unless reference.is_a?(Rubydex::ResolvedConstantReference)
 
-          ordinal = ordinal_by_name[reference.declaration.name]
-          next unless ordinal
+          referenced_name = resolved_constant_reference_name(reference)
+          next unless referenced_name
+          referenced_ordinal = ordinal_by_name[referenced_name]
+          travel_available = links.length < CONSTANT_REFERENCE_LINK_LIMIT &&
+            attribution_count < CONSTANT_REFERENCE_ATTRIBUTION_LIMIT
+          dependency_ordinal = dependency_ordinal_by_name[referenced_name] if travel_available && !referenced_ordinal
+          next unless referenced_ordinal || dependency_ordinal
 
-          counts[ordinal] += 1 if workspace_location?(reference.location)
-        rescue StandardError
-          next
+          location = begin
+            reference.location
+          rescue StandardError
+            next
+          end
+          next unless workspace_location?(location)
+
+          inbound_counts[referenced_ordinal] += 1 if referenced_ordinal
+          next unless travel_available
+
+          attribution_count += 1
+
+          referenced_endpoint = referenced_ordinal || namespace_count + dependency_ordinal
+
+          location_values = begin
+            location.comparable_values
+          rescue StandardError
+            next
+          end
+          referring_ordinal = enclosing_definition_ordinal(location_values, workspace_ranges)
+          next unless referring_ordinal
+          next if referenced_endpoint == referring_ordinal
+
+          link = [referring_ordinal, referenced_endpoint]
+          next unless retained_links.add?(link)
+
+          links << link
         end
+
+        ReferenceSummary.new(inbound_counts.freeze, links.freeze)
+      end
+
+      def resolved_constant_reference_name(reference)
+        reference.declaration.name
+      rescue StandardError
+        nil
+      end
+
+      def enclosing_definition_ordinal(location_values, ranges_by_uri)
+        uri, start_line, start_column, end_line, end_column = location_values
+        best = nil
+        ambiguous = false
+        ranges_by_uri.fetch(uri, []).each do |range|
+          range_start_line, range_start_column, range_end_line, range_end_column, ordinal = range
+          next if position_compare(range_start_line, range_start_column, start_line, start_column).positive?
+          next if position_compare(range_end_line, range_end_column, end_line, end_column).negative?
+
+          start_comparison = best ? position_compare(range_start_line, range_start_column, best[0], best[1]) : 1
+          end_comparison = best && start_comparison.zero? ? position_compare(range_end_line, range_end_column, best[2], best[3]) : 0
+          if start_comparison.positive? || (start_comparison.zero? && end_comparison.negative?)
+            best = range
+            ambiguous = false
+          elsif start_comparison.zero? && end_comparison.zero? && ordinal != best[4]
+            ambiguous = true
+          end
+        end
+
+        ambiguous ? nil : best&.fetch(4)
+      end
+
+      def position_compare(left_line, left_column, right_line, right_column)
+        line_comparison = left_line <=> right_line
+        line_comparison.zero? ? left_column <=> right_column : line_comparison
       end
 
       def package_index_for_location(location)
@@ -301,6 +420,12 @@ module RubyLens
 
       def namespace?(declaration)
         declaration.is_a?(Rubydex::Namespace)
+      end
+
+      def constant_reference_target?(declaration)
+        namespace?(declaration) ||
+          declaration.is_a?(Rubydex::Constant) ||
+          declaration.is_a?(Rubydex::ConstantAlias)
       end
 
       def model_eligible_declaration?(declaration)

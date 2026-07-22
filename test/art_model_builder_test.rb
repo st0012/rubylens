@@ -12,6 +12,7 @@ class ArtModelBuilderTest < Minitest::Test
         [0, 0, 3, 1, 0, 2, 4, 5, 1, 0, 3, 2, 4],
         [1, 1, 1, 2, 1, 0, 3, 2, 0, 1, 1, 0, 0],
       ],
+      "constant_reference_links" => [[0, 1], [1, 0]],
       "category_stats" => { "core" => [1, 1, 4, 2], "tests" => [0, 1, 1, 0] },
       "dependency_signal_maxima" => [1, 0, 1, 3, 4, 0],
       "packages" => [
@@ -43,9 +44,12 @@ class ArtModelBuilderTest < Minitest::Test
 
     first = builder.build(snapshot)
     second = builder.build(snapshot)
+    without_links_snapshot = Marshal.load(Marshal.dump(snapshot))
+    without_links_snapshot.delete("constant_reference_links")
+    without_links = builder.build(without_links_snapshot)
 
     assert_equal(first, second)
-    assert_equal("rubylens.art.v12", first.fetch("schema"))
+    assert_equal("rubylens.art.v13", first.fetch("schema"))
     assert_equal("Demo", first.fetch("projectName"))
     assert_equal(10, first.fetch("morphology").length)
     assert_equal(4, first.fetch("morphology").first)
@@ -54,6 +58,18 @@ class ArtModelBuilderTest < Minitest::Test
     assert_equal(1, first.dig("totals", "dependencyStars"))
     assert_equal({ "core" => [1, 1, 4, 2], "tests" => [0, 1, 1, 0] }, first.fetch("categoryStats"))
     assert_equal(["Demo::Core", "Demo::TestCase"].sort, first.fetch("namespaceNames").sort)
+    assert_equal(
+      [["Demo::Core", "Demo::TestCase"], ["Demo::TestCase", "Demo::Core"]],
+      first.fetch("constantReferenceLinks").map do |referring_index, referenced_index|
+        [first.fetch("namespaceNames").fetch(referring_index), first.fetch("namespaceNames").fetch(referenced_index)]
+      end.sort,
+    )
+    assert(first.fetch("constantReferenceLinks").all? { |row| row.length == 2 && row.all?(Integer) })
+    assert_equal(
+      without_links.reject { |key, _value| key == "constantReferenceLinks" },
+      first.reject { |key, _value| key == "constantReferenceLinks" },
+    )
+    assert_empty(without_links.fetch("constantReferenceLinks"))
     assert_equal(["example-gem"], first.fetch("packageNames"))
     assert_equal(1, first.fetch("packageMorphologies").length)
     assert_equal(10, first.fetch("packageMorphologies").first.length)
@@ -66,7 +82,7 @@ class ArtModelBuilderTest < Minitest::Test
     assert_equal([0, 1, 1, 2, 1, 4, 3, -1], first.fetch("packages").first.drop(1))
     assert_empty(first.fetch("dependencySystems"))
     assert_equal(
-      %w[categoryStats dependencyStars dependencySystems dependencyWarnings domains
+      %w[categoryStats constantReferenceLinks dependencyStars dependencySystems dependencyWarnings domains
          morphology namespaceNames namespaces packageMorphologies packageNames packages projectName schema totals warningCounts],
       first.keys.sort,
     )
@@ -78,6 +94,120 @@ class ArtModelBuilderTest < Minitest::Test
     assert(first.fetch("namespaces").all? { |row| row.length == 14 && row.all?(Integer) })
     assert_equal(4, first.fetch("namespaces").find { |row| row[1].zero? }.last)
     assert(first.fetch("dependencyStars").all? { |row| row.length == 8 && row.all?(Integer) })
+  end
+
+  def test_remaps_exact_dependency_ordinals_and_drops_unmappable_reference_rows
+    snapshot = {
+      "project_name" => "Reference Demo",
+      "namespace_names" => ["Demo::Core", "Demo::TestCase", "Demo::CorePeer", "Demo::TestPeer"],
+      "namespaces" => [
+        [0, 0, *Array.new(11, 0)],
+        [0, 1, *Array.new(11, 0)],
+        [0, 0, *Array.new(11, 0)],
+        [0, 1, *Array.new(11, 0)],
+      ],
+      "constant_reference_links" => [
+        [0, 6],
+        [1, 0],
+        [0, 2],
+        [1, 3],
+        [0, -1],
+        [99, 1],
+        [0, 99],
+        [0],
+        ["0", 1],
+        nil,
+      ],
+      "category_stats" => { "core" => [2, 0, 0, 0], "tests" => [2, 0, 0, 0] },
+      "dependency_signal_maxima" => [3, 3, 0, 0, 30, 3],
+      "packages" => [
+        {
+          "name" => "empty-gem",
+          "role" => 1,
+          "location" => 1,
+          "ruby_counts" => [0, 0, 0, 0],
+          "declarations" => [],
+        },
+        {
+          "name" => "first-gem",
+          "role" => 0,
+          "location" => 1,
+          "ruby_counts" => [1, 1, 0, 0],
+          "declarations" => [
+            [0, 1, 1, 0, 0, 10, 1],
+            [1, 2, 2, 0, 0, 20, 2],
+          ],
+        },
+        {
+          "name" => "second-gem",
+          "role" => 1,
+          "location" => 1,
+          "ruby_counts" => [1, 0, 0, 0],
+          "declarations" => [[0, 3, 3, 0, 0, 30, 3]],
+        },
+      ],
+      "warning_counts" => { "manifest" => 0, "index" => 0, "integrity" => 0 },
+    }
+    builder = RubyLens::ArtModelBuilder.new(seed: 12)
+
+    model = builder.build(snapshot)
+    endpoint = lambda do |index|
+      if index < model.fetch("namespaces").length
+        [:namespace, model.fetch("namespaceNames").fetch(index)]
+      else
+        [:dependency, model.fetch("dependencyStars").fetch(index - model.fetch("namespaces").length).drop(2)]
+      end
+    end
+    links = model.fetch("constantReferenceLinks").map do |referring_index, referenced_index|
+      [endpoint.call(referring_index), endpoint.call(referenced_index)]
+    end
+
+    assert_equal(
+      [
+        [[:namespace, "Demo::Core"], [:dependency, [3, 3, 0, 0, 30, 3]]],
+        [[:namespace, "Demo::Core"], [:namespace, "Demo::CorePeer"]],
+        [[:namespace, "Demo::TestCase"], [:namespace, "Demo::Core"]],
+        [[:namespace, "Demo::TestCase"], [:namespace, "Demo::TestPeer"]],
+      ].sort_by(&:inspect),
+      links.sort_by(&:inspect),
+    )
+    assert_equal(4, links.length)
+    assert(model.fetch("constantReferenceLinks").all? { |row| row.length == 2 && row.all?(Integer) })
+  end
+
+  def test_distinct_dependency_ordinals_survive_duplicate_metric_rows
+    duplicate = [0, 1, 1, 0, 0, 10, 1]
+    snapshot = {
+      "project_name" => "Duplicate Reference Demo",
+      "namespace_names" => ["Demo::Core"],
+      "namespaces" => [[0, 0, *Array.new(11, 0)]],
+      "constant_reference_links" => [
+        [0, 1],
+        [0, 2],
+      ],
+      "category_stats" => { "core" => [1, 0, 0, 0], "tests" => [0, 0, 0, 0] },
+      "dependency_signal_maxima" => [1, 1, 0, 0, 10, 1],
+      "packages" => [{
+        "name" => "duplicate-gem",
+        "role" => 0,
+        "location" => 1,
+        "ruby_counts" => [2, 0, 0, 0],
+        "declarations" => [duplicate.dup, duplicate.dup],
+      }],
+      "warning_counts" => { "manifest" => 0, "index" => 0, "integrity" => 0 },
+    }
+
+    model = RubyLens::ArtModelBuilder.new(seed: 12).build(snapshot)
+    namespace_count = model.fetch("namespaces").length
+    dependency_endpoints = model.fetch("constantReferenceLinks").map do |_from_index, to_index|
+      assert_operator(to_index, :>=, namespace_count)
+      to_index - namespace_count
+    end
+
+    assert_equal(2, dependency_endpoints.length)
+    assert_equal(2, dependency_endpoints.uniq.length)
+    assert_equal(2, model.fetch("dependencyStars").length)
+    assert_equal(1, model.fetch("dependencyStars").map { |row| row.drop(2) }.uniq.length)
   end
 
   def test_preserves_package_ruby_construct_counts
@@ -184,7 +314,7 @@ class ArtModelBuilderTest < Minitest::Test
 
   def test_uses_dependency_domain_maxima_from_the_snapshot
     snapshot = {
-      "schema" => "rubylens.snapshot.v8",
+      "schema" => "rubylens.snapshot.v9",
       "project_name" => "Domain Demo",
       "namespace_names" => [],
       "namespaces" => [],
