@@ -18,6 +18,39 @@ Documentation map for RubyLens. Start with [README.md](README.md) for usage and 
 - [docs/STELLAR_DESIGN_RESEARCH.md](docs/STELLAR_DESIGN_RESEARCH.md) — the astrophysical visual grammar: morphology, light, and performance rules the renderer follows.
 - [docs/specs/2026-07-14-galaxy-morphology-design.md](docs/specs/2026-07-14-galaxy-morphology-design.md) — the accepted deterministic galaxy morphology design.
 
+## Renderer geometry practices
+
+Rules distilled from iterating on the deterministic galaxy recipes in
+`assets/runtime/report.js`. They exist because each one was violated once and
+produced a visual regression that unit tests missed.
+
+- Judge geometry changes by renders, not code review: top-down scatter
+  small-multiples for structure plus real Explorer renders, before and after,
+  including dense realistic star counts — several defects only appear at
+  scale or on real projects.
+- Ground visual tuning in observed galaxy structure (see
+  [docs/STELLAR_DESIGN_RESEARCH.md](docs/STELLAR_DESIGN_RESEARCH.md)) rather
+  than iterating by taste, and prefer physics laws with closed-form
+  inverse-CDF samplers; observation wins over theory when they disagree.
+- Never let draws pile onto a bound: clamping radii or flattening a sweep to
+  a constant concentrates stars into arcs, rings, or spokes. Respread the
+  mass instead, and rely on `test/js/position_distribution.test.mjs` — when
+  adding a recipe, extend it and calibrate thresholds against a known-bad
+  build so the guard demonstrably fails on the defect.
+- A predicate the renderer uses must be the same function any test measures;
+  never let a test assert a proxy gate while the renderer adds conditions.
+- Geometry shared between the project galaxy and dependency clouds must live
+  in one helper; hand-copied variants have diverged before. Verify intended
+  no-op refactors seed-for-seed against the previous runtime.
+- `unit(seed, channel)` draws must keep channels disjoint per population, and
+  `normal(seed, channel)` consumes both `channel` and `channel + 1`;
+  collisions silently bias distributions. Name tuned constants and their
+  channels in a frozen recipe block (see `ARM_RECIPE`) instead of inlining
+  them, keeping only formula-local ratios inline.
+- Every runtime edit moves the assembled-report digest pin in
+  `test/report_asset_assembler_test.rb`; classifier knob changes also need
+  `REGENERATE_FIXTURES=1 bundle exec rake` and the pinned knob rows updated.
+
 ## Rubydex 0.2.9 integration notes
 
 Constraints observed against pinned Rubydex 0.2.9 that shape `lib/rubylens/index/`. Re-verify each one when upgrading the pin; the upstream [API reference](https://shopify.github.io/rubydex/) is the source of truth for the evolving pre-1.0 interface.
