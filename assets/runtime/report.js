@@ -278,6 +278,39 @@
       ];
     }
 
+    // The winding knob maps to a constant pitch angle of roughly 7-24 degrees.
+    const armTanPitch = winding => Math.max(.12, .43 - 1.5 * winding);
+
+    // Constant-pitch logarithmic arm angle shared by the project galaxy and
+    // dependency clouds: exactly one arm trails each bar end (takeoff jitter
+    // stays on the trailing side), each end draws its own seeded pitch so the
+    // pair is not a mirror image, and third and fourth arms are downstream
+    // bifurcations that ride a main arm before forking outward with a looser
+    // pitch, as in real multi-armed barred galaxies.
+    function barredArmTheta(phaseSeed, phase, winding, arm, armRadial, tipRadial) {
+      const barEnd = arm % 2;
+      const branch = Math.floor(arm / 2);
+      const tanPitch = armTanPitch(winding) * (.82 + .36 * unit(phaseSeed, 60 + barEnd));
+      const origin = phase + barEnd * Math.PI + unit(phaseSeed, 66 + barEnd) * .12;
+      let sweep = Math.log(armRadial / tipRadial) / tanPitch;
+      if (branch > 0) {
+        const forkRadial = tipRadial * (1.3 + .5 * unit(phaseSeed, 72 + arm));
+        if (armRadial > forkRadial) {
+          sweep = Math.log(forkRadial / tipRadial) / tanPitch +
+            Math.log(armRadial / forkRadial) / (tanPitch * (1.4 + .5 * unit(phaseSeed, 84 + arm)));
+        }
+      }
+      return origin + sweep;
+    }
+
+    // SB(r) variant: an inner ring hugging the bar ends, slightly elongated
+    // along the bar. Shared by the project galaxy and dependency clouds.
+    function barredRingPlacement(phase, tipRadial, radialUnit, thetaUnit) {
+      const ringTheta = thetaUnit * Math.PI * 2;
+      const across = Math.sin(ringTheta);
+      return [phase + ringTheta, tipRadial * (1.05 + .1 * radialUnit) * (1 - .15 * across * across)];
+    }
+
     // Answers both the arm angle and the point's (possibly adjusted) radius:
     // barred-spiral arms unwind from the bar tips, so arm members that fall
     // inside the bar are respread outward along the arm, densest at the tip.
@@ -285,43 +318,19 @@
       const arm = Math.floor(unit(seed, channel) * morphology.armCount);
       const scatter = .22 - (morphology.armCount - 2) * .025;
       if (morphology.family === MORPHOLOGY_FAMILY.barredSpiral) {
-        const barEnd = arm % 2;
-        const branch = Math.floor(arm / 2);
         const armRadial = radial < barRadius
           ? barRadius + radial / barRadius * (40 - barRadius)
           : radial;
         if (barredRing && unit(seed, channel + 5) < .15) {
-          // SB(r) variant: an inner ring hugging the bar ends, slightly
-          // elongated along the bar.
-          const ringTheta = unit(seed, channel + 7) * Math.PI * 2;
-          const across = Math.sin(ringTheta);
-          const ringRadial = barRadius * (1.05 + .1 * unit(seed, channel + 6)) * (1 - .15 * across * across);
-          return [morphology.phase + ringTheta, ringRadial];
+          return barredRingPlacement(morphology.phase, barRadius, unit(seed, channel + 6), unit(seed, channel + 7));
         }
-        // Constant-pitch logarithmic arm dragged off the bar tip: exactly one
-        // arm trails each end (takeoff jitter stays on the trailing side),
-        // with its own seeded pitch so the pair is not a mirror image. The
-        // winding knob maps to a pitch angle of roughly 7-24 degrees.
-        const tanPitch = Math.max(.12, .43 - 1.5 * morphology.winding) * (.82 + .36 * unit(morphology.phaseSeed, 60 + barEnd));
-        const origin = morphology.phase + barEnd * Math.PI + unit(morphology.phaseSeed, 66 + barEnd) * .12;
-        let sweep = Math.log(armRadial / barRadius) / tanPitch;
-        if (branch > 0) {
-          // Third and fourth arms are downstream bifurcations: they ride the
-          // main arm, then fork outward with a looser pitch, as in real
-          // multi-armed barred galaxies.
-          const forkRadial = barRadius * (1.3 + .5 * unit(morphology.phaseSeed, 72 + arm));
-          if (armRadial > forkRadial) {
-            sweep = Math.log(forkRadial / barRadius) / tanPitch +
-              Math.log(armRadial / forkRadial) / (tanPitch * (1.4 + .5 * unit(morphology.phaseSeed, 84 + arm)));
-          }
-        }
+        const theta = barredArmTheta(morphology.phaseSeed, morphology.phase, morphology.winding, arm, armRadial, barRadius);
         const feather = unit(seed, channel + 2) < .22 ? 2.6 : 1;
         const width = scatter * (.55 + armRadial / 64) * Math.min(1, 36 / armRadial) * feather;
-        return [origin + sweep + normal(seed, channel + 3) * width, armRadial];
+        return [theta + normal(seed, channel + 3) * width, armRadial];
       }
-      const tanPitch = Math.max(.12, .43 - 1.5 * morphology.winding);
       const theta = morphology.phase + arm * Math.PI * 2 / morphology.armCount +
-        Math.log(Math.max(radial, 6) / 6) / tanPitch + normal(seed, channel + 1) * scatter;
+        Math.log(Math.max(radial, 6) / 6) / armTanPitch(morphology.winding) + normal(seed, channel + 1) * scatter;
       return [theta, radial];
     }
 
@@ -506,42 +515,23 @@
       const armCount = Math.max(2, cloud.armCount);
       const arm = Math.floor(unit(seed, 25) * armCount);
       if (barred && !bulge && inArm) {
-        const barEnd = arm % 2;
-        const branch = Math.floor(arm / 2);
         const tipRadial = radius * cloud.barLength;
         const rootShare = (radial / radius - .2) / Math.max(.05, cloud.barLength - .2);
         const armRadial = radial < tipRadial
           ? tipRadial + rootShare * rootShare * (radius * .92 - tipRadial) * .5
           : radial;
         if (unit(cloud.phaseSeed, 88) < .3 && unit(seed, 29) < .15) {
-          const ringTheta = unit(seed, 31) * Math.PI * 2;
-          const across = Math.sin(ringTheta);
-          const ringRadial = tipRadial * (1.05 + .1 * unit(seed, 30)) * (1 - .15 * across * across);
-          return boundedDependencyOffset(
-            Math.cos(cloud.phase + ringTheta) * ringRadial,
-            vertical,
-            Math.sin(cloud.phase + ringTheta) * ringRadial,
-            radius,
-          );
-        }
-        const tanPitch = Math.max(.12, .43 - 1.5 * cloud.winding) * (.82 + .36 * unit(cloud.phaseSeed, 60 + barEnd));
-        const origin = cloud.phase + barEnd * Math.PI + unit(cloud.phaseSeed, 66 + barEnd) * .12;
-        let sweep = Math.log(armRadial / tipRadial) / tanPitch;
-        if (branch > 0) {
-          const forkRadial = tipRadial * (1.3 + .5 * unit(cloud.phaseSeed, 72 + arm));
-          if (armRadial > forkRadial) {
-            sweep = Math.log(forkRadial / tipRadial) / tanPitch +
-              Math.log(armRadial / forkRadial) / (tanPitch * (1.4 + .5 * unit(cloud.phaseSeed, 84 + arm)));
-          }
+          const [ringTheta, ringRadial] = barredRingPlacement(cloud.phase, tipRadial, unit(seed, 30), unit(seed, 31));
+          return boundedDependencyOffset(Math.cos(ringTheta) * ringRadial, vertical, Math.sin(ringTheta) * ringRadial, radius);
         }
         const feather = unit(seed, 28) < .22 ? 2.6 : 1;
         const width = .16 * (.55 + armRadial / (radius * .92)) * Math.min(1, radius * .52 / armRadial) * feather;
-        const theta = origin + sweep + normal(seed, 23) * width;
+        const theta = barredArmTheta(cloud.phaseSeed, cloud.phase, cloud.winding, arm, armRadial, tipRadial) + normal(seed, 23) * width;
         return boundedDependencyOffset(Math.cos(theta) * armRadial, vertical, Math.sin(theta) * armRadial, radius);
       }
       const theta = inArm && !barred && !bulge
         ? cloud.phase + arm * Math.PI * 2 / armCount +
-          Math.log(Math.max(radial, radius * .2) / (radius * .2)) / Math.max(.12, .43 - 1.5 * cloud.winding) + normal(seed, 23) * .17
+          Math.log(Math.max(radial, radius * .2) / (radius * .2)) / armTanPitch(cloud.winding) + normal(seed, 23) * .17
         : cloud.phase + unit(seed, 23) * Math.PI * 2;
       const x = Math.cos(theta) * radial;
       const z = Math.sin(theta) * radial;
