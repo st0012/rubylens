@@ -21,7 +21,6 @@ module RubyLens
         @workspace_location_cache = {}
         @definition_scope_by_uri = {}
         @package_index_by_uri = {}
-        @workspace_definition_names = {}
         @indexed_package_document_paths = Set.new
       end
 
@@ -88,7 +87,6 @@ module RubyLens
           construct_index = ruby_construct_index(declaration)
           workspace_count, tests_only, canonical_site_keys, canonical_scope, package_site_keys =
             summarize_definitions(declaration, is_namespace)
-          @workspace_definition_names[name] = workspace_count.positive?
 
           if canonical_site_keys
             canonical_site_keys = canonical_site_keys.uniq if canonical_site_keys.length > 1
@@ -399,9 +397,11 @@ module RubyLens
         [package_paths, documents_with_paths]
       end
 
-      # Workspace membership of every member declaration was already decided
-      # while collecting the declaration stream, so the sweep only falls back
-      # to re-reading a member's definitions for names the stream never saw.
+      # One sweep over a namespace's direct and singleton members yields the
+      # workspace member count, the method/constant construct counts, and the
+      # instance-variable count that previously took three walks each re-reading
+      # every member's definitions. Membership comes from each member's own
+      # definition locations; the per-URI caches keep that scan cheap.
       def member_statistics(declaration, count_instance_variables:)
         member_count = 0
         instance_variable_count = 0
@@ -415,12 +415,8 @@ module RubyLens
         member_groups << [singleton.members, false] if singleton
         member_groups.each do |members, direct|
           members.each do |member|
-            name = member.name
-            next unless seen_names.add?(name)
-            workspace = @workspace_definition_names.fetch(name) do
-              member.definitions.any? { |definition| workspace_location?(definition.location) }
-            end
-            next unless workspace
+            next unless seen_names.add?(member.name)
+            next unless member.definitions.any? { |definition| workspace_location?(definition.location) }
 
             member_count += 1
             construct_index = ruby_construct_index(member)
