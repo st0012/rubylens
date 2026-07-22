@@ -210,6 +210,57 @@ test("spatially distinct travel wakes are repeatable and follow decoded directio
   expect(second.equals(first)).toBe(true);
 });
 
+test("travel routes stay attached to their stars throughout Clip rotation", async ({ page }) => {
+  const preset = await openShowcaseClip(page);
+  expect(preset.status).toBe("ok");
+  const fps = 60;
+  const flight = await page.evaluate(() => {
+    const episode = travelEpisodesThrough(5_000).find(candidate =>
+      candidate.route &&
+      travelEndpointCategory(constantReferenceLinks[candidate.linkIndex].departureIndex) === "dependencies"
+    );
+    return {
+      linkIndex: episode.linkIndex,
+      startsAt: episode.startsAt,
+      durationMs: TRAVEL_PRESET.flightDurationMs,
+    };
+  });
+  const samples = [];
+
+  for (const rawProgress of [0.15, 0.5, 0.85]) {
+    const frame = Math.round(
+      (flight.startsAt + rawProgress * flight.durationMs) * fps / 1000,
+    );
+    await renderClipFrame(page, frame, fps);
+    samples.push(await page.evaluate(([index, rate, expectedFlight]) => {
+      const elapsed = index * 1000 / rate;
+      const state = travelStatesAt(elapsed).find(candidate =>
+        candidate.episode.linkIndex === expectedFlight.linkIndex &&
+        candidate.episode.startsAt === expectedFlight.startsAt
+      );
+      const route = travelRouteAt(state.episode, elapsed);
+      const link = constantReferenceLinks[state.episode.linkIndex];
+      const matrix = viewMatrix();
+      return {
+        route,
+        departure: projectScenePoint(link.departureIndex, matrix),
+        arrival: projectScenePoint(link.arrivalIndex, matrix),
+      };
+    }, [frame, fps, flight]));
+  }
+
+  for (const sample of samples) {
+    sample.route.departure.forEach((value, index) =>
+      expect(value).toBeCloseTo(sample.departure[index], 8)
+    );
+    sample.route.arrival.forEach((value, index) =>
+      expect(value).toBeCloseTo(sample.arrival[index], 8)
+    );
+  }
+  expect(samples[0].route.departure).not.toEqual(samples.at(-1).route.departure);
+  expect(samples[0].route.arrival).not.toEqual(samples.at(-1).route.arrival);
+});
+
 test("one full turn loops seamlessly at any capture rate", async ({ page }) => {
   const preset = await openShowcaseClip(page);
   expect(preset.status).toBe("ok");

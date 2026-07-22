@@ -38,7 +38,7 @@ const EXPORTS = `;return ({
   project, projectScenePoint, viewMatrix, visibleCategories,
   TRAVEL_PRESET, travelFlightLimitForPointCount, travelFlightLimit,
   constantReferenceLinks, travelEndpointCategory, travelLinkCandidatesForEpisode,
-  travelEpisodesThrough, travelStatesAt,
+  travelEpisodesThrough, travelStatesAt, travelRouteAt,
   travelCurveFits, quadraticCoordinate,
   advanceExplorerDrift, explorerTravelElapsedAt, zoomBetween,
   screenRotationYawSign, drawTravelOverlay,
@@ -76,15 +76,53 @@ function createContext2DStub() {
     strokes: [],
     arcs: [],
     fills: 0,
+    fillPaths: [],
+    pathCommands: [],
+    pathClosed: false,
     pathStart: null,
     pathEnd: null,
+    translation: [0, 0],
+    rotation: 0,
     setTransform() {},
+    translate(x, y) { this.translation = [x, y]; },
+    rotate(angle) { this.rotation += angle; },
     clearRect() {},
-    beginPath() { this.pathStart = null; this.pathEnd = null; },
+    beginPath() {
+      this.pathStart = null;
+      this.pathEnd = null;
+      this.pathCommands = [];
+      this.pathClosed = false;
+    },
     arc(...args) { this.arcs.push(args); },
-    fill() { this.fills += 1; },
-    moveTo(x, y) { this.pathStart = [x, y]; this.pathEnd = [x, y]; },
-    lineTo(x, y) { this.pathEnd = [x, y]; },
+    fill() {
+      this.fills += 1;
+      this.fillPaths.push({
+        commands: this.pathCommands.map(command => [...command]),
+        closed: this.pathClosed,
+        fillStyle: this.fillStyle,
+        shadowColor: this.shadowColor,
+        shadowBlur: this.shadowBlur,
+        translation: [...this.translation],
+        rotation: this.rotation,
+      });
+    },
+    moveTo(x, y) {
+      this.pathStart = [x, y];
+      this.pathEnd = [x, y];
+      this.pathCommands.push(["moveTo", x, y]);
+    },
+    lineTo(x, y) {
+      this.pathEnd = [x, y];
+      this.pathCommands.push(["lineTo", x, y]);
+    },
+    bezierCurveTo(...coordinates) {
+      this.pathEnd = coordinates.slice(-2);
+      this.pathCommands.push(["bezierCurveTo", ...coordinates]);
+    },
+    closePath() {
+      this.pathClosed = true;
+      this.pathCommands.push(["closePath"]);
+    },
     stroke() {
       const from = this.pathStart;
       const to = this.pathEnd;
@@ -100,7 +138,11 @@ function createContext2DStub() {
       });
     },
     save() {
-      savedStates.push(Object.fromEntries(drawingProperties.map(property => [property, this[property]])));
+      savedStates.push({
+        ...Object.fromEntries(drawingProperties.map(property => [property, this[property]])),
+        translation: [...this.translation],
+        rotation: this.rotation,
+      });
     },
     restore() {
       const state = savedStates.pop();
@@ -110,8 +152,13 @@ function createContext2DStub() {
       this.strokes.length = 0;
       this.arcs.length = 0;
       this.fills = 0;
+      this.fillPaths.length = 0;
+      this.pathCommands = [];
+      this.pathClosed = false;
       this.pathStart = null;
       this.pathEnd = null;
+      this.translation = [0, 0];
+      this.rotation = 0;
       savedStates.length = 0;
     },
     getImageData() { return { data: new Uint8ClampedArray(4) }; },
