@@ -210,7 +210,7 @@ test("spatially distinct travel wakes are repeatable and follow decoded directio
   expect(second.equals(first)).toBe(true);
 });
 
-test("travel routes stay attached to their stars throughout Clip rotation", async ({ page }) => {
+test("immutable travel routes follow 4x and 8x Clip cameras", async ({ page }) => {
   const preset = await openShowcaseClip(page);
   expect(preset.status).toBe("ok");
   const fps = 60;
@@ -227,38 +227,111 @@ test("travel routes stay attached to their stars throughout Clip rotation", asyn
   });
   const samples = [];
 
-  for (const rawProgress of [0.15, 0.5, 0.85]) {
-    const frame = Math.round(
-      (flight.startsAt + rawProgress * flight.durationMs) * fps / 1000,
-    );
-    await renderClipFrame(page, frame, fps);
-    samples.push(await page.evaluate(([index, rate, expectedFlight]) => {
-      const elapsed = index * 1000 / rate;
-      const state = travelStatesAt(elapsed).find(candidate =>
-        candidate.episode.linkIndex === expectedFlight.linkIndex &&
-        candidate.episode.startsAt === expectedFlight.startsAt
+  for (const cameraSpeed of [4, 8]) {
+    for (const rawProgress of [0.15, 0.5, 0.85]) {
+      const frame = Math.round(
+        (flight.startsAt + rawProgress * flight.durationMs) * fps / 1000,
       );
-      const route = travelRouteAt(state.episode, elapsed);
-      const link = constantReferenceLinks[state.episode.linkIndex];
-      const matrix = viewMatrix();
-      return {
-        route,
-        departure: projectScenePoint(link.departureIndex, matrix),
-        arrival: projectScenePoint(link.arrivalIndex, matrix),
-      };
-    }, [frame, fps, flight]));
+      await renderClipFrame(page, frame, fps);
+      samples.push(await page.evaluate(([index, rate, expectedFlight, speed, sampleProgress]) => {
+        const elapsed = index * 1000 / rate;
+        const state = travelStatesAt(elapsed).find(candidate =>
+          candidate.episode.linkIndex === expectedFlight.linkIndex &&
+          candidate.episode.startsAt === expectedFlight.startsAt
+        );
+        const route = state.episode.route;
+        const drawnHeads = [];
+        const originalDrawTravelHead = drawTravelHead;
+
+        try {
+          drawTravelHead = (context, x, y, angle, colourChannels, emphasis) => {
+            drawnHeads.push({ x, y });
+            return originalDrawTravelHead(context, x, y, angle, colourChannels, emphasis);
+          };
+          applyShowcaseCamera(showcaseFrameProgress(elapsed * speed));
+          render(elapsed);
+        } finally {
+          drawTravelHead = originalDrawTravelHead;
+        }
+
+        const project = position => {
+          const cy = Math.cos(yaw);
+          const sy = Math.sin(yaw);
+          const cp = Math.cos(pitch);
+          const sp = Math.sin(pitch);
+          const x1 = position[0] * cy - position[2] * sy;
+          const z1 = position[0] * sy + position[2] * cy;
+          const y2 = position[1] * cp - z1 * sp;
+          const z2 = position[1] * sp + z1 * cp;
+          const depth = cameraDistance - z2;
+          if (depth <= 35) return null;
+          const perspective = cameraFocalLength / depth * zoom;
+          return {
+            x: sceneCenterX + panX + x1 * perspective,
+            y: sceneCenterY + panY + y2 * perspective,
+          };
+        };
+        const pointOnRoute = (candidateRoute, progress) => {
+          const inverse = 1 - progress;
+          return [0, 1, 2].map(axis =>
+            inverse * inverse * candidateRoute.departure[axis] +
+            2 * inverse * progress * candidateRoute.control[axis] +
+            progress * progress * candidateRoute.arrival[axis]
+          );
+        };
+        const expectedHeads = [];
+        for (const candidate of travelStatesAt(elapsed)) {
+          if (candidate.visibility < TRAVEL_PRESET.minimumVisibility) continue;
+          const head = project(pointOnRoute(candidate.episode.route, candidate.progress));
+          const tangentProgress = candidate.progress < 0.999
+            ? candidate.progress + 0.001
+            : candidate.progress - 0.001;
+          const tangent = project(pointOnRoute(candidate.episode.route, tangentProgress));
+          if (!head || !tangent) continue;
+          expectedHeads.push({
+            ...head,
+            linkIndex: candidate.episode.linkIndex,
+            startsAt: candidate.episode.startsAt,
+          });
+        }
+        return {
+          cameraSpeed: speed,
+          rawProgress: sampleProgress,
+          route: {
+            departure: [...route.departure],
+            control: [...route.control],
+            arrival: [...route.arrival],
+          },
+          drawnHeads,
+          expectedHeads,
+        };
+      }, [frame, fps, flight, cameraSpeed, rawProgress]));
+    }
   }
 
   for (const sample of samples) {
-    sample.route.departure.forEach((value, index) =>
-      expect(value).toBeCloseTo(sample.departure[index], 8)
-    );
-    sample.route.arrival.forEach((value, index) =>
-      expect(value).toBeCloseTo(sample.arrival[index], 8)
-    );
+    expect(sample.drawnHeads).toHaveLength(sample.expectedHeads.length);
+    expect(sample.drawnHeads.length).toBeGreaterThan(0);
+    for (let index = 0; index < sample.expectedHeads.length; index += 1) {
+      expect(sample.drawnHeads[index].x).toBeCloseTo(sample.expectedHeads[index].x, 8);
+      expect(sample.drawnHeads[index].y).toBeCloseTo(sample.expectedHeads[index].y, 8);
+    }
+    expect(sample.expectedHeads.some(head =>
+      head.linkIndex === flight.linkIndex && head.startsAt === flight.startsAt
+    )).toBe(true);
   }
-  expect(samples[0].route.departure).not.toEqual(samples.at(-1).route.departure);
-  expect(samples[0].route.arrival).not.toEqual(samples.at(-1).route.arrival);
+  for (const sample of samples.slice(1)) expect(sample.route).toEqual(samples[0].route);
+  for (const rawProgress of [0.15, 0.5, 0.85]) {
+    const fourX = samples.find(sample => sample.cameraSpeed === 4 && sample.rawProgress === rawProgress);
+    const eightX = samples.find(sample => sample.cameraSpeed === 8 && sample.rawProgress === rawProgress);
+    const fourXHead = fourX.expectedHeads.find(head =>
+      head.linkIndex === flight.linkIndex && head.startsAt === flight.startsAt
+    );
+    const eightXHead = eightX.expectedHeads.find(head =>
+      head.linkIndex === flight.linkIndex && head.startsAt === flight.startsAt
+    );
+    expect([fourXHead.x, fourXHead.y]).not.toEqual([eightXHead.x, eightXHead.y]);
+  }
 });
 
 test("one full turn loops seamlessly at any capture rate", async ({ page }) => {

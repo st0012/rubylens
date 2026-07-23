@@ -156,18 +156,16 @@
       "arcHeightPercent": 24,
       "arcHeightMin": 16,
       "arcHeightMax": 120,
-      "tailSegments": 24,
-      "tailLengthPx": 218.4,
-      "lineWidth": 2.86,
+      "tailSegments": 12,
+      "tailLengthPx": 145.6,
+      "lineWidth": 1.91,
       "tailAlpha": 0.38,
-      "tailHaloAlpha": 0.09,
-      "tailHaloBlur": 2.86,
       "tailHeadOverlap": 0.82,
-      "headLengthPx": 9.75,
-      "headWidthPx": 2.73,
+      "headLengthPx": 6.5,
+      "headWidthPx": 1.82,
       "headAlpha": 0.64,
       "headGlowAlpha": 0.12,
-      "headGlowBlur": 4.42,
+      "headGlowBlur": 2.95,
       "initialDelayChannel": 13,
       "intervalChannel": 29,
       "handoffGapChannel": 43,
@@ -196,6 +194,7 @@
     const glslVec3 = rgb => `vec3(${rgb.map(channel => channel.toFixed(1)).join(", ")})`;
     const colourStyles = Object.fromEntries(Object.entries(colours).map(([category, rgb]) => [category, `rgb(${rgb.join(",")})`]));
     const projectionScratch = [0, 0, 0];
+    const scenePointPositionScratch = [0, 0, 0];
     const dependencySpinScratch = [0, 0, 0];
     let zoomReadout = null;
     let zoomReadoutText = "";
@@ -1964,12 +1963,12 @@
     model.dependencyStars = [];
 
     function applyCameraTarget(target) {
-      resetExplorerTravel();
       yaw = target.yaw;
       pitch = target.pitch;
       zoom = clamp(target.zoom, MIN_ZOOM, MAX_ZOOM);
       panX = target.panX;
       panY = target.panY;
+      rebaseExplorerTravelAdmission();
     }
 
     function contextualSelectionCameraTarget(point, preferredZoom = point.hub ? 4 : point.category === "dependencies" ? 5 : 7) {
@@ -2083,6 +2082,7 @@
       panY = start.panY + (target.panY - start.panY) * eased;
       const pullback = Math.sin(Math.PI * progress) ** 2 * cameraFlight.pullback;
       zoom = Math.exp(Math.log(start.zoom) + (Math.log(target.zoom) - Math.log(start.zoom)) * eased - pullback);
+      rebaseExplorerTravelAdmission();
       if (progress >= 1) {
         cameraFlight = null;
         applyCameraTarget(finalTarget);
@@ -2522,10 +2522,13 @@
       }
       clearCategoryFocus();
       if (expandDependency && point.systemHub && !point.packageHub) {
+        if (expandedSystemIndex !== point.systemIndex || expandedPackageIndex !== null) resetExplorerTravel();
         expandedSystemIndex = point.systemIndex;
         expandedPackageIndex = null;
       } else if (expandDependency && point.packageHub) {
-        expandedSystemIndex = point.systemIndex >= 0 ? point.systemIndex : null;
+        const systemIndex = point.systemIndex >= 0 ? point.systemIndex : null;
+        if (expandedSystemIndex !== systemIndex || expandedPackageIndex !== point.packageIndex) resetExplorerTravel();
+        expandedSystemIndex = systemIndex;
         expandedPackageIndex = point.packageIndex;
       } else {
         clearExpandedPackage();
@@ -2973,7 +2976,6 @@
       canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
       travelOverlayDirty = false;
-      resetExplorerTravel();
       if (explorerRenderer) explorerRenderer.resize();
       updateSceneViewport();
       requestRender();
@@ -3001,22 +3003,21 @@
       sceneBottom = Math.max(320, sceneBottom);
       sceneCenterX = sceneRight * .5;
       sceneCenterY = sceneBottom * .53;
-      resetExplorerTravel();
     }
 
     function zoomBetween(nextZoom, fromX, fromY, toX = fromX, toY = fromY) {
-      resetExplorerTravel();
       const clampedZoom = clamp(nextZoom, MIN_ZOOM, MAX_ZOOM);
       const scale = clampedZoom / zoom;
       panX = toX - sceneCenterX - (fromX - sceneCenterX - panX) * scale;
       panY = toY - sceneCenterY - (fromY - sceneCenterY - panY) * scale;
       zoom = clampedZoom;
+      rebaseExplorerTravelAdmission();
     }
 
     function panBy(dx, dy) {
-      resetExplorerTravel();
       panX += dx;
       panY += dy;
+      rebaseExplorerTravelAdmission();
     }
 
     function isEditableTarget(target) {
@@ -3123,7 +3124,7 @@
       return null;
     }
 
-    function projectScenePoint(renderIndex, matrix, out, camera = null, spinElapsed = dependencySpinElapsed) {
+    function scenePointWorldPosition(renderIndex, spinElapsed = dependencySpinElapsed, out = [0, 0, 0]) {
       const offset = renderIndex * SCENE_POINT_STRIDE;
       let positionX = sceneData[offset];
       let positionY = sceneData[offset + 1];
@@ -3137,14 +3138,15 @@
         positionZ = spun[2];
       }
       const anchor = dependencyExpansionAnchor(packageIndex, systemIndex);
-      return projectCoordinates(
-        anchor ? anchor[0] + (positionX - anchor[0]) * DEPENDENCY_EXPANSION : positionX,
-        anchor ? anchor[1] + (positionY - anchor[1]) * DEPENDENCY_EXPANSION : positionY,
-        anchor ? anchor[2] + (positionZ - anchor[2]) * DEPENDENCY_EXPANSION : positionZ,
-        matrix,
-        out,
-        camera,
-      );
+      out[0] = anchor ? anchor[0] + (positionX - anchor[0]) * DEPENDENCY_EXPANSION : positionX;
+      out[1] = anchor ? anchor[1] + (positionY - anchor[1]) * DEPENDENCY_EXPANSION : positionY;
+      out[2] = anchor ? anchor[2] + (positionZ - anchor[2]) * DEPENDENCY_EXPANSION : positionZ;
+      return out;
+    }
+
+    function projectScenePoint(renderIndex, matrix, out, camera = null, spinElapsed = dependencySpinElapsed) {
+      const position = scenePointWorldPosition(renderIndex, spinElapsed, scenePointPositionScratch);
+      return projectCoordinates(position[0], position[1], position[2], matrix, out, camera);
     }
 
     function project(point, matrix, out) {
@@ -3159,7 +3161,7 @@
     const travelEpisodes = [];
     let travelScheduleMinute = 0;
     let travelScheduleComplete = false;
-    let explorerTravelCameraOrigin = null;
+    let explorerTravelAdmissionOrigin = null;
     let explorerTravelElapsed = 0;
     let explorerTravelLastTimestamp = null;
     let travelOverlayDirty = false;
@@ -3169,7 +3171,7 @@
       travelEpisodes.length = 0;
       travelScheduleMinute = 0;
       travelScheduleComplete = false;
-      explorerTravelCameraOrigin = null;
+      explorerTravelAdmissionOrigin = null;
       explorerTravelElapsed = 0;
       explorerTravelLastTimestamp = null;
     }
@@ -3250,7 +3252,7 @@
       const normalizedElapsed = showcaseMode
         ? ((elapsed % SHOWCASE_PRESET.durationMs) + SHOWCASE_PRESET.durationMs) % SHOWCASE_PRESET.durationMs
         : Math.max(0, elapsed);
-      ensureTravelEpisodesThrough(normalizedElapsed, normalizedElapsed);
+      ensureTravelEpisodesThrough(normalizedElapsed);
       return travelEpisodes.slice(0, travelEpisodeUpperBound(normalizedElapsed));
     }
 
@@ -3259,7 +3261,7 @@
       const normalizedElapsed = showcaseMode
         ? ((elapsed % SHOWCASE_PRESET.durationMs) + SHOWCASE_PRESET.durationMs) % SHOWCASE_PRESET.durationMs
         : Math.max(0, elapsed);
-      ensureTravelEpisodesThrough(normalizedElapsed, normalizedElapsed);
+      ensureTravelEpisodesThrough(normalizedElapsed);
       const states = [];
       for (let index = travelEpisodeUpperBound(normalizedElapsed) - 1; index >= 0; index -= 1) {
         const episode = travelEpisodes[index];
@@ -3290,35 +3292,11 @@
       return inverse * inverse * start + 2 * inverse * progress * control + progress * progress * end;
     }
 
-    function quadraticCoordinateFits(start, control, end, low, high) {
-      let minimum = Math.min(start, end);
-      let maximum = Math.max(start, end);
-      const denominator = start - 2 * control + end;
-      if (Math.abs(denominator) > 1e-9) {
-        const progress = (start - control) / denominator;
-        if (progress > 0 && progress < 1) {
-          const extremum = quadraticCoordinate(start, control, end, progress);
-          minimum = Math.min(minimum, extremum);
-          maximum = Math.max(maximum, extremum);
-        }
-      }
-      return minimum >= low && maximum <= high;
-    }
-
-    function travelCurveFits(route, right, bottom, inset) {
-      return quadraticCoordinateFits(
-        route.departure[0],
-        route.controlX,
-        route.arrival[0],
-        inset,
-        right - inset,
-      ) && quadraticCoordinateFits(
-        route.departure[1],
-        route.controlY,
-        route.arrival[1],
-        inset,
-        bottom - inset,
-      );
+    function travelGuideFits(route, right, bottom, inset) {
+      return Math.min(route.departure[0], route.controlX, route.arrival[0]) >= inset &&
+        Math.max(route.departure[0], route.controlX, route.arrival[0]) <= right - inset &&
+        Math.min(route.departure[1], route.controlY, route.arrival[1]) >= inset &&
+        Math.max(route.departure[1], route.controlY, route.arrival[1]) <= bottom - inset;
     }
 
     function travelGeometry(departure, arrival, arcDirection) {
@@ -3369,11 +3347,10 @@
       return arcDirection > 0 ? positiveRoute : travelGeometry(departure, arrival, -1);
     }
 
-    function beginExplorerTravelCamera(elapsed) {
-      if (explorerTravelCameraOrigin) return;
+    function beginExplorerTravelAdmission(elapsed) {
+      if (explorerTravelAdmissionOrigin) return;
       const yawDirection = screenRotationYawSign(pitch);
-      explorerTravelCameraOrigin = {
-        elapsed: 0,
+      explorerTravelAdmissionOrigin = {
         yaw: yaw - yawDirection * DRIFT_RADIANS_PER_SECOND * elapsed / 1000,
         yawDirection,
         pitch,
@@ -3384,11 +3361,23 @@
       };
     }
 
-    function travelCameraAt(elapsed) {
+    function rebaseExplorerTravelAdmission() {
+      if (!explorerTravelAdmissionOrigin) return;
+      const yawDirection = screenRotationYawSign(pitch);
+      explorerTravelAdmissionOrigin.yaw = yaw - yawDirection * DRIFT_RADIANS_PER_SECOND *
+        explorerTravelElapsed / 1000;
+      explorerTravelAdmissionOrigin.yawDirection = yawDirection;
+      explorerTravelAdmissionOrigin.pitch = pitch;
+      explorerTravelAdmissionOrigin.zoom = zoom;
+      explorerTravelAdmissionOrigin.panX = panX;
+      explorerTravelAdmissionOrigin.panY = panY;
+    }
+
+    function travelAdmissionCameraAt(elapsed) {
       if (showcaseMode) return showcaseCameraState(showcaseFrameProgress(elapsed));
-      const origin = explorerTravelCameraOrigin;
+      const origin = explorerTravelAdmissionOrigin;
       return {
-        yaw: origin.yaw + origin.yawDirection * DRIFT_RADIANS_PER_SECOND * (elapsed - origin.elapsed) / 1000,
+        yaw: origin.yaw + origin.yawDirection * DRIFT_RADIANS_PER_SECOND * elapsed / 1000,
         pitch: origin.pitch,
         zoom: origin.zoom,
         panX: origin.panX,
@@ -3396,18 +3385,15 @@
       };
     }
 
-    function travelSpinElapsedAt(elapsed) {
-      if (showcaseMode) return elapsed;
-      return explorerTravelCameraOrigin.spinElapsed + elapsed;
-    }
-
-    function travelCameraMatrix(camera) {
-      return [
-        Math.cos(camera.yaw),
-        Math.sin(camera.yaw),
-        Math.cos(camera.pitch),
-        Math.sin(camera.pitch),
-      ];
+    function unprojectCoordinates(screenX, screenY, depth, matrix, camera) {
+      const [cy, sy, cp, sp] = matrix;
+      const perspective = cameraFocalLength / depth * camera.zoom;
+      const x1 = (screenX - sceneCenterX - camera.panX) / perspective;
+      const y2 = (screenY - sceneCenterY - camera.panY) / perspective;
+      const z2 = cameraDistance - depth;
+      const positionY = y2 * cp + z2 * sp;
+      const z1 = -y2 * sp + z2 * cp;
+      return [x1 * cy + z1 * sy, positionY, -x1 * sy + z1 * cy];
     }
 
     function prepareTravelRoute(episodeIndex, episode, right, bottom) {
@@ -3416,49 +3402,64 @@
       const arrivalCategory = travelEndpointCategory(link.arrivalIndex);
       if (!visibleCategories[departureCategory] || !visibleCategories[arrivalCategory]) return null;
       const midpoint = episode.startsAt + TRAVEL_PRESET.flightDurationMs / 2;
-      const camera = travelCameraAt(midpoint);
-      const matrix = travelCameraMatrix(camera);
-      const spinElapsed = travelSpinElapsedAt(midpoint);
-      const departure = projectScenePoint(link.departureIndex, matrix, [0, 0, 0], camera, spinElapsed);
-      const arrival = projectScenePoint(link.arrivalIndex, matrix, [0, 0, 0], camera, spinElapsed);
-      if (!departure || !arrival) return null;
-      const route = prepareTravelGeometry(
+      const camera = travelAdmissionCameraAt(midpoint);
+      const matrix = [
+        Math.cos(camera.yaw),
+        Math.sin(camera.yaw),
+        Math.cos(camera.pitch),
+        Math.sin(camera.pitch),
+      ];
+      const spinOrigin = showcaseMode ? 0 : explorerTravelAdmissionOrigin.spinElapsed;
+      const departure = scenePointWorldPosition(
+        link.departureIndex,
+        spinOrigin + episode.startsAt,
+      );
+      const arrival = scenePointWorldPosition(
+        link.arrivalIndex,
+        spinOrigin + episode.startsAt + TRAVEL_PRESET.flightDurationMs,
+      );
+      const projectedDeparture = projectCoordinates(
+        departure[0], departure[1], departure[2], matrix, [0, 0, 0], camera,
+      );
+      const projectedArrival = projectCoordinates(
+        arrival[0], arrival[1], arrival[2], matrix, [0, 0, 0], camera,
+      );
+      if (!projectedDeparture || !projectedArrival) return null;
+      const admittedRoute = prepareTravelGeometry(
         link,
         episodeIndex,
-        departure,
-        arrival,
+        projectedDeparture,
+        projectedArrival,
         right,
         bottom,
         TRAVEL_PRESET.admissionInsetPx,
       );
-      return route && travelCurveFits(route, right, bottom, TRAVEL_PRESET.admissionInsetPx) ? route : null;
+      if (!admittedRoute || !travelGuideFits(
+        admittedRoute,
+        right,
+        bottom,
+        TRAVEL_PRESET.admissionInsetPx,
+      )) return null;
+      const departureDepth = cameraFocalLength * camera.zoom / projectedDeparture[2];
+      const arrivalDepth = cameraFocalLength * camera.zoom / projectedArrival[2];
+      const control = unprojectCoordinates(
+        admittedRoute.controlX,
+        admittedRoute.controlY,
+        (departureDepth + arrivalDepth) / 2,
+        matrix,
+        camera,
+      );
+      return { departure, control, arrival };
     }
 
-    function travelRouteAt(episode, elapsed) {
-      if (!episode.route) return null;
-      const link = constantReferenceLinks[episode.linkIndex];
-      const camera = travelCameraAt(elapsed);
-      const matrix = travelCameraMatrix(camera);
-      const spinElapsed = travelSpinElapsedAt(elapsed);
-      const departure = projectScenePoint(link.departureIndex, matrix, [0, 0, 0], camera, spinElapsed);
-      const arrival = projectScenePoint(link.arrivalIndex, matrix, [0, 0, 0], camera, spinElapsed);
-      if (!departure || !arrival) return null;
-      const admitted = episode.route;
-      const admittedDx = admitted.arrival[0] - admitted.departure[0];
-      const admittedDy = admitted.arrival[1] - admitted.departure[1];
-      const arcCrossProduct = admittedDx * (admitted.controlY - admitted.departure[1]) -
-        admittedDy * (admitted.controlX - admitted.departure[0]);
-      return travelGeometry(departure, arrival, arcCrossProduct < 0 ? -1 : 1);
-    }
-
-    function ensureTravelEpisodesThrough(elapsed, cameraElapsed) {
+    function ensureTravelEpisodesThrough(elapsed) {
       const minute = Math.floor(elapsed / SHOWCASE_PRESET.durationMs);
       if (travelScheduleMinute !== minute) {
         travelEpisodes.length = 0;
         travelScheduleMinute = minute;
         travelScheduleComplete = false;
       }
-      if (!showcaseMode) beginExplorerTravelCamera(cameraElapsed);
+      if (!showcaseMode) beginExplorerTravelAdmission(elapsed);
       const right = interactiveMode ? sceneRight : width;
       const bottom = interactiveMode ? sceneBottom : height;
       while (!travelScheduleComplete && (!travelEpisodes.length || travelEpisodes.at(-1).startsAt <= elapsed)) {
@@ -3501,8 +3502,14 @@
       }
     }
 
-    function travelWakeWeight(position) {
-      return 0.12 + 0.88 * Math.pow(position, 1.45);
+    function projectTravelRoutePoint(route, progress, matrix, out) {
+      return projectCoordinates(
+        quadraticCoordinate(route.departure[0], route.control[0], route.arrival[0], progress),
+        quadraticCoordinate(route.departure[1], route.control[1], route.arrival[1], progress),
+        quadraticCoordinate(route.departure[2], route.control[2], route.arrival[2], progress),
+        matrix,
+        out,
+      );
     }
 
     function drawTravelHead(context, x, y, angle, colourChannels, emphasis) {
@@ -3575,13 +3582,20 @@
       travelContext.save();
       travelContext.globalCompositeOperation = "lighter";
       travelContext.lineCap = "round";
+      travelContext.shadowColor = "transparent";
+      travelContext.shadowBlur = 0;
+      const matrix = viewMatrix();
       for (const state of states) {
         const { episode, progress, visibility } = state;
         if (visibility < TRAVEL_PRESET.minimumVisibility) continue;
-        const route = travelRouteAt(episode, elapsed);
-        if (!route) continue;
-        const { departure, arrival, controlX, controlY } = route;
-        const distance = Math.hypot(arrival[0] - departure[0], arrival[1] - departure[1]);
+        const route = episode.route;
+        const head = projectTravelRoutePoint(route, progress, matrix, [0, 0, 0]);
+        const tangentProgress = progress < 0.999 ? progress + 0.001 : progress - 0.001;
+        const tangent = projectTravelRoutePoint(route, tangentProgress, matrix, [0, 0, 0]);
+        const pixelsPerProgress = head && tangent
+          ? Math.max(1, Math.hypot(tangent[0] - head[0], tangent[1] - head[1]) /
+            Math.abs(tangentProgress - progress))
+          : TRAVEL_PRESET.tailLengthPx / TRAVEL_PRESET.tailFraction;
         const link = constantReferenceLinks[episode.linkIndex];
         const departureCategory = travelEndpointCategory(link.departureIndex);
         const arrivalCategory = travelEndpointCategory(link.arrivalIndex);
@@ -3590,43 +3604,44 @@
         const emphasis = Math.min(travelEmphasis(departureCategory), travelEmphasis(arrivalCategory)) *
           travelCategoryAlpha(departureCategory) * visibility;
 
-        travelContext.shadowBlur = TRAVEL_PRESET.tailHaloBlur;
         const wakeEnd = Math.max(
           0,
-          progress - TRAVEL_PRESET.headLengthPx * (1 - TRAVEL_PRESET.tailHeadOverlap) / distance,
+          progress - TRAVEL_PRESET.headLengthPx * (1 - TRAVEL_PRESET.tailHeadOverlap) / pixelsPerProgress,
         );
         const drawnTailStart = Math.max(
           0,
           wakeEnd - TRAVEL_PRESET.tailFraction,
-          wakeEnd - TRAVEL_PRESET.tailLengthPx / distance,
+          wakeEnd - TRAVEL_PRESET.tailLengthPx / pixelsPerProgress,
         );
-        let previousX = quadraticCoordinate(departure[0], controlX, arrival[0], drawnTailStart);
-        let previousY = quadraticCoordinate(departure[1], controlY, arrival[1], drawnTailStart);
+        let previous = [0, 0, 0];
+        let current = [0, 0, 0];
+        let previousVisible = Boolean(projectTravelRoutePoint(route, drawnTailStart, matrix, previous));
         for (let segment = 1; segment <= TRAVEL_PRESET.tailSegments; segment += 1) {
           const position = segment / TRAVEL_PRESET.tailSegments;
-          const weight = travelWakeWeight(position);
+          const weight = 0.12 + 0.88 * Math.pow(position, 1.45);
           const segmentProgress = drawnTailStart + (wakeEnd - drawnTailStart) * position;
-          const x = quadraticCoordinate(departure[0], controlX, arrival[0], segmentProgress);
-          const y = quadraticCoordinate(departure[1], controlY, arrival[1], segmentProgress);
-          travelContext.beginPath();
-          travelContext.moveTo(previousX, previousY);
-          travelContext.lineTo(x, y);
-          travelContext.shadowColor = `rgba(${departureColourChannels},${(TRAVEL_PRESET.tailHaloAlpha * emphasis * weight).toFixed(4)})`;
-          travelContext.strokeStyle = `rgba(${departureColourChannels},${(TRAVEL_PRESET.tailAlpha * emphasis * weight).toFixed(4)})`;
-          travelContext.lineWidth = TRAVEL_PRESET.lineWidth * (0.28 + weight * 0.72);
-          travelContext.stroke();
-          previousX = x;
-          previousY = y;
+          const currentVisible = Boolean(projectTravelRoutePoint(route, segmentProgress, matrix, current));
+          if (previousVisible && currentVisible) {
+            travelContext.beginPath();
+            travelContext.moveTo(previous[0], previous[1]);
+            travelContext.lineTo(current[0], current[1]);
+            travelContext.strokeStyle = `rgba(${departureColourChannels},${(TRAVEL_PRESET.tailAlpha * emphasis * weight).toFixed(4)})`;
+            travelContext.lineWidth = TRAVEL_PRESET.lineWidth * (0.28 + weight * 0.72);
+            travelContext.stroke();
+            drewTravel = true;
+          }
+          const swap = previous;
+          previous = current;
+          current = swap;
+          previousVisible = currentVisible;
         }
-        const headX = quadraticCoordinate(departure[0], controlX, arrival[0], progress);
-        const headY = quadraticCoordinate(departure[1], controlY, arrival[1], progress);
-        const inverseProgress = 1 - progress;
-        const tangentX = 2 * inverseProgress * (controlX - departure[0]) + 2 * progress * (arrival[0] - controlX);
-        const tangentY = 2 * inverseProgress * (controlY - departure[1]) + 2 * progress * (arrival[1] - controlY);
+        if (!head || !tangent) continue;
+        const tangentX = tangentProgress > progress ? tangent[0] - head[0] : head[0] - tangent[0];
+        const tangentY = tangentProgress > progress ? tangent[1] - head[1] : head[1] - tangent[1];
         drawTravelHead(
           travelContext,
-          headX,
-          headY,
+          head[0],
+          head[1],
           Math.atan2(tangentY, tangentX),
           departureColourChannels,
           emphasis,
@@ -3651,7 +3666,7 @@
 
     function updateExplorerOverlay(timestamp) {
       if (constantReferenceLinks.length) {
-        const travelEnabled = drifting && !cameraFlight && !dragging && pointers.size === 0;
+        const travelEnabled = drifting;
         drawTravelOverlay(explorerTravelElapsedAt(timestamp, travelEnabled), travelEnabled);
       } else {
         hideTravelOverlay();
@@ -4022,9 +4037,9 @@
       if (Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) > 3) gesture.moved = true;
       if (gesture.mode === "pan") panBy(dx, dy);
       else {
-        resetExplorerTravel();
         yaw += dx * .006;
         pitch = clamp(pitch + dy * .004, -TOP_DOWN_PITCH, TOP_DOWN_PITCH);
+        rebaseExplorerTravelAdmission();
       }
       gesture.lastX = event.clientX;
       gesture.lastY = event.clientY;
