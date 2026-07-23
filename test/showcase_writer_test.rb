@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "base64"
 require_relative "test_helper"
 
 class ShowcaseWriterTest < Minitest::Test
@@ -21,6 +22,10 @@ class ShowcaseWriterTest < Minitest::Test
       html = File.read(output)
 
       assert(RubyLens::ArtifactMarker.present?(output, RubyLens::ShowcaseWriter::MARKER))
+      # The embedded model must decode back to what was written: a leftover
+      # placeholder or wrong payload fails here, before a browser ever parses.
+      encoded = html.match(/atob\("([A-Za-z0-9+\/=]+)"\)/).captures.first
+      assert_equal(model, JSON.parse(Base64.strict_decode64(encoded)))
 
       # The shipped assets arrive verbatim: shell segments, the stylesheet in
       # full, and the runtime around the one model substitution. What the
