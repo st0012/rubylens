@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { loadRuntime, minimalModel } from "./helpers/runtime.mjs";
-import { RUNTIME_SOURCE, runtimeFunction } from "./helpers/runtime_source.mjs";
+import { orderedIndex, RUNTIME_SOURCE, runtimeFunction } from "./helpers/runtime_source.mjs";
 
 // The approved Showcase contract, moved from the retired Ruby string checks.
 // Preset objects are asserted against the live runtime bindings; shipped-text
@@ -61,13 +61,6 @@ const functionBody = name => {
   const match = RUNTIME_SOURCE.match(new RegExp(`function ${name}\\([^)]*\\) \\{([\\s\\S]*?)^    \\}`, "m"));
   if (!match) throw new Error(`${name} function not found in the runtime`);
   return match[1];
-};
-// Ordering contracts must fail when a marker disappears: a bare indexOf would
-// return -1 and satisfy the comparison vacuously.
-const orderedIndex = (source, marker) => {
-  const index = source.indexOf(marker);
-  expect(index, `expected choreography marker ${JSON.stringify(marker)}`).toBeGreaterThanOrEqual(0);
-  return index;
 };
 
 describe("showcase contract", () => {

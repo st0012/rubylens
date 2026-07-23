@@ -15,3 +15,11 @@ export function runtimeFunction(name) {
   if (!match) throw new Error(`${name} function not found in the runtime`);
   return match[0];
 }
+
+// Ordering contracts must fail when a marker disappears: a bare indexOf would
+// return -1 and satisfy any before/after comparison vacuously.
+export function orderedIndex(source, marker) {
+  const index = source.indexOf(marker);
+  if (index < 0) throw new Error(`expected ordering marker ${JSON.stringify(marker)} in the runtime`);
+  return index;
+}

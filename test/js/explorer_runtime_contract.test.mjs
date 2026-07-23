@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RUNTIME_SOURCE, runtimeFunction } from "./helpers/runtime_source.mjs";
+import { orderedIndex, RUNTIME_SOURCE, runtimeFunction } from "./helpers/runtime_source.mjs";
 
 describe("explorer runtime contract", () => {
   it("partial index status is an accessible bounded disclosure", () => {
@@ -106,8 +106,8 @@ describe("explorer runtime contract", () => {
     expect(dblclick).toMatch(/if \(target\) \{\s+navigateToSelection\(target\);\s+return;\s+\}/s);
     expect(dblclick).toContain("if (exact) return;");
     expect(dblclick).toContain("zoomBetween(event.shiftKey ? zoom / 2 : zoom * 2, event.clientX, event.clientY)");
-    expect(dblclick.indexOf("if (exact) return;")).toBeLessThan(dblclick.indexOf("cancelCameraFlight()"));
-    expect(dblclick.indexOf("const target = rememberedPoint ||")).toBeLessThan(dblclick.indexOf("if (target?.category"));
+    expect(orderedIndex(dblclick, "if (exact) return;")).toBeLessThan(orderedIndex(dblclick, "cancelCameraFlight()"));
+    expect(orderedIndex(dblclick, "const target = rememberedPoint ||")).toBeLessThan(orderedIndex(dblclick, "if (target?.category"));
   });
 
   it("view shortcuts work regardless of focus with editable guards", () => {
@@ -193,7 +193,7 @@ describe("explorer runtime contract", () => {
     expect(RUNTIME_SOURCE).toContain("else focusPoint(point)");
     expect(RUNTIME_SOURCE).toContain("event.stopPropagation()");
     expect(RUNTIME_SOURCE).toContain("clearSearch({ focus: true })");
-    expect(RUNTIME_SOURCE.indexOf("function initializeSearch()")).toBeGreaterThan(RUNTIME_SOURCE.indexOf("function ensureSearchIndex()"));
+    expect(orderedIndex(RUNTIME_SOURCE, "function initializeSearch()")).toBeGreaterThan(orderedIndex(RUNTIME_SOURCE, "function ensureSearchIndex()"));
     expect(RUNTIME_SOURCE).not.toMatch(/function render\(timestamp\).*?ensureSearchIndex/s);
   });
 
@@ -236,12 +236,12 @@ describe("explorer runtime contract", () => {
     expect(disabledControls).toContain('document.querySelector(".toolbar").hidden = true');
 
     const render = runtimeFunction("render");
-    expect(render.indexOf("if (!explorerRenderer) return")).toBeLessThan(render.indexOf("advanceExplorerDrift(timestamp)"));
+    expect(orderedIndex(render, "if (!explorerRenderer) return")).toBeLessThan(orderedIndex(render, "advanceExplorerDrift(timestamp)"));
     expect(runtimeFunction("hitTest")).toContain("return explorerRenderer ? hitTestProjected(x, y) : null");
     expect(runtimeFunction("dependencyPackageAt")).toContain("if (!explorerRenderer) return null");
 
     expect(RUNTIME_SOURCE).toContain('document.documentElement.dataset.showcaseRenderer = "unavailable"');
-    expect(RUNTIME_SOURCE.indexOf("const dependencyRubyCounts")).toBeLessThan(RUNTIME_SOURCE.indexOf("model.dependencyStars = []"));
+    expect(orderedIndex(RUNTIME_SOURCE, "const dependencyRubyCounts")).toBeLessThan(orderedIndex(RUNTIME_SOURCE, "model.dependencyStars = []"));
   });
 
   it("unavailable renderer uses the standard warning disclosure", () => {
@@ -254,5 +254,24 @@ describe("explorer runtime contract", () => {
     expect(disclosure).toContain('"Unavailable"');
     expect(disclosure).toContain('appendWarningGroup(container, "Code analysis", counts.index');
     expect(disclosure).toContain('appendWarningGroup(container, "Integrity checks", counts.integrity');
+  });
+  it("keeps panel and tooltip Ruby metric contracts", () => {
+    // Restored from the retired Ruby writer assertions: the panel breakdown
+    // and tooltip metrics are runtime feature contracts, not splice checks.
+    expect(RUNTIME_SOURCE).toContain('const rubyMetricLabels = ["Classes", "Modules", "Methods", "Constants"]');
+    expect(RUNTIME_SOURCE).toContain("function createRubyBreakdown");
+    expect(RUNTIME_SOURCE).toContain("const testRubyMetricIndexes = [0, 2]");
+    expect(RUNTIME_SOURCE).toContain("function addCoreTooltipMetrics");
+    expect(RUNTIME_SOURCE).toContain('addTooltipMetric("Ancestors", point.values[0])');
+    expect(RUNTIME_SOURCE).toContain('addTooltipMetric("Descendants", point.values[3])');
+    expect(RUNTIME_SOURCE).toContain('addTooltipMetric("References", point.values[4])');
+    expect(RUNTIME_SOURCE).toContain('addTooltipMetric("Instance variables", point.instanceVariableCount)');
+    expect(RUNTIME_SOURCE).toContain('if (point.category === "core") addCoreTooltipMetrics(point)');
+    expect(RUNTIME_SOURCE).toContain("Most methods");
+    expect(RUNTIME_SOURCE).toContain("Most constants");
+    expect(RUNTIME_SOURCE).toContain("Ruby code highlights");
+    expect(RUNTIME_SOURCE).toContain("Expanded gem cloud");
+    expect(RUNTIME_SOURCE).toContain("arrow keys to move the view");
+    expect(RUNTIME_SOURCE).toContain("Shift-drag or Pan mode to move");
   });
 });

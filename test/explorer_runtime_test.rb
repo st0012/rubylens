@@ -8,6 +8,15 @@ class ExplorerRuntimeTest < Minitest::Test
   SHELL = File.read(File.join(ROOT, "assets/shells/report.html"))
   STYLES = File.read(File.join(ROOT, "assets/styles/report.css"))
 
+  def test_toolbar_and_footer_affordances_stay_accessible
+    # Restored shell contracts: toolbar accessibility and the interaction
+    # footer are shell content the assembler ships verbatim.
+    assert_includes(SHELL, 'aria-label="Pan mode"')
+    assert_includes(SHELL, 'aria-keyshortcuts="Space"')
+    assert_includes(SHELL, 'id="reset-view" aria-label="Reset to default view"')
+    assert_includes(SHELL, "Double-click a dependency system or gem cloud, press Enter or F on its selected marker")
+  end
+
   def test_galaxy_summary_sits_with_the_title
     assert_match(%r{<h1>Ruby project</h1>\s*<p class="galaxy-summary" id="galaxy-summary"></p>}, SHELL)
     assert_includes(STYLES, ".galaxy-summary")
