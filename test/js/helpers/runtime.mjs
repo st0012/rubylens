@@ -24,7 +24,8 @@ const BODY = SHELL.match(/<body>([\s\S]*)<\/body>/)[1]
 const EXPORTS = `;return ({
   decodeMorphology, fallbackMorphology, morphology, packageMorphologies, layoutScale,
   irregularClumpCenters, coreDiscUsesArm,
-  sceneModel, galaxyModels, collectionMode, projectLabels, galaxyGroups,
+  sceneModel, galaxyModels, collectionMode, projectLabels, galaxyGroups, rawGalaxies,
+  COLLECTION_LAYOUT, cameraDistance, cameraFocalLength,
   layoutMetricsForCoreCount, normalizedSignals, weightedSignal, explorerExposureForZoom,
   corePosition, testPosition, dependencyCloudOffset, dependencyPosition,
   systemMembers, systemAggregates, dependencyAnchor, systemAnchors, packageAnchors,

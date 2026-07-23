@@ -96,6 +96,39 @@ test("orbits every galaxy together through one shared camera", async ({ page }) 
   expect(afterScene.positions).toEqual(beforeScene.positions);
 });
 
+test("fits the expanded collection into the available narrow viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 1400 });
+  await page.goto(PAIR);
+  await waitForScene(page);
+  await page.locator("#motion").click();
+
+  const layout = await page.evaluate(() => {
+    const [left, right, top, bottom] = collectionDefaultProjectionBounds;
+    return {
+      zoom,
+      nominalZoom: DEFAULT_CAMERA.zoom,
+      padding: COLLECTION_LAYOUT.viewportPadding,
+      sceneRight,
+      sceneBottom,
+      bounds: [
+        sceneCenterX + left * zoom,
+        sceneCenterX + right * zoom,
+        sceneCenterY + top * zoom,
+        sceneCenterY + bottom * zoom,
+      ],
+    };
+  });
+
+  expect(layout.zoom).toBeLessThan(layout.nominalZoom);
+  expect(layout.bounds[0]).toBeGreaterThanOrEqual(layout.padding - 1);
+  expect(layout.bounds[1]).toBeLessThanOrEqual(layout.sceneRight - layout.padding + 1);
+  expect(layout.bounds[2]).toBeGreaterThanOrEqual(layout.padding - 1);
+  expect(layout.bounds[3]).toBeLessThanOrEqual(layout.sceneBottom - layout.padding + 1);
+  await expect(page.locator(".project-label")).toHaveCount(2);
+  await expect(page.locator(".project-label").nth(0)).toBeVisible();
+  await expect(page.locator(".project-label").nth(1)).toBeVisible();
+});
+
 test("searches across projects and keeps project provenance", async ({ page }) => {
   await page.goto(PAIR);
   await waitForScene(page);

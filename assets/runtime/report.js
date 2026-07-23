@@ -46,6 +46,12 @@
     let width = 0, height = 0, dpr = 1, sceneRight = 0, sceneBottom = 0, sceneCenterX = 0, sceneCenterY = 0, yaw = -.36, pitch = .34, zoom = 1, panX = 0, panY = 0, dragging = false, gesture = null, pinchState = null, animationFrame = 0, hoverFrame = 0, pendingHover = null, selectedPoint = null, selectionLocked = false, focusedCategory = null, expandedSystemIndex = null, expandedPackageIndex = null, activeFactButton = null, navigationMode = "orbit", cameraFlight = null, showcaseStartedAt = null, showcaseRenderer = null, showcaseAnnotationSlot = -1, activeShowcaseAnnotation = null, clipMode = false, dependencySpinElapsed = 0;
     const MIN_ZOOM = .35, MAX_ZOOM = 40, ZOOM_STEP = 1.7, DEPENDENCY_EXPANSION = 2.35;
     const CORE_SCALE_BASELINE = 3_000;
+    const BASE_CAMERA_DISTANCE = 270;
+    const COLLECTION_LAYOUT = Object.freeze({
+      galaxyGap: 48,
+      cameraDepthPadding: 4,
+      viewportPadding: 32,
+    });
     const DEPENDENCY_CLOUD_THRESHOLD = 18;
     const DEPENDENCY_HALO_SPACING_SCALE = 1.15;
     const DEPENDENCY_STAR_ALPHA_SCALE = .85;
@@ -334,7 +340,7 @@
         bulge: Math.pow(coreRatio, .35),
         tests,
         cameraScale,
-        cameraDistance: 270 * cameraScale * testExtent / 62,
+        cameraDistance: BASE_CAMERA_DISTANCE * cameraScale * testExtent / 62,
         cameraFocalLength: 440,
         coreOuterRadius: coreExtent * disk,
         testOuterRadius: testExtent * tests,
@@ -1032,9 +1038,52 @@
       projectNameOrdinals.set(name, ordinal);
       return `${name} (${ordinal})`;
     });
-    const sharedCameraDistance = collectionMode ? 270 : rawGalaxies[0].cameraDistance;
-    const sharedCameraFocalLength = rawGalaxies[0].cameraFocalLength;
-    const galaxySpacing = 240;
+    const galaxyScales = rawGalaxies.map(rawScene => (
+      collectionMode ? BASE_CAMERA_DISTANCE / rawScene.cameraDistance : 1
+    ));
+    const galaxyRadii = collectionMode
+      ? rawGalaxies.map((rawScene, projectIndex) => {
+          let radius = 0;
+          for (let offset = 0; offset < rawScene.sceneData.length; offset += SCENE_POINT_STRIDE) {
+            radius = Math.max(radius, Math.hypot(
+              rawScene.sceneData[offset],
+              rawScene.sceneData[offset + 1],
+              rawScene.sceneData[offset + 2],
+            ));
+          }
+          return radius * galaxyScales[projectIndex];
+        })
+      : [0];
+    const galaxyWorldOffsets = new Array(rawGalaxies.length).fill(0);
+    if (collectionMode) {
+      for (let index = 1; index < rawGalaxies.length; index += 1) {
+        galaxyWorldOffsets[index] = galaxyWorldOffsets[index - 1] +
+          galaxyRadii[index - 1] + COLLECTION_LAYOUT.galaxyGap + galaxyRadii[index];
+      }
+      const leftEdge = galaxyWorldOffsets[0] - galaxyRadii[0];
+      const lastIndex = galaxyWorldOffsets.length - 1;
+      const rightEdge = galaxyWorldOffsets[lastIndex] + galaxyRadii[lastIndex];
+      const worldCenter = (leftEdge + rightEdge) / 2;
+      for (let index = 0; index < galaxyWorldOffsets.length; index += 1) {
+        galaxyWorldOffsets[index] -= worldCenter;
+      }
+    }
+    const galaxyCenterExtent = galaxyWorldOffsets.reduce(
+      (extent, offset) => Math.max(extent, Math.abs(offset)),
+      0,
+    );
+    // Orbit can turn the collection's X span directly into camera depth. Keep
+    // that added depth from making the near galaxy loom or the far one collapse:
+    // four center extents of padding bounds their perspective ratio below 5:3.
+    // Scaling focal length by the same amount preserves each galaxy's apparent
+    // size at the middle of the expanded world.
+    const collectionCameraScale = collectionMode
+      ? 1 + galaxyCenterExtent * COLLECTION_LAYOUT.cameraDepthPadding / BASE_CAMERA_DISTANCE
+      : 1;
+    const sharedCameraDistance = collectionMode
+      ? BASE_CAMERA_DISTANCE * collectionCameraScale
+      : rawGalaxies[0].cameraDistance;
+    const sharedCameraFocalLength = rawGalaxies[0].cameraFocalLength * collectionCameraScale;
     const scenePointCount = rawGalaxies.reduce((count, scene) => count + scene.scenePointCount, 0);
     const sceneData = new Float32Array(scenePointCount * SCENE_POINT_STRIDE);
     const interactivePoints = [];
@@ -1051,8 +1100,8 @@
     let packageIndexBase = 0;
     let systemIndexBase = 0;
     for (const rawScene of rawGalaxies) {
-      const scale = sharedCameraDistance / rawScene.cameraDistance;
-      const worldOffset = (rawScene.projectIndex - (rawGalaxies.length - 1) / 2) * galaxySpacing;
+      const scale = galaxyScales[rawScene.projectIndex];
+      const worldOffset = galaxyWorldOffsets[rawScene.projectIndex];
       rawScene.renderIndexBase = renderIndexBase;
       rawScene.packageIndexBase = packageIndexBase;
       rawScene.systemIndexBase = systemIndexBase;
@@ -1130,6 +1179,29 @@
     packageSpinRates = packageSpinRatesByProject;
     cameraDistance = sharedCameraDistance;
     cameraFocalLength = sharedCameraFocalLength;
+    let collectionDefaultProjectionBounds = null;
+    if (collectionMode) {
+      const bounds = [Infinity, -Infinity, Infinity, -Infinity];
+      const defaultView = [
+        Math.cos(DEFAULT_CAMERA.yaw),
+        Math.sin(DEFAULT_CAMERA.yaw),
+        Math.cos(DEFAULT_CAMERA.pitch),
+        Math.sin(DEFAULT_CAMERA.pitch),
+      ];
+      const projected = [0, 0, 0];
+      for (let offset = 0; offset < sceneData.length; offset += SCENE_POINT_STRIDE) {
+        const x = sceneData[offset], y = sceneData[offset + 1], z = sceneData[offset + 2];
+        const screen = projectCoordinates(x, y, z, defaultView, projected, { zoom: 1, panX: 0, panY: 0 });
+        if (!screen) continue;
+        const projectedX = screen[0] - sceneCenterX;
+        const projectedY = screen[1] - sceneCenterY;
+        bounds[0] = Math.min(bounds[0], projectedX);
+        bounds[1] = Math.max(bounds[1], projectedX);
+        bounds[2] = Math.min(bounds[2], projectedY);
+        bounds[3] = Math.max(bounds[3], projectedY);
+      }
+      collectionDefaultProjectionBounds = Object.freeze(bounds);
+    }
     const travelFlightLimit = travelFlightLimitForPointCount(scenePointCount);
     const travelScheduleSeed = hash((
       morphology.phaseSeed ^ scenePointCount ^
@@ -2259,6 +2331,21 @@
       projectModel.dependencyStars = [];
     });
 
+    function defaultCameraTarget() {
+      if (!collectionDefaultProjectionBounds || sceneRight <= 0 || sceneBottom <= 0) return DEFAULT_CAMERA;
+      const [left, right, top, bottom] = collectionDefaultProjectionBounds;
+      const padding = COLLECTION_LAYOUT.viewportPadding;
+      const fitScales = [DEFAULT_CAMERA.zoom];
+      if (left < 0) fitScales.push((sceneCenterX - padding) / -left);
+      if (right > 0) fitScales.push((sceneRight - padding - sceneCenterX) / right);
+      if (top < 0) fitScales.push((sceneCenterY - padding) / -top);
+      if (bottom > 0) fitScales.push((sceneBottom - padding - sceneCenterY) / bottom);
+      return {
+        ...DEFAULT_CAMERA,
+        zoom: clamp(Math.min(...fitScales), MIN_ZOOM, DEFAULT_CAMERA.zoom),
+      };
+    }
+
     function applyCameraTarget(target) {
       yaw = target.yaw;
       pitch = target.pitch;
@@ -2772,7 +2859,7 @@
     function exitExplorationFocus() {
       const hadSpatialFocus = expandedSystemIndex !== null || expandedPackageIndex !== null || focusedCategory !== null || selectionLocked;
       clearExplorationFocus();
-      if (hadSpatialFocus) flyCamera(DEFAULT_CAMERA, { followDrift: true });
+      if (hadSpatialFocus) flyCamera(defaultCameraTarget(), { followDrift: true });
     }
 
     function focusSearch() {
@@ -3411,7 +3498,7 @@
       selectPoint(null);
       setNavigationMode("orbit");
       for (const category of Object.keys(visibleCategories)) setCategoryVisible(category, true);
-      flyCamera(DEFAULT_CAMERA);
+      flyCamera(defaultCameraTarget());
     }
 
     function setNavigationMode(mode) {
@@ -4522,4 +4609,8 @@
       initializeSearch();
       setPanelCollapsed(window.matchMedia("(max-width: 760px)").matches);
       resize();
+      if (collectionMode) {
+        applyCameraTarget(defaultCameraTarget());
+        requestRender();
+      }
     }

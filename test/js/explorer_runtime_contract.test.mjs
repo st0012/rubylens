@@ -13,12 +13,14 @@ describe("explorer runtime contract", () => {
     expect(RUNTIME_SOURCE).not.toContain("innerHTML");
   });
 
-  it("explorer initial and reset camera use 200 percent without changing drift", () => {
+  it("single explorers use 200 percent while collection resets fit the viewport without changing drift", () => {
     expect(RUNTIME_SOURCE).toContain("zoom: collectionMode ? 2 / Math.pow(galaxyModels.length, .7) : 2");
     expect(RUNTIME_SOURCE).toMatch(/populateWarningDisclosure\(\).*?applyCameraTarget\(DEFAULT_CAMERA\).*?createExplorer\(\).*?resize\(\)/s);
+    expect(RUNTIME_SOURCE).toContain("applyCameraTarget(defaultCameraTarget())");
+    expect(runtimeFunction("defaultCameraTarget")).toContain("return DEFAULT_CAMERA");
     expect(RUNTIME_SOURCE).toContain("function resetView()");
     expect(RUNTIME_SOURCE).toMatch(
-      /function resetView\(\).*?clearCategoryFocus\(\).*?clearExpandedPackage\(\).*?selectPoint\(null\).*?setNavigationMode\("orbit"\).*?setCategoryVisible\(category, true\).*?flyCamera\(DEFAULT_CAMERA\)/s,
+      /function resetView\(\).*?clearCategoryFocus\(\).*?clearExpandedPackage\(\).*?selectPoint\(null\).*?setNavigationMode\("orbit"\).*?setCategoryVisible\(category, true\).*?flyCamera\(defaultCameraTarget\(\)\)/s,
     );
     expect(RUNTIME_SOURCE).toContain("finalTarget,");
     expect(RUNTIME_SOURCE).toContain("applyCameraTarget(finalTarget)");
@@ -130,7 +132,7 @@ describe("explorer runtime contract", () => {
     const exitBody = runtimeFunction("exitExplorationFocus");
     expect(exitBody).toContain("expandedSystemIndex !== null || expandedPackageIndex !== null || focusedCategory !== null || selectionLocked");
     expect(exitBody).toContain("clearExplorationFocus()");
-    expect(exitBody).toContain("if (hadSpatialFocus) flyCamera(DEFAULT_CAMERA, { followDrift: true })");
+    expect(exitBody).toContain("if (hadSpatialFocus) flyCamera(defaultCameraTarget(), { followDrift: true })");
     expect(RUNTIME_SOURCE).toContain('if (event.key === "Escape") exitExplorationFocus()');
     expect(runtimeFunction("clearExplorationFocus")).not.toContain("flyCamera");
   });
