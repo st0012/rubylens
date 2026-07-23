@@ -83,4 +83,11 @@ class ExplorerRuntimeTest < Minitest::Test
     refute_match(%r{https?://}, SHELL)
     refute_match(%r{https?://}, STYLES)
   end
+
+  def test_explorer_shell_never_carries_the_showcase_marker
+    # ArtifactMarker distinguishes report and showcase outputs by shell
+    # content; a report shell carrying the showcase meta would make every
+    # generated report register as a showcase artifact.
+    refute_includes(SHELL, "rubylens-artifact")
+  end
 end

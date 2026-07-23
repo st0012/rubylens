@@ -158,6 +158,7 @@ describe("showcase contract", () => {
     const renderer = runtimeFunction("createShowcaseRenderer");
     const unavailable = runtimeFunction("markShowcaseUnavailable");
     expect(renderer).toContain('canvas.getContext("webgl2"');
+    expect(RUNTIME_SOURCE).toContain('dataset.showcaseRenderer = "webgl2"');
     expect(renderer).toContain('dataset.showcaseUnavailableReason = "webgl2-unavailable"');
     expect(renderer).toContain('dataset.showcaseUnavailableReason = "webgl2-point-size-range"');
     expect(renderer).toContain('markShowcaseUnavailable("webgl2-context-lost")');
