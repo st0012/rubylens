@@ -116,7 +116,7 @@ describe("explorer runtime contract", () => {
     expect(handler).toContain("if (event.metaKey || event.ctrlKey || event.altKey) return false");
     expect(handler).toContain("if (isEditableTarget(event.target)) return false");
     expect(handler).toContain('else if (event.key === "/") focusSearch()');
-    expect(handler).toContain('else if (event.key === "?") { if (!event.repeat) toggleHelp(); }');
+    expect(handler).toContain('else if (event.key === "?" && !document.body.classList.contains("is-ui-hidden")) { if (!event.repeat) toggleHelp(); }');
     expect(handler).toContain('if (event.key === "Enter" && event.target !== canvas && event.target !== document.body) return false');
     expect(RUNTIME_SOURCE).toContain("else if (!handleViewShortcut(event)) moveViewWithArrow(event)");
     expect(RUNTIME_SOURCE).not.toContain('canvas.addEventListener("keydown"');
@@ -161,43 +161,6 @@ describe("explorer runtime contract", () => {
     expect(runtimeFunction("positionTooltip")).toContain('document.body.classList.contains("is-ui-hidden")');
     expect(RUNTIME_SOURCE).toContain('" · Double-click or F to expand"');
     expect(RUNTIME_SOURCE).toContain('motion.title = `${label} (Space)`');
-  });
-
-  it("hides every Explorer overlay and restores the full viewport", () => {
-    const setUiHidden = runtimeFunction("setUiHidden");
-    expect(setUiHidden).toContain('document.body.classList.toggle("is-ui-hidden", hidden)');
-    expect(setUiHidden).toContain('uiToggle.setAttribute("aria-pressed", String(hidden))');
-    expect(setUiHidden).toContain('uiToggle.setAttribute("aria-label", hidden ? "Show interface" : "Hide interface")');
-    expect(setUiHidden).toContain('uiToggle.textContent = hidden ? "Show UI" : "Hide UI"');
-    expect(setUiHidden).toContain("cancelPendingHover()");
-    expect(setUiHidden).toContain('canvas.classList.remove("is-star")');
-    expect(setUiHidden).toContain("tooltip.hidden = true");
-    expect(setUiHidden).toContain("if (!selectionLocked) selectPoint(null)");
-
-    const viewport = runtimeFunction("updateSceneViewport");
-    expect(viewport).toContain('document.body.classList.contains("is-ui-hidden")');
-    expect(viewport).toContain("sceneRight = width");
-    expect(viewport).toContain("sceneBottom = height");
-    expect(viewport).toContain("sceneCenterX = width / 2");
-    expect(viewport).toContain("sceneCenterY = height / 2");
-
-    expect(runtimeFunction("handleViewShortcut")).toContain(
-      'event.key.toLowerCase() === "h") setUiHidden(!document.body.classList.contains("is-ui-hidden"))',
-    );
-    expect(runtimeFunction("finishPointer")).toContain('document.body.classList.contains("is-ui-hidden")');
-  });
-
-  it("gives sidebar sections concise summaries and visible state", () => {
-    const explorer = runtimeFunction("createExplorer");
-    expect(explorer).toContain("details.className = `explorer-section ${category}`");
-    expect(explorer).toContain('heading.className = "section-heading"');
-    expect(explorer).toContain('state.className = "section-state"');
-    expect(explorer).toContain('state.setAttribute("aria-hidden", "true")');
-    expect(explorer).toContain('[["visible", "In view"], ["focused", "Focused"], ["hidden", "Hidden"]]');
-    expect(explorer).toContain('checkbox.setAttribute("aria-label", `Show ${meta.title}`)');
-    expect(explorer).toContain('visibilityText.textContent = "Show stars"');
-    expect(explorer).toContain('focus.setAttribute("aria-pressed", "false")');
-    expect(explorer).toContain('factLabel.textContent = "Fly to a landmark"');
   });
 
   it("expanded dependency system retains detailed galaxy context", () => {

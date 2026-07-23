@@ -1953,9 +1953,9 @@
       [0, 0, 0, 0],
     );
     const categoryMeta = {
-      core: { title: "Core code", summary: `${Number(model.categoryStats?.core?.[0] || 0).toLocaleString()} classes · ${Number(model.categoryStats?.core?.[2] || 0).toLocaleString()} methods`, rubyCounts: model.categoryStats?.core || [0, 0, 0, 0], metricIndexes: allRubyMetricIndexes, focusZoom: 2.8 },
-      tests: { title: "Tests", summary: `${Number(model.categoryStats?.tests?.[0] || 0).toLocaleString()} classes · ${Number(model.categoryStats?.tests?.[2] || 0).toLocaleString()} methods`, rubyCounts: model.categoryStats?.tests || [0, 0, 0, 0], metricIndexes: testRubyMetricIndexes, focusZoom: 1.35 },
-      dependencies: { title: "Gems", summary: `${packageCount.toLocaleString()} dependency gems`, rubyCounts: dependencyRubyCounts, metricIndexes: allRubyMetricIndexes, note: `${directGemCount.toLocaleString()} direct · ${transitiveGemCount.toLocaleString()} transitive`, focusZoom: .72 },
+      core: { title: "Core code", rubyCounts: model.categoryStats?.core || [0, 0, 0, 0], metricIndexes: allRubyMetricIndexes, focusZoom: 2.8 },
+      tests: { title: "Tests", rubyCounts: model.categoryStats?.tests || [0, 0, 0, 0], metricIndexes: testRubyMetricIndexes, focusZoom: 1.35 },
+      dependencies: { title: "Gems", rubyCounts: dependencyRubyCounts, metricIndexes: allRubyMetricIndexes, note: `${directGemCount.toLocaleString()} direct · ${transitiveGemCount.toLocaleString()} transitive`, focusZoom: .72 },
     };
     model.namespaces = [];
     model.packages = [];
@@ -2351,21 +2351,23 @@
 
     function setPanelCollapsed(collapsed) {
       if (collapsed && panelBody.contains(document.activeElement)) panelToggle.focus();
+      const action = collapsed ? "Expand" : "Collapse";
       panel.classList.toggle("is-collapsed", collapsed);
       panelBody.hidden = collapsed;
       panelToggle.setAttribute("aria-expanded", String(!collapsed));
-      panelToggle.setAttribute("aria-label", `${collapsed ? "Expand" : "Collapse"} Explorer`);
-      panelToggle.textContent = collapsed ? "Expand" : "Collapse";
+      panelToggle.setAttribute("aria-label", `${action} Explorer`);
+      panelToggle.textContent = action;
       updateSceneViewport();
       requestRender();
     }
 
     function setUiHidden(hidden) {
+      const action = hidden ? "Show" : "Hide";
       document.body.classList.toggle("is-ui-hidden", hidden);
       uiToggle.setAttribute("aria-pressed", String(hidden));
-      uiToggle.setAttribute("aria-label", hidden ? "Show interface" : "Hide interface");
-      uiToggle.textContent = hidden ? "Show UI" : "Hide UI";
-      uiToggle.title = `${hidden ? "Show" : "Hide"} interface (H)`;
+      uiToggle.setAttribute("aria-label", `${action} interface`);
+      uiToggle.textContent = `${action} UI`;
+      uiToggle.title = `${action} interface (H)`;
       cancelPendingHover();
       canvas.classList.remove("is-star");
       tooltip.hidden = true;
@@ -2818,21 +2820,14 @@
         heading.className = "section-heading";
         const title = document.createElement("strong");
         title.textContent = meta.title;
-        heading.append(title);
-        if (meta.summary) {
-          const summaryText = document.createElement("small");
-          summaryText.textContent = meta.summary;
-          heading.append(summaryText);
-        }
+        const summaryText = document.createElement("small");
+        summaryText.textContent = category === "dependencies"
+          ? `${packageCount.toLocaleString()} dependency gems`
+          : `${Number(meta.rubyCounts[0] || 0).toLocaleString()} classes · ${Number(meta.rubyCounts[2] || 0).toLocaleString()} methods`;
+        heading.append(title, summaryText);
         const state = document.createElement("span");
         state.className = "section-state";
         state.setAttribute("aria-hidden", "true");
-        for (const [className, label] of [["visible", "In view"], ["focused", "Focused"], ["hidden", "Hidden"]]) {
-          const stateLabel = document.createElement("span");
-          stateLabel.className = className;
-          stateLabel.textContent = label;
-          state.append(stateLabel);
-        }
         summary.append(heading, state);
 
         const body = document.createElement("div");
@@ -3052,7 +3047,7 @@
       else if (event.key.toLowerCase() === "p") { cancelCameraFlight(); setNavigationMode(navigationMode === "pan" ? "orbit" : "pan"); }
       else if (event.key === "/") focusSearch();
       else if (event.key.toLowerCase() === "h") setUiHidden(!document.body.classList.contains("is-ui-hidden"));
-      else if (event.key === "?") { if (!event.repeat) toggleHelp(); }
+      else if (event.key === "?" && !document.body.classList.contains("is-ui-hidden")) { if (!event.repeat) toggleHelp(); }
       else if ((event.key === "Enter" || event.key.toLowerCase() === "f") && selectedPoint?.category === "dependencies") {
         if (event.key === "Enter" && event.target !== canvas && event.target !== document.body) return false;
         if (selectedPoint.systemHub && !selectedPoint.packageHub) focusDependencySystem(selectedPoint.systemIndex);

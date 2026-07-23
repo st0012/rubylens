@@ -62,12 +62,9 @@
     .section-heading strong { color: #eee9f4; font-size: 12px; }
     .section-heading small { overflow: hidden; color: #958e9f; font-size: 9px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
     .section-state { flex: none; color: #9992a2; font-size: 8px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
-    .section-state .focused, .section-state .hidden { display: none; }
-    .explorer-section:has(.section-actions button[aria-pressed="true"]) .section-state .visible { display: none; }
-    .explorer-section:has(.section-actions button[aria-pressed="true"]) .section-state .focused { display: inline; color: rgba(var(--accent), .95); }
-    .explorer-section:has(.visibility input:not(:checked)) .section-state .visible,
-    .explorer-section:has(.visibility input:not(:checked)) .section-state .focused { display: none; }
-    .explorer-section:has(.visibility input:not(:checked)) .section-state .hidden { display: inline; }
+    .section-state::before { content: "In view"; }
+    .explorer-section:has(.section-actions button[aria-pressed="true"]) .section-state::before { content: "Focused"; color: rgba(var(--accent), .95); }
+    .explorer-section:has(.visibility input:not(:checked)) .section-state::before { content: "Hidden"; color: #9992a2; }
     .section-note { margin: -4px 0 13px; color: #756e7e; font-size: 9px; line-height: 1.4; }
     .section-body { padding: 0 18px 16px; }
     .section-actions { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
@@ -145,7 +142,7 @@
       .warning-details { max-height: clamp(48px, calc(54vh - 220px), 240px); }
       .panel { top: auto; bottom: 14px; right: 14px; left: 14px; width: auto; max-height: 46vh; }
       .panel.is-collapsed { right: 14px; left: auto; width: 190px; }
-      .toolbar { right: 14px; left: 14px; bottom: 88px; gap: 4px; }
+      .toolbar { right: 14px; left: 14px; bottom: 88px; flex-wrap: wrap; gap: 4px; }
       .toolbar button { min-height: 40px; padding-inline: 6px; white-space: nowrap; }
       .panel:not(.is-collapsed) ~ .toolbar { bottom: calc(46vh + 28px); }
       .hint { display: none; }
