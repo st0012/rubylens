@@ -94,6 +94,10 @@ class ReportWriterTest < Minitest::Test
       assert(RubyLens::ArtifactMarker.present?(output, RubyLens::ReportWriter::MARKER))
       assert_includes(html, "RubyLens · Explorer")
       assert_includes(html, "Explore this codebase")
+      # The privacy footer is a product contract of every generated report:
+      # the owner-only warning must reach the reader.
+      assert_includes(html, "dependency stars remain anonymous")
+      assert_includes(html, "Do not share the HTML unless you intend to disclose codebase structure.")
 
       # The shipped assets arrive verbatim: the stylesheet in full, and the
       # runtime in full around the one model substitution. What the runtime

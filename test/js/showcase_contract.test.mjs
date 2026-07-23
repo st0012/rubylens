@@ -62,18 +62,29 @@ const functionBody = name => {
   if (!match) throw new Error(`${name} function not found in the runtime`);
   return match[1];
 };
+// Ordering contracts must fail when a marker disappears: a bare indexOf would
+// return -1 and satisfy the comparison vacuously.
+const orderedIndex = (source, marker) => {
+  const index = source.indexOf(marker);
+  expect(index, `expected choreography marker ${JSON.stringify(marker)}`).toBeGreaterThanOrEqual(0);
+  return index;
+};
 
 describe("showcase contract", () => {
-  it("keeps the approved showcase preset exact", () => {
+  it("keeps the approved showcase preset exact and frozen", () => {
     expect(runtime.SHOWCASE_PRESET).toEqual(APPROVED_PRESET);
+    expect(Object.isFrozen(runtime.SHOWCASE_PRESET)).toBe(true);
   });
 
-  it("keeps the approved annotation preset exact", () => {
+  it("keeps the approved annotation preset exact and frozen", () => {
     expect(runtime.SHOWCASE_ANNOTATION_PRESET).toEqual(APPROVED_ANNOTATION_PRESET);
+    expect(Object.isFrozen(runtime.SHOWCASE_ANNOTATION_PRESET)).toBe(true);
   });
 
   it("tightens the masthead and raises the scene in the widescreen layout", () => {
     expect(runtime.SHOWCASE_WIDESCREEN_LAYOUT_PRESET).toEqual(APPROVED_WIDESCREEN_LAYOUT_PRESET);
+    expect(Object.isFrozen(runtime.SHOWCASE_WIDESCREEN_LAYOUT_PRESET)).toBe(true);
+    expect(runtimeFunction("resize")).toContain("configureShowcaseStage()");
     const layoutSelection = runtimeFunction("selectShowcaseLayout");
     expect(layoutSelection).toContain("fittedWidth >= SHOWCASE_WIDESCREEN_LAYOUT_PRESET.minimumFittedWidth");
     expect(layoutSelection).toContain("aspectRatio >= SHOWCASE_WIDESCREEN_LAYOUT_PRESET.minimumAspectRatio");
@@ -128,6 +139,7 @@ describe("showcase contract", () => {
 
   it("scales only showcase dependency alpha through the dependency preset", () => {
     expect(runtime.SHOWCASE_DEPENDENCY_PRESET).toEqual({ starAlphaScale: 0.3 });
+    expect(Object.isFrozen(runtime.SHOWCASE_DEPENDENCY_PRESET)).toBe(true);
     const renderer = runtimeFunction("createShowcaseRenderer");
     expect(renderer).toContain("float starAlphaScale = categoryCode > 1.5 ? float(${SHOWCASE_DEPENDENCY_PRESET.starAlphaScale}) : 1.0;");
     expect(renderer).toContain("clamp(a_alpha * starAlphaScale * u_brightness / 100.0, 0.0, 1.0)");
@@ -171,8 +183,8 @@ describe("showcase contract", () => {
     const renderShowcase = functionBody("renderShowcase");
     const trackAnnotation = functionBody("trackShowcaseAnnotation");
     const updateAnnotation = functionBody("updateShowcaseAnnotation");
-    expect(renderShowcase.indexOf("applyShowcaseCamera(showcaseFrameProgress")).toBeLessThan(renderShowcase.indexOf("render(timestamp)"));
-    expect(renderShowcase.indexOf("render(timestamp)")).toBeLessThan(renderShowcase.indexOf("updateShowcaseAnnotation(timestamp)"));
+    expect(orderedIndex(renderShowcase, "applyShowcaseCamera(showcaseFrameProgress")).toBeLessThan(orderedIndex(renderShowcase, "render(timestamp)"));
+    expect(orderedIndex(renderShowcase, "render(timestamp)")).toBeLessThan(orderedIndex(renderShowcase, "updateShowcaseAnnotation(timestamp)"));
     expect(trackAnnotation).toContain("project(activeShowcaseAnnotation.annotation.point, matrix)");
     expect(trackAnnotation).toContain("showcaseAnnotation.style.transform");
     expect(updateAnnotation).toContain("trackShowcaseAnnotation(Math.max(0, timestamp - showcaseStartedAt))");
@@ -188,8 +200,8 @@ describe("showcase contract", () => {
     const clipAnnotation = functionBody("updateShowcaseClipAnnotation");
     // Clip frames are a pure function of (frameIndex, fps): the same quantized
     // camera as the live loop, then annotation opacity from the synthetic clock.
-    expect(clipFrame.indexOf("applyShowcaseCamera(showcaseFrameProgress(elapsed))")).toBeLessThan(clipFrame.indexOf("render(elapsed)"));
-    expect(clipFrame.indexOf("render(elapsed)")).toBeLessThan(clipFrame.indexOf("updateShowcaseClipAnnotation(elapsed)"));
+    expect(orderedIndex(clipFrame, "applyShowcaseCamera(showcaseFrameProgress(elapsed))")).toBeLessThan(orderedIndex(clipFrame, "render(elapsed)"));
+    expect(orderedIndex(clipFrame, "render(elapsed)")).toBeLessThan(orderedIndex(clipFrame, "updateShowcaseClipAnnotation(elapsed)"));
     expect(clipFrame).toContain("frameIndex * 1000 / fps");
     expect(clipFrame).toContain("dataset.clipFrame = String(frameIndex)");
     expect(beginClip).toContain("cancelAnimationFrame(animationFrame)");
