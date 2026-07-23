@@ -65,9 +65,11 @@ produced a visual regression that unit tests missed.
   collisions silently bias distributions. Name tuned constants and their
   channels in a frozen recipe block (see `ARM_RECIPE`) instead of inlining
   them, keeping only formula-local ratios inline.
-- Every runtime edit moves the assembled-report digest pin in
-  `test/report_asset_assembler_test.rb`; classifier knob changes also need
-  `REGENERATE_FIXTURES=1 bundle exec rake` and the pinned knob rows updated.
+- Ruby tests never assert on JS runtime content: anything targeting JS
+  behavior or shipped runtime text lives in the vitest suite (`test/js/`),
+  Ruby asserts only assembly, shells, stylesheets, and Ruby-side constants.
+  Classifier knob changes still need `REGENERATE_FIXTURES=1 bundle exec rake`
+  and the pinned knob rows updated.
 
 ## Rubydex 0.2.9 integration notes
 

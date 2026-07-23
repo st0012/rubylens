@@ -29,6 +29,7 @@ const EXPORTS = `;return ({
   decodePackageMorphology, dependencyOrientation, orientDependencyOffset, packageOrientations,
   dependencySpinTurns, dependencySpunPosition, packageSpinRates,
   DEPENDENCY_CLOUD_THRESHOLD, DEPENDENCY_HALO_SPACING_SCALE, DEPENDENCY_SPIN_RECIPE, SHOWCASE_PRESET,
+  SHOWCASE_ANNOTATION_PRESET, SHOWCASE_WIDESCREEN_LAYOUT_PRESET, SHOWCASE_DEPENDENCY_PRESET,
   SCENE_POINT_STRIDE, categoryCodes, sceneData, scenePointCount,
   HAZE_CATEGORY_OFFSET, HAZE_RECIPE, ...hazeBuffers(),
   hazePointCount: hazeBuffers().hazeData.length / SCENE_POINT_STRIDE,

@@ -1,17 +1,19 @@
 # frozen_string_literal: true
 
-require "digest"
 require_relative "test_helper"
 
 class ReportAssetAssemblerTest < Minitest::Test
-  # SHA-256 of the supported Explorer shell with the shared canonical Showcase runtime.
-  REPORT_HTML_SHA256 = "f5a5ead040b544aeab2f664c36da5549e5b9e052cf6bec5a41687ebe3ec7d30e"
+  ASSETS = File.expand_path("../assets", __dir__)
 
+  # Assembly is exactly the shell with each placeholder spliced once, byte for
+  # byte, derived from the shipped asset files themselves — asset content is
+  # each surface's own concern (the JS suite owns the runtime), so no digest
+  # pin needs re-recording when an asset changes.
   def test_assembles_the_supported_explorer_assets_byte_for_byte
-    assert_equal(
-      REPORT_HTML_SHA256,
-      Digest::SHA256.hexdigest(RubyLens::ReportAssetAssembler.new.assemble)
-    )
+    expected = File.read(File.join(ASSETS, "shells/report.html"))
+      .sub("{{REPORT_STYLES}}") { File.read(File.join(ASSETS, "styles/report.css")) }
+      .sub("{{REPORT_RUNTIME}}") { File.read(File.join(ASSETS, "runtime/report.js")) }
+    assert_equal(expected, RubyLens::ReportAssetAssembler.new.assemble)
   end
 
   def test_requires_each_asset_placeholder_exactly_once
