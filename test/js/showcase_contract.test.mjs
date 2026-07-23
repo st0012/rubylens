@@ -210,7 +210,9 @@ describe("showcase contract", () => {
 
   it("keeps annotation work opt-in, bounded, and disabled for reduced motion", () => {
     const reducedBranch = RUNTIME_SOURCE.match(/function startShowcase\(\) \{[\s\S]*?if \(reducedMotionQuery\.matches\) \{([\s\S]*?)\} else \{/)[1];
-    expect(RUNTIME_SOURCE).toContain("model.details === true");
+    // The full gate, not just the flag: details stay Showcase-only even when
+    // a report model carries details: true.
+    expect(RUNTIME_SOURCE).toContain("const showcaseDetails = showcaseMode && model.details === true;");
     expect(RUNTIME_SOURCE).toContain(".slice(0, SHOWCASE_ANNOTATION_PRESET.limit)");
     expect(RUNTIME_SOURCE).toContain("Array.isArray(model.pinnedNamespaceAnchors)");
     expect(runtimeFunction("buildPoints")).toContain("showcasePinnedNamespaceAnchors.has(index)");
