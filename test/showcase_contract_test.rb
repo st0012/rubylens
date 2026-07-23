@@ -23,7 +23,7 @@ class ShowcaseContractTest < Minitest::Test
     "starBrightnessPercent" => 75,
     "pointGlowPercent" => 0,
     "hazeMilkRadius" => 12,
-    "hazeMilkGainPercent" => 24,
+    "hazeMilkGainPercent" => 12,
     "backgroundGlowPercent" => 200,
     "textScalePercent" => 80,
     "layoutReferenceWidth" => 720,
