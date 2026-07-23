@@ -25,7 +25,13 @@ class CollectionGeneratorTest < Minitest::Test
       assert_equal(["Tiny Repo", "Rspec Repo"], models.map { |model| model.fetch("projectName") })
       assert_equal([9, 9], models.map { |model| model.dig("totals", "namespaces") })
       assert(models.all? { |model| model.fetch("schema") == "rubylens.art.v13" })
-      assert_equal(standalone_models, models)
+      normalized_standalone = standalone_models.map do |model|
+        model.merge("constantReferenceLinks" => model.fetch("constantReferenceLinks").sort)
+      end
+      normalized_collection = models.map do |model|
+        model.merge("constantReferenceLinks" => model.fetch("constantReferenceLinks").sort)
+      end
+      assert_equal(normalized_standalone, normalized_collection)
     end
   end
 

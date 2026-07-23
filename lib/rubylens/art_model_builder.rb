@@ -6,6 +6,7 @@ require_relative "morphology_classifier"
 
 module RubyLens
   class ArtModelBuilder
+    SCHEMA = "rubylens.art.v13"
     SIGNAL_FIELDS = %w[ancestorDepth definitionSites reopenings descendants references members].freeze
 
     def initialize(seed: 0x51A7_E11A)
@@ -81,7 +82,7 @@ module RubyLens
         dependency_index,
       )
       {
-        "schema" => "rubylens.art.v13",
+        "schema" => SCHEMA,
         "projectName" => snapshot.fetch("project_name"),
         "morphology" => [morphology.fetch("family"), *morphology.fetch("knobs")],
         "totals" => {

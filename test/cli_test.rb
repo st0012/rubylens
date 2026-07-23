@@ -28,6 +28,94 @@ class CLITest < Minitest::Test
     assert_equal("#{RubyLens::VERSION}\n", output)
   end
 
+  def test_explorer_generates_a_json_artifact_with_the_requested_path
+    result = RubyLens::Result.new(
+      output_path: "/tmp/project.rubylens.json",
+      counts: { "namespaces" => 12 },
+      warnings: [],
+    )
+    generator = mock("explorer generator")
+    RubyLens::Generator.expects(:new)
+      .with(
+        path: "project",
+        output: "/tmp/project.rubylens.json",
+        lockfile: nil,
+        output_format: "json",
+      )
+      .returns(generator)
+    generator.expects(:call).returns(result)
+
+    status, output, errors = run_cli(
+      ["explorer", "--output", "json", "--output-path", "/tmp/project.rubylens.json", "project"],
+    )
+
+    assert_equal(0, status)
+    assert_equal("/tmp/project.rubylens.json", JSON.parse(output).fetch("output"))
+    assert_includes(errors, "private codebase structure")
+  end
+
+  def test_explorer_defaults_to_html_and_documents_stitchable_json
+    result = RubyLens::Result.new(output_path: "/tmp/rubylens-report.html", counts: {}, warnings: [])
+    generator = mock("explorer generator")
+    RubyLens::Generator.expects(:new)
+      .with(path: Dir.pwd, output: nil, lockfile: nil, output_format: "html")
+      .returns(generator)
+    generator.expects(:call).returns(result)
+
+    status, = run_cli(["explorer"])
+    assert_equal(0, status)
+
+    RubyLens::Generator.expects(:new).never
+    status, output, errors = run_cli(["explorer", "--help"])
+    assert_equal(0, status)
+    assert_includes(output, "Usage: rubylens explorer [OPTIONS] [TARGET]")
+    assert_includes(output, "--output FORMAT")
+    assert_includes(output, "--output-path FILE")
+    assert_includes(output, "stitched later without re-indexing")
+    assert_empty(errors)
+  end
+
+  def test_stitch_preserves_artifact_order_and_prints_project_results
+    result = RubyLens::CollectionResult.new(
+      output_path: "/tmp/universe.html",
+      projects: [
+        RubyLens::CollectionProjectResult.new(name: "First", counts: {}, warnings: []),
+        RubyLens::CollectionProjectResult.new(name: "Second", counts: {}, warnings: []),
+      ],
+    )
+    generator = mock("stitch generator")
+    RubyLens::StitchGenerator.expects(:new)
+      .with(artifacts: %w[first.json second.json], output: "/tmp/universe.html")
+      .returns(generator)
+    generator.expects(:call).returns(result)
+
+    status, output, errors = run_cli(
+      ["stitch", "first.json", "second.json", "--output-path", "/tmp/universe.html"],
+    )
+
+    assert_equal(0, status)
+    assert_equal(%w[First Second], JSON.parse(output).fetch("projects").map { |project| project.fetch("name") })
+    assert_includes(errors, "every included project")
+  end
+
+  def test_stitch_requires_two_artifacts_and_has_standalone_help
+    RubyLens::StitchGenerator.expects(:new).never
+
+    [[], ["first.json"]].each do |artifacts|
+      status, _output, errors = run_cli(["stitch", *artifacts])
+
+      assert_equal(2, status)
+      assert_includes(errors, "stitch requires at least two Explorer artifacts")
+    end
+
+    status, output, errors = run_cli(["stitch", "--help"])
+    assert_equal(0, status)
+    assert_includes(output, "Usage: rubylens stitch [OPTIONS] ARTIFACT ARTIFACT...")
+    assert_includes(output, "projects indexed separately in their own bundles")
+    assert_includes(output, "Artifact order determines galaxy order")
+    assert_empty(errors)
+  end
+
   def test_showcase_defaults_to_current_directory_and_prints_machine_readable_result
     result = RubyLens::Result.new(
       output_path: "/tmp/showcase.html",
@@ -142,7 +230,8 @@ class CLITest < Minitest::Test
     status, output, errors = run_cli(["collection", "--help"])
     assert_equal(0, status)
     assert_includes(output, "Usage: rubylens collection [OPTIONS] TARGET TARGET...")
-    assert_includes(output, "shows all galaxies in one Explorer")
+    assert_includes(output, "Same-bundle convenience")
+    assert_includes(output, "rubylens stitch")
     assert_empty(errors)
   end
 
@@ -246,10 +335,10 @@ class CLITest < Minitest::Test
 
     assert_equal(0, status)
     assert_includes(output, "TARGET defaults to the current working directory")
-    assert_includes(output, "rubylens report --help")
-    assert_includes(output, "rubylens clip --help")
-    assert_includes(output, "rubylens showcase --help")
+    assert_includes(output, "rubylens COMMAND --help")
+    assert_includes(output, "explorer [OPTIONS] [TARGET]")
     assert_includes(output, "report [OPTIONS] [TARGET]")
+    assert_includes(output, "stitch [OPTIONS] ARTIFACT...")
     assert_includes(output, "collection [OPTIONS] TARGET...")
     assert_includes(output, "clip [OPTIONS] [TARGET]")
     assert_includes(output, "showcase [OPTIONS] [TARGET]")

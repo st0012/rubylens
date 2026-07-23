@@ -41,7 +41,7 @@ class CollectionWriterTest < Minitest::Test
 
   def model(name)
     {
-      "schema" => "rubylens.art.v12",
+      "schema" => "rubylens.art.v13",
       "projectName" => name,
       "totals" => { "namespaces" => 0, "packages" => 0, "dependencyStars" => 0 },
     }
