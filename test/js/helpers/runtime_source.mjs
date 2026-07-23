@@ -1,0 +1,27 @@
+// Shared source-level access to the shipped runtime for contract tests that
+// assert on exact shipped text (GLSL, presets, accessibility strings). Tests
+// that can exercise behavior should use loadRuntime from ./runtime.mjs instead.
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+export const RUNTIME_SOURCE = readFileSync(join(process.cwd(), "assets/runtime/report.js"), "utf8");
+export const SHELL_SOURCE = readFileSync(join(process.cwd(), "assets/shells/report.html"), "utf8");
+export const SHOWCASE_SHELL_SOURCE = readFileSync(join(process.cwd(), "assets/shells/showcase.html"), "utf8");
+export const STYLES_SOURCE = readFileSync(join(process.cwd(), "assets/styles/report.css"), "utf8");
+export const SHOWCASE_STYLES_SOURCE = readFileSync(join(process.cwd(), "assets/styles/showcase.css"), "utf8");
+
+// Mirrors the extraction the retired Ruby helper performed: a top-level
+// `function name(...)` through its closing four-space brace.
+export function runtimeFunction(name) {
+  const match = RUNTIME_SOURCE.match(new RegExp(`^    function ${name}\\b[\\s\\S]*?^    \\}\\n`, "m"));
+  if (!match) throw new Error(`${name} function not found in the runtime`);
+  return match[0];
+}
+
+// Ordering contracts must fail when a marker disappears: a bare indexOf would
+// return -1 and satisfy any before/after comparison vacuously.
+export function orderedIndex(source, marker) {
+  const index = source.indexOf(marker);
+  if (index < 0) throw new Error(`expected ordering marker ${JSON.stringify(marker)} in the runtime`);
+  return index;
+}

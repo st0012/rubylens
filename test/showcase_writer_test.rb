@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "base64"
 require_relative "test_helper"
 
 class ShowcaseWriterTest < Minitest::Test
@@ -21,27 +22,22 @@ class ShowcaseWriterTest < Minitest::Test
       html = File.read(output)
 
       assert(RubyLens::ArtifactMarker.present?(output, RubyLens::ShowcaseWriter::MARKER))
-      assert_includes(html, '<meta name="rubylens-artifact" content="showcase">')
-      assert_includes(html, 'data-rubylens-mode="showcase"')
-      assert_includes(html, "const SHOWCASE_PRESET = Object.freeze")
-      assert_includes(html, '"durationMs": 60000')
-      assert_includes(html, "const { sceneData, scenePointCount, interactivePoints, dependencyHubs, packageHubs, systemHubs } = buildPoints()")
-      assert_includes(html, 'class="showcase-stage"')
-      assert_includes(html, 'id="showcase-status" role="status" aria-live="polite" hidden')
-      assert_includes(html, 'dataset.showcaseRenderer = "webgl2"')
-      assert_includes(html, 'dataset.showcaseRenderer = "unavailable"')
-      assert_includes(html, 'WebGL2 is required to display this Showcase.')
-      assert_includes(html, "function renderShowcase(timestamp)")
-      assert_includes(html, 'dataset.showcaseReady = "true"')
-      assert_includes(html, 'dataset.showcaseMotion = "reduced"')
-      assert_includes(html, 'class="cinema-stats"')
-      assert_includes(html, 'class="cinema-stats" aria-label="Codebase statistics" hidden')
-      assert_includes(html, 'class="cinema-annotation" id="cinema-annotation" aria-hidden="true" hidden')
-      assert_includes(html, "const showcaseDetails = showcaseMode && model.details === true")
-      refute_includes(html, "{{MODEL_BASE64}}")
-      refute_match(/<(?:button|aside|iframe|input|select|textarea)\b/, html)
-      refute_match(/<canvas[^>]*tabindex=/, html)
-      refute_match(%r{https?://}, html)
+      # The embedded model must decode back to what was written: a leftover
+      # placeholder or wrong payload fails here, before a browser ever parses.
+      encoded = html.match(/atob\("([A-Za-z0-9+\/=]+)"\)/).captures.first
+      assert_equal(model, JSON.parse(Base64.strict_decode64(encoded)))
+
+      # The shipped assets arrive verbatim: shell segments, the stylesheet in
+      # full, and the runtime around the one model substitution. What the
+      # assets contain is the JS suite's concern.
+      assets = File.expand_path("../assets", __dir__)
+      File.read(File.join(assets, "shells/showcase.html")).split(/\{\{REPORT_STYLES\}\}|\{\{REPORT_RUNTIME\}\}/).each do |segment|
+        assert_includes(html, segment)
+      end
+      assert_includes(html, File.read(File.join(assets, "styles/showcase.css")))
+      runtime_head, runtime_tail = File.read(File.join(assets, "runtime/report.js")).split("{{MODEL_BASE64}}")
+      assert_includes(html, runtime_head)
+      assert_includes(html, runtime_tail)
       assert_equal(0o600, File.stat(output).mode & 0o777)
     end
   end

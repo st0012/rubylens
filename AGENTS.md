@@ -65,8 +65,10 @@ produced a visual regression that unit tests missed.
   collisions silently bias distributions. Name tuned constants and their
   channels in a frozen recipe block (see `ARM_RECIPE`) instead of inlining
   them, keeping only formula-local ratios inline.
-- Every runtime edit moves the assembled-report digest pin in
-  `test/report_asset_assembler_test.rb`; classifier knob changes also need
+- Ruby tests never assert on frontend asset content: everything the browser
+  consumes — the runtime, shells, and stylesheets — is tested in the vitest
+  suite (`test/js/`). Ruby asserts assembly and write mechanics, packaging,
+  and Ruby-side constants only. Classifier knob changes still need
   `REGENERATE_FIXTURES=1 bundle exec rake` and the pinned knob rows updated.
 
 ## Rubydex 0.2.9 integration notes
