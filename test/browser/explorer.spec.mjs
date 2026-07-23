@@ -23,10 +23,10 @@ function freeze(page) {
   });
 }
 
-async function hittableRubyPoint(page) {
-  const target = await page.evaluate(() => {
-    for (const point of interactivePoints) {
-      if (point.hub) continue;
+async function hittablePoint(page, dependency = false) {
+  const target = await page.evaluate(dependency => {
+    for (const point of dependency ? packageHubs : interactivePoints) {
+      if (!dependency && point.hub) continue;
       const screen = project(point, viewMatrix());
       if (screen && screen[0] > 40 && screen[0] < sceneRight - 40 && screen[1] > 40 && screen[1] < sceneBottom - 40
         && hitTestProjected(screen[0], screen[1]) === point) {
@@ -34,14 +34,9 @@ async function hittableRubyPoint(page) {
       }
     }
     return null;
-  });
+  }, dependency);
   expect(target).not.toBeNull();
   return target;
-}
-
-async function sectionState(section) {
-  const content = await section.locator(".section-state").evaluate(element => getComputedStyle(element, "::before").content);
-  return content.replaceAll('"', "");
 }
 
 test("renders the complete scene with WebGL2", async ({ page }) => {
@@ -60,7 +55,7 @@ test("renders the complete scene with WebGL2", async ({ page }) => {
 test("hover and click select a star and show its tooltip", async ({ page }) => {
   await openExplorer(page);
   await freeze(page);
-  const target = await hittableRubyPoint(page);
+  const target = await hittablePoint(page);
   await page.mouse.move(target.x, target.y);
   await page.waitForFunction(name => selectedPoint?.name === name, target.name);
   await expect(page.locator("#tooltip")).toBeVisible();
@@ -72,7 +67,7 @@ test("hover and click select a star and show its tooltip", async ({ page }) => {
 test("hide UI gives the galaxy the full viewport and disables hover", async ({ page }) => {
   await openExplorer(page);
   await freeze(page);
-  const target = await hittableRubyPoint(page);
+  const target = await hittablePoint(page);
 
   await page.getByRole("button", { name: "Hide interface" }).click();
   await expect(page.locator("body")).toHaveClass(/is-ui-hidden/);
@@ -99,6 +94,20 @@ test("hide UI gives the galaxy the full viewport and disables hover", async ({ p
   await expect(page.locator("body")).not.toHaveClass(/is-ui-hidden/);
 });
 
+test("a tap restoring the UI cannot expand a remembered dependency", async ({ page }) => {
+  await openExplorer(page);
+  await freeze(page);
+  const target = await hittablePoint(page, true);
+  await page.mouse.click(target.x, target.y);
+  await page.waitForFunction(name => selectionLocked && selectedPoint?.name === name, target.name);
+  await page.keyboard.press("h");
+  await page.mouse.click(target.x, target.y);
+  await page.evaluate(({ x, y }) => {
+    canvas.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: x, clientY: y }));
+  }, target);
+  expect(await page.evaluate(() => [expandedSystemIndex, expandedPackageIndex])).toEqual([null, null]);
+});
+
 test("search ranks and activates results", async ({ page }) => {
   await openExplorer(page);
   await page.fill("#explorer-search", "core::node700");
@@ -112,18 +121,18 @@ test("sidebar summarizes systems and reflects visibility and focus", async ({ pa
   await openExplorer(page);
   const core = page.locator(".explorer-section.core");
   await expect(core.locator("summary")).toContainText("945 classes · 24,600 methods");
-  expect(await sectionState(core)).toBe("In view");
+  await expect(core.locator("summary")).toHaveAccessibleName(/Core code.*In view/);
 
   const visibility = core.getByRole("checkbox", { name: "Show Core code" });
   await core.getByText("Show stars").click();
   await expect(visibility).not.toBeChecked();
-  expect(await sectionState(core)).toBe("Hidden");
+  await expect(core.locator("summary")).toHaveAccessibleName(/Core code.*Hidden/);
   expect(await page.evaluate(() => visibleCategories.core)).toBe(false);
 
   await core.getByText("Show stars").click();
   await expect(visibility).toBeChecked();
   await core.getByRole("button", { name: "Focus Core code" }).click();
-  expect(await sectionState(core)).toBe("Focused");
+  await expect(core.locator("summary")).toHaveAccessibleName(/Core code.*Focused/);
   expect(await page.evaluate(() => focusedCategory)).toBe("core");
 
   await page.getByRole("button", { name: "Collapse Explorer" }).click();

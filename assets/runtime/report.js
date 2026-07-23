@@ -54,6 +54,7 @@
     let lastDriftTimestamp = null;
     let lastDependencySpinTimestamp = null;
     let doubleClickTarget = null;
+    let restoreTapDoubleClickDeadline = 0;
     let searchIndex = null;
     let searchTimer = 0;
     let searchMatches = [];
@@ -2827,7 +2828,12 @@
         heading.append(title, summaryText);
         const state = document.createElement("span");
         state.className = "section-state";
-        state.setAttribute("aria-hidden", "true");
+        for (const [className, label] of [["visible", "In view"], ["focused", "Focused"], ["hidden", "Hidden"]]) {
+          const stateLabel = document.createElement("span");
+          stateLabel.className = className;
+          stateLabel.textContent = label;
+          state.append(stateLabel);
+        }
         summary.append(heading, state);
 
         const body = document.createElement("div");
@@ -4031,6 +4037,8 @@
       canvas.classList.remove("is-dragging-pan");
       if (wasTap) {
         if (document.body.classList.contains("is-ui-hidden")) {
+          doubleClickTarget = null;
+          restoreTapDoubleClickDeadline = event.timeStamp + 1000;
           setUiHidden(false);
           return;
         }
@@ -4073,6 +4081,11 @@
     }, { passive: false });
     canvas.addEventListener("dblclick", event => {
       if (pointers.size > 0) return;
+      if (event.timeStamp <= restoreTapDoubleClickDeadline) {
+        restoreTapDoubleClickDeadline = 0;
+        doubleClickTarget = null;
+        return;
+      }
       const remembered = doubleClickTarget;
       doubleClickTarget = null;
       const rememberedPoint = remembered &&
