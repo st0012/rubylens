@@ -155,10 +155,49 @@ describe("explorer runtime contract", () => {
 
   it("star hover and hub tooltips advertise their interactions", () => {
     const hover = runtimeFunction("queueHover");
+    expect(hover).toContain('document.body.classList.contains("is-ui-hidden")');
     expect(hover).toContain('canvas.classList.toggle("is-star", Boolean(point))');
     expect(hover).toContain("if (!selectionLocked && point !== selectedPoint) selectPoint(point)");
+    expect(runtimeFunction("positionTooltip")).toContain('document.body.classList.contains("is-ui-hidden")');
     expect(RUNTIME_SOURCE).toContain('" · Double-click or F to expand"');
     expect(RUNTIME_SOURCE).toContain('motion.title = `${label} (Space)`');
+  });
+
+  it("hides every Explorer overlay and restores the full viewport", () => {
+    const setUiHidden = runtimeFunction("setUiHidden");
+    expect(setUiHidden).toContain('document.body.classList.toggle("is-ui-hidden", hidden)');
+    expect(setUiHidden).toContain('uiToggle.setAttribute("aria-pressed", String(hidden))');
+    expect(setUiHidden).toContain('uiToggle.setAttribute("aria-label", hidden ? "Show interface" : "Hide interface")');
+    expect(setUiHidden).toContain('uiToggle.textContent = hidden ? "Show UI" : "Hide UI"');
+    expect(setUiHidden).toContain("cancelPendingHover()");
+    expect(setUiHidden).toContain('canvas.classList.remove("is-star")');
+    expect(setUiHidden).toContain("tooltip.hidden = true");
+    expect(setUiHidden).toContain("if (!selectionLocked) selectPoint(null)");
+
+    const viewport = runtimeFunction("updateSceneViewport");
+    expect(viewport).toContain('document.body.classList.contains("is-ui-hidden")');
+    expect(viewport).toContain("sceneRight = width");
+    expect(viewport).toContain("sceneBottom = height");
+    expect(viewport).toContain("sceneCenterX = width / 2");
+    expect(viewport).toContain("sceneCenterY = height / 2");
+
+    expect(runtimeFunction("handleViewShortcut")).toContain(
+      'event.key.toLowerCase() === "h") setUiHidden(!document.body.classList.contains("is-ui-hidden"))',
+    );
+    expect(runtimeFunction("finishPointer")).toContain('document.body.classList.contains("is-ui-hidden")');
+  });
+
+  it("gives sidebar sections concise summaries and visible state", () => {
+    const explorer = runtimeFunction("createExplorer");
+    expect(explorer).toContain("details.className = `explorer-section ${category}`");
+    expect(explorer).toContain('heading.className = "section-heading"');
+    expect(explorer).toContain('state.className = "section-state"');
+    expect(explorer).toContain('state.setAttribute("aria-hidden", "true")');
+    expect(explorer).toContain('[["visible", "In view"], ["focused", "Focused"], ["hidden", "Hidden"]]');
+    expect(explorer).toContain('checkbox.setAttribute("aria-label", `Show ${meta.title}`)');
+    expect(explorer).toContain('visibilityText.textContent = "Show stars"');
+    expect(explorer).toContain('focus.setAttribute("aria-pressed", "false")');
+    expect(explorer).toContain('factLabel.textContent = "Fly to a landmark"');
   });
 
   it("expanded dependency system retains detailed galaxy context", () => {
@@ -269,7 +308,7 @@ describe("explorer runtime contract", () => {
     expect(RUNTIME_SOURCE).toContain('if (point.category === "core") addCoreTooltipMetrics(point)');
     expect(RUNTIME_SOURCE).toContain("Most methods");
     expect(RUNTIME_SOURCE).toContain("Most constants");
-    expect(RUNTIME_SOURCE).toContain("Ruby code highlights");
+    expect(RUNTIME_SOURCE).toContain("Fly to a landmark");
     expect(RUNTIME_SOURCE).toContain("Expanded gem cloud");
     expect(RUNTIME_SOURCE).toContain("arrow keys to move the view");
     expect(RUNTIME_SOURCE).toContain("Shift-drag or Pan mode to move");
@@ -314,9 +353,9 @@ describe("explorer runtime contract", () => {
     expect(RUNTIME_SOURCE).toContain("cameraFlight = null");
     expect(RUNTIME_SOURCE).toContain("function render(timestamp)");
     expect(RUNTIME_SOURCE).toContain("if (reducedMotionQuery.matches)");
-    expect(RUNTIME_SOURCE).toContain("if (cameraFlight || dragging || pointers.size > 0) return");
+    expect(RUNTIME_SOURCE).toContain('if (document.body.classList.contains("is-ui-hidden") || cameraFlight || dragging || pointers.size > 0) return');
     expect(RUNTIME_SOURCE).toContain("const TOP_DOWN_PITCH = Math.PI / 2");
-    expect(RUNTIME_SOURCE).toContain("if (cameraFlight || !point?.screen)");
+    expect(RUNTIME_SOURCE).toContain('if (document.body.classList.contains("is-ui-hidden") || cameraFlight || !point?.screen)');
     expect(RUNTIME_SOURCE).toContain("canvas.setAttribute(\"aria-busy\", \"true\")");
     expect(RUNTIME_SOURCE).toContain("Double-click a dependency system or gem cloud, press Enter");
     expect(RUNTIME_SOURCE).toContain("press Enter or F on its selected marker");

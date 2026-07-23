@@ -5,9 +5,11 @@ RubyLens uses a dark stellar identity: magenta Core, cyan Tests, and warm gold G
 ## Explorer
 
 - Core and Tests are navigable Ruby namespace points. Gems are aggregate dependency systems; multi-package Git sources use one parent system with inspectable package subclouds, while their stars stay anonymous and non-hoverable.
+- The Explorer panel is a compact stellar navigator organized around finding a star or system, focusing a category, and flying to a landmark. Collapsed sections expose useful counts and current state; restrained one-pixel category rails map Core, Tests, and Gems to the galaxy without glow.
 - Search uses names already embedded for interactive Ruby points, parent dependency systems, and gem packages. It is lazy, debounced, capped, progressively revealed, and reuses the same spatial navigation as canvas and sidebar selections rather than creating a parallel model.
 - Point, highlight, and dependency selections use one top-down relationship flight. The selected target sits near one side of the usable canvas while Core remains visible on the other for scale; the open panel and compact layout are excluded from the framing area. Concentric category focus is the graceful system-wide case and remains centered with Core visible.
 - Reset returns to the exact default camera, reveals every category, clears spatial focus and selection, and restores orbit navigation without changing the user's drift choice. Arrow keys continue to pan the world when focus is not in an editable control.
+- Hide UI gives the galaxy the full viewport: every Explorer HUD surface and hover response disappears together, while H or a tap restores the interface without resetting the camera or drift.
 - Hover and selection retain surrounding context. Category focus may reduce emphasis lightly, but the scene must not collapse into heavy dimming.
 - Partial-index warnings use an accessible disclosure. Only sanitized package names with canned reasons may appear as row details; every other warning is an aggregate category count.
 

@@ -5,18 +5,20 @@ import { orderedIndex, SHELL_SOURCE, STYLES_SOURCE } from "./helpers/runtime_sou
 // the browser consumes these assets exactly like the runtime, so their
 // contracts live in the frontend suite. Ruby proves they arrive verbatim.
 describe("explorer shell contract", () => {
-  it("keeps toolbar and footer affordances accessible", () => {
+  it("keeps toolbar and hidden-interface affordances accessible", () => {
     expect(SHELL_SOURCE).toContain('aria-label="Pan mode"');
     expect(SHELL_SOURCE).toContain('aria-keyshortcuts="Space"');
     expect(SHELL_SOURCE).toContain('id="reset-view" aria-label="Reset to default view"');
-    expect(SHELL_SOURCE).toContain("Double-click a dependency system or gem cloud, press Enter or F on its selected marker");
+    expect(SHELL_SOURCE).toContain('id="ui-toggle" aria-label="Hide interface" aria-keyshortcuts="H" aria-pressed="false"');
+    expect(SHELL_SOURCE).toContain("<dt>Tap while UI is hidden</dt><dd>Show the interface</dd>");
+    expect(STYLES_SOURCE).toContain("body.is-ui-hidden .masthead,");
+    expect(STYLES_SOURCE).toContain("body.is-ui-hidden .help-overlay { display: none; }");
   });
 
   it("keeps the privacy footer in the shell", () => {
     // A product contract of every generated report: the owner-only warning
     // must reach the reader.
-    expect(SHELL_SOURCE).toContain("dependency stars remain anonymous");
-    expect(SHELL_SOURCE).toContain("Do not share the HTML unless you intend to disclose codebase structure.");
+    expect(SHELL_SOURCE).toContain("Keep private — includes codebase names and structure, but not source or file paths.");
   });
 
   it("locks the offline content-security policy", () => {
@@ -26,6 +28,13 @@ describe("explorer shell contract", () => {
   it("titles the report and panel", () => {
     expect(SHELL_SOURCE).toContain("RubyLens · Explorer");
     expect(SHELL_SOURCE).toContain("Explore this codebase");
+    expect(SHELL_SOURCE).toContain('<p class="panel-kicker">Stellar navigator</p><h2>Explorer</h2>');
+  });
+
+  it("uses restrained category rails without decorative dots", () => {
+    expect(STYLES_SOURCE).toContain(".explorer-section > summary::before");
+    expect(STYLES_SOURCE).toContain("flex: 0 0 1px; width: 1px;");
+    expect(STYLES_SOURCE).not.toContain(".swatch");
   });
 
   it("sits the galaxy summary with the title", () => {
