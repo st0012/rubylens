@@ -196,3 +196,64 @@ test("fixed-frame rendering is deterministic", async ({ page }) => {
   expect(first.some(channel => channel > 0)).toBe(true);
   expect(second).toEqual(first);
 });
+
+test("active travel stays visible through Explorer orbit and zoom", async ({ page }) => {
+  expect(await openExplorer(page)).toBe("webgl2");
+  const target = await page.evaluate(() => {
+    if (animationFrame) { cancelAnimationFrame(animationFrame); animationFrame = 0; }
+    let active = null;
+    window.__travelHeads = [];
+    window.__originalDrawTravelHead = drawTravelHead;
+    drawTravelHead = (...args) => {
+      window.__travelHeads.push([args[1], args[2]]);
+      return window.__originalDrawTravelHead(...args);
+    };
+    for (let elapsed = 0; elapsed < SHOWCASE_PRESET.durationMs; elapsed += 1000 / 60) {
+      const states = travelStatesAt(elapsed).filter(state => {
+        const raw = (elapsed - state.episode.startsAt) / TRAVEL_PRESET.flightDurationMs;
+        return raw >= 0.25 && raw <= 0.35 && state.visibility >= TRAVEL_PRESET.minimumVisibility;
+      });
+      if (!states.length) continue;
+      window.__travelHeads.length = 0;
+      drawTravelOverlay(elapsed, true);
+      if (window.__travelHeads.length) {
+        active = states[0];
+        explorerTravelElapsed = elapsed;
+        break;
+      }
+    }
+    if (!active) throw new Error("fixture never drew an active travel head");
+    explorerTravelLastTimestamp = 10_000;
+    lastDriftTimestamp = 10_000;
+    lastDependencySpinTimestamp = 10_000;
+    render(10_000);
+    return {
+      linkIndex: active.episode.linkIndex,
+      startsAt: active.episode.startsAt,
+      route: active.episode.route,
+    };
+  });
+  try {
+    expect(await page.evaluate(() => window.__travelHeads.splice(0).length)).toBeGreaterThan(0);
+    await page.mouse.move(500, 500);
+    await page.mouse.down();
+    await page.mouse.move(620, 540, { steps: 4 });
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    expect(await page.evaluate(() => dragging && window.__travelHeads.splice(0).length > 0)).toBe(true);
+    await page.mouse.up();
+    await page.mouse.wheel(0, -120);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    expect(await page.evaluate(() => window.__travelHeads.splice(0).length)).toBeGreaterThan(0);
+
+    const route = await page.evaluate(expected => travelStatesAt(explorerTravelElapsed)
+      .find(state => state.episode.linkIndex === expected.linkIndex &&
+        state.episode.startsAt === expected.startsAt)?.episode.route, target);
+    expect(route).toEqual(target.route);
+  } finally {
+    await page.evaluate(() => {
+      drawTravelHead = window.__originalDrawTravelHead;
+      delete window.__originalDrawTravelHead;
+      delete window.__travelHeads;
+    });
+  }
+});

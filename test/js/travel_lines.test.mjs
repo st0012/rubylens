@@ -239,6 +239,32 @@ describe("constant-reference travel links", () => {
     expect(runtime.projectScenePoint(0, matrix)).toEqual(namespaceBefore);
   });
 
+  it("freezes a rotating dependency departure at launch and its destination at landing", () => {
+    const runtime = loadRuntime(concurrentFixtureModel([[0, 20]]));
+    runtime.state.zoom = 0.5;
+    runtime.state.dependencySpinElapsed = 1_234;
+    runtime.travelEpisodesThrough(0);
+    const episode = runtime.travelEpisodesThrough(12_000).find(candidate => candidate.route);
+    const link = runtime.constantReferenceLinks[episode.linkIndex];
+    const launchSpin = 1_234 + episode.startsAt;
+    const landingSpin = launchSpin + runtime.TRAVEL_PRESET.flightDurationMs;
+    const expectedDeparture = runtime.scenePointWorldPosition(link.departureIndex, launchSpin);
+    const expectedArrival = runtime.scenePointWorldPosition(link.arrivalIndex, landingSpin);
+
+    episode.route.departure.forEach((value, index) =>
+      expect(value).toBeCloseTo(expectedDeparture[index], 10)
+    );
+    episode.route.arrival.forEach((value, index) =>
+      expect(value).toBeCloseTo(expectedArrival[index], 10)
+    );
+    const dependencyAtLanding = runtime.scenePointWorldPosition(link.departureIndex, landingSpin);
+    expect(Math.hypot(
+      dependencyAtLanding[0] - episode.route.departure[0],
+      dependencyAtLanding[1] - episode.route.departure[1],
+      dependencyAtLanding[2] - episode.route.departure[2],
+    )).toBeGreaterThan(0.01);
+  });
+
   it("scales traffic with the rendered project population", () => {
     const runtime = loadRuntime(fixtureModel());
 
@@ -337,98 +363,93 @@ describe("constant-reference travel links", () => {
     expect(runtime.travelStatesAt(60_000)).toEqual([]);
   });
 
-  it("keeps an active route attached to both projected stars as the camera rotates", () => {
+  it("projects one immutable world route through the live camera without drift", () => {
     const runtime = loadRuntime(concurrentFixtureModel([CONCURRENT_LINKS[0]]));
     runtime.state.zoom = 3;
     const initialYaw = runtime.state.yaw;
-    const direction = runtime.screenRotationYawSign(runtime.state.pitch);
     runtime.travelEpisodesThrough(0);
     const episode = runtime.travelEpisodesThrough(2_000).find(candidate => candidate.route);
-    const link = runtime.constantReferenceLinks[episode.linkIndex];
-    const arcSide = route => {
-      const dx = route.arrival[0] - route.departure[0];
-      const dy = route.arrival[1] - route.departure[1];
-      return Math.sign(
-        dx * (route.controlY - route.departure[1]) -
-          dy * (route.controlX - route.departure[0]),
-      );
-    };
-    const routes = [0.15, 0.5, 0.85].map(rawProgress => {
-      const elapsed = episode.startsAt + runtime.TRAVEL_PRESET.flightDurationMs * rawProgress;
-      const route = runtime.travelRouteAt(episode, elapsed);
-      runtime.state.yaw = initialYaw + direction * runtime.DRIFT_RADIANS_PER_SECOND * elapsed / 1000;
-      const expectedDeparture = runtime.projectScenePoint(link.departureIndex, runtime.viewMatrix());
-      const expectedArrival = runtime.projectScenePoint(link.arrivalIndex, runtime.viewMatrix());
-
-      route.departure.forEach((value, index) => expect(value).toBeCloseTo(expectedDeparture[index], 10));
-      route.arrival.forEach((value, index) => expect(value).toBeCloseTo(expectedArrival[index], 10));
-      expect(arcSide(route)).toBe(arcSide(episode.route));
-      return route;
-    });
-
-    expect(routes[0].departure).not.toEqual(routes.at(-1).departure);
-    expect(routes[0].arrival).not.toEqual(routes.at(-1).arrival);
-    episode.route.departure.forEach((value, index) => expect(value).toBeCloseTo(routes[1].departure[index], 10));
-    episode.route.arrival.forEach((value, index) => expect(value).toBeCloseTo(routes[1].arrival[index], 10));
-
     const elapsed = episode.startsAt + runtime.TRAVEL_PRESET.flightDurationMs * 0.7;
     const state = stateForEpisode(runtime, elapsed, episode);
-    const route = runtime.travelRouteAt(episode, elapsed);
-    const distance = Math.hypot(
-      route.arrival[0] - route.departure[0],
-      route.arrival[1] - route.departure[1],
-    );
+    const route = episode.route;
+    const frozenRoute = structuredClone(route);
+    runtime.state.yaw = initialYaw + runtime.screenRotationYawSign(runtime.state.pitch) *
+      runtime.DRIFT_RADIANS_PER_SECOND * elapsed / 1000 * 8;
+    runtime.state.pitch = 0.72;
+    runtime.state.zoom = 2.4;
+    runtime.state.panX = 37;
+    runtime.state.panY = -23;
+    const matrix = runtime.viewMatrix();
+    const projectedAt = progress => {
+      const world = route.departure.map((value, index) =>
+        runtime.quadraticCoordinate(value, route.control[index], route.arrival[index], progress)
+      );
+      return runtime.projectCoordinates(world[0], world[1], world[2], matrix);
+    };
+    const tangentProgress = state.progress < 0.999 ? state.progress + 0.001 : state.progress - 0.001;
+    const expectedHead = projectedAt(state.progress);
+    const expectedTangent = projectedAt(tangentProgress);
+    const pixelsPerProgress = Math.hypot(
+      expectedTangent[0] - expectedHead[0],
+      expectedTangent[1] - expectedHead[1],
+    ) / Math.abs(tangentProgress - state.progress);
     const wakeEnd = Math.max(
       0,
       state.progress - runtime.TRAVEL_PRESET.headLengthPx *
-        (1 - runtime.TRAVEL_PRESET.tailHeadOverlap) / distance,
+        (1 - runtime.TRAVEL_PRESET.tailHeadOverlap) / pixelsPerProgress,
     );
     const tailStart = Math.max(
       0,
       wakeEnd - runtime.TRAVEL_PRESET.tailFraction,
-      wakeEnd - runtime.TRAVEL_PRESET.tailLengthPx / distance,
+      wakeEnd - runtime.TRAVEL_PRESET.tailLengthPx / pixelsPerProgress,
     );
-    const expectedStart = [
-      runtime.quadraticCoordinate(route.departure[0], route.controlX, route.arrival[0], tailStart),
-      runtime.quadraticCoordinate(route.departure[1], route.controlY, route.arrival[1], tailStart),
-    ];
-    const frozenStart = [
-      runtime.quadraticCoordinate(
-        episode.route.departure[0], episode.route.controlX, episode.route.arrival[0], tailStart,
-      ),
-      runtime.quadraticCoordinate(
-        episode.route.departure[1], episode.route.controlY, episode.route.arrival[1], tailStart,
-      ),
-    ];
+    const expectedStart = projectedAt(tailStart);
+    const projectedDeparture = projectedAt(0);
+    const projectedArrival = projectedAt(1);
+    const projectedControl = runtime.projectCoordinates(
+      route.control[0], route.control[1], route.control[2], matrix,
+    );
+    const screenQuadraticHead = [0, 1].map(index => runtime.quadraticCoordinate(
+      projectedDeparture[index], projectedControl[index], projectedArrival[index], state.progress,
+    ));
     runtime.context2D.reset();
     runtime.drawTravelOverlay(elapsed, true);
     runtime.context2D.strokes[0].from.forEach((value, index) =>
       expect(value).toBeCloseTo(expectedStart[index], 10)
     );
+    runtime.context2D.fillPaths[0].translation.forEach((value, index) =>
+      expect(value).toBeCloseTo(expectedHead[index], 10)
+    );
     expect(Math.hypot(
-      runtime.context2D.strokes[0].from[0] - frozenStart[0],
-      runtime.context2D.strokes[0].from[1] - frozenStart[1],
-    )).toBeGreaterThan(0.1);
+      expectedHead[0] - screenQuadraticHead[0],
+      expectedHead[1] - screenQuadraticHead[1],
+    )).toBeGreaterThan(0.01);
+    expect(route).toEqual(frozenRoute);
   });
 
-  it("restarts from a clean launch delay after a manual camera change", () => {
+  it("keeps active world routes visible through manual zoom and orbit", () => {
     const runtime = loadRuntime(concurrentFixtureModel());
     runtime.state.zoom = 3;
     const activeAt = firstVisibleTravelOverlap(runtime, runtime.travelFlightLimit);
+    const episodes = drawableTravelStates(runtime, activeAt).map(state => state.episode);
 
     runtime.context2D.reset();
     runtime.drawTravelOverlay(activeAt, true);
+    const initialHeads = runtime.context2D.fillPaths.map(path => path.translation);
     expect(runtime.context2D.strokes).toHaveLength(
       runtime.travelFlightLimit * runtime.TRAVEL_PRESET.tailSegments,
     );
     expect(runtime.context2D.fills).toBe(runtime.travelFlightLimit);
     runtime.zoomBetween(3.5, runtime.state.sceneRight / 2, runtime.state.sceneBottom / 2);
+    runtime.state.yaw += 0.08;
     runtime.context2D.reset();
-    runtime.drawTravelOverlay(5, true);
-    expect(runtime.context2D.strokes).toEqual([]);
-    const resetEpisodes = runtime.travelEpisodesThrough(2_000);
-    expect(resetEpisodes.length).toBeGreaterThan(0);
-    expect(resetEpisodes[0].startsAt).toBeGreaterThan(5);
+    runtime.drawTravelOverlay(activeAt, true);
+    expect(runtime.context2D.strokes.length).toBeGreaterThan(0);
+    expect(runtime.context2D.fills).toBe(runtime.travelFlightLimit);
+    expect(runtime.context2D.fillPaths.map(path => path.translation)).not.toEqual(initialHeads);
+    drawableTravelStates(runtime, activeAt).forEach((state, index) =>
+      expect(state.episode).toBe(episodes[index])
+    );
   });
 
   it("keeps the Explorer travel clock monotonic through routine jank cadence", () => {
@@ -454,7 +475,7 @@ describe("constant-reference travel links", () => {
     expect(runtime.explorerTravelElapsedAt(9_050, true)).toBe(firstFrame + 50);
   });
 
-  it("uses the same capped timebase for Explorer drift and admission prediction", () => {
+  it("uses the same capped timebase for Explorer drift and travel", () => {
     const runtime = loadRuntime(concurrentFixtureModel());
     runtime.state.drifting = true;
     runtime.state.lastDriftTimestamp = null;
@@ -475,7 +496,7 @@ describe("constant-reference travel links", () => {
     }
   });
 
-  it("checks the full quadratic, not only its endpoints, against the viewport", () => {
+  it("requires the screen-space control hull, not only its endpoints, inside the viewport", () => {
     const runtime = loadRuntime();
     const inset = runtime.TRAVEL_PRESET.admissionInsetPx;
     const right = runtime.state.sceneRight;
@@ -491,7 +512,117 @@ describe("constant-reference travel links", () => {
       controlX: inset - arcHeight,
       controlY: bottom / 2,
     };
-    expect(runtime.travelCurveFits(route, right, bottom, inset)).toBe(false);
+    expect(runtime.travelGuideFits(route, right, bottom, inset)).toBe(false);
+  });
+
+  it("rejects perspective escapes and keeps admitted unequal-depth curves bounded", () => {
+    const runtime = loadRuntime();
+    runtime.state.yaw = 0;
+    runtime.state.pitch = 0;
+    runtime.state.zoom = 1;
+    runtime.state.panX = 0;
+    runtime.state.panY = 0;
+    const inset = runtime.TRAVEL_PRESET.admissionInsetPx;
+    const right = runtime.state.sceneRight;
+    const bottom = runtime.state.sceneBottom;
+    const { cameraDistance, cameraFocalLength } = runtime.layoutMetricsForCoreCount(0, runtime.morphology);
+    const atDepth = ([screenX, screenY], depth) => [
+      (screenX - runtime.state.sceneCenterX) * depth / cameraFocalLength,
+      (screenY - runtime.state.sceneCenterY) * depth / cameraFocalLength,
+      cameraDistance - depth,
+    ];
+    const departureDepth = 40;
+    const arrivalDepth = 400;
+    const routeFromGuide = guide => ({
+      departure: atDepth(guide.departure, departureDepth),
+      control: atDepth(
+        [guide.controlX, guide.controlY],
+        (departureDepth + arrivalDepth) / 2,
+      ),
+      arrival: atDepth(guide.arrival, arrivalDepth),
+    });
+    const matrix = runtime.viewMatrix();
+    const unsafeGuide = {
+      departure: [inset + right * 0.04, bottom / 2],
+      arrival: [right - inset - 4, bottom / 2],
+      controlX: inset - right * 0.12,
+      controlY: bottom / 2,
+    };
+    const guideSamples = Array.from({ length: 1_001 }, (_, index) =>
+      runtime.quadraticCoordinate(
+        unsafeGuide.departure[0],
+        unsafeGuide.controlX,
+        unsafeGuide.arrival[0],
+        index / 1_000,
+      )
+    );
+    expect(guideSamples.every(value => value >= inset && value <= right - inset)).toBe(true);
+    expect(runtime.travelGuideFits(unsafeGuide, right, bottom, inset)).toBe(false);
+    const unsafeProjected = Array.from({ length: 1_001 }, (_, index) =>
+      runtime.projectTravelRoutePoint(routeFromGuide(unsafeGuide), index / 1_000, matrix)
+    );
+    expect(unsafeProjected.some(point => point[0] < inset)).toBe(true);
+
+    const guide = {
+      departure: [inset + 24, bottom * 0.35],
+      arrival: [right - inset - 24, bottom * 0.65],
+      controlX: right / 2,
+      controlY: inset + 24,
+    };
+    expect(runtime.travelGuideFits(guide, right, bottom, inset)).toBe(true);
+    const route = routeFromGuide(guide);
+    const projected = Array.from({ length: 1_001 }, (_, index) =>
+      runtime.projectTravelRoutePoint(route, index / 1_000, matrix)
+    );
+    expect(projected.every(Boolean)).toBe(true);
+    expect(projected.every(point =>
+      point[0] >= inset && point[0] <= right - inset &&
+      point[1] >= inset && point[1] <= bottom - inset
+    )).toBe(true);
+
+    const [departure, arrival] = [projected[0], projected.at(-1)];
+    const dx = arrival[0] - departure[0];
+    const dy = arrival[1] - departure[1];
+    const chordLength = Math.hypot(dx, dy);
+    const maximumBend = Math.max(...projected.map(point =>
+      Math.abs(dx * (point[1] - departure[1]) - dy * (point[0] - departure[0])) / chordLength
+    ));
+    expect(maximumBend).toBeGreaterThan(40);
+  });
+
+  it("draws visible wake and head samples when a route endpoint crosses the near plane", () => {
+    const runtime = loadRuntime(concurrentFixtureModel([CONCURRENT_LINKS[0]]));
+    runtime.state.zoom = 3;
+    runtime.travelEpisodesThrough(0);
+    const episode = runtime.travelEpisodesThrough(2_000).find(candidate => candidate.route);
+    runtime.state.yaw = 0;
+    runtime.state.pitch = 0;
+    runtime.state.zoom = 1;
+    runtime.state.panX = 0;
+    runtime.state.panY = 0;
+
+    const { cameraDistance, cameraFocalLength } = runtime.layoutMetricsForCoreCount(15, runtime.morphology);
+    const atDepth = ([screenX, screenY], depth) => [
+      (screenX - runtime.state.sceneCenterX) * depth / cameraFocalLength,
+      (screenY - runtime.state.sceneCenterY) * depth / cameraFocalLength,
+      cameraDistance - depth,
+    ];
+    episode.route = {
+      departure: atDepth([runtime.state.sceneCenterX - 180, runtime.state.sceneCenterY + 40], 30),
+      control: atDepth([runtime.state.sceneCenterX, runtime.state.sceneCenterY - 80], 120),
+      arrival: atDepth([runtime.state.sceneCenterX + 180, runtime.state.sceneCenterY + 40], 200),
+    };
+    const elapsed = episode.startsAt + runtime.TRAVEL_PRESET.flightDurationMs * 0.4;
+    const state = stateForEpisode(runtime, elapsed, episode);
+    const matrix = runtime.viewMatrix();
+    expect(runtime.projectTravelRoutePoint(episode.route, 0, matrix)).toBeNull();
+    expect(runtime.projectTravelRoutePoint(episode.route, state.progress, matrix)).not.toBeNull();
+
+    runtime.context2D.reset();
+    runtime.drawTravelOverlay(elapsed, true);
+    expect(runtime.context2D.strokes.length).toBeGreaterThan(0);
+    expect(runtime.context2D.strokes.length).toBeLessThan(runtime.TRAVEL_PRESET.tailSegments);
+    expect(runtime.context2D.fills).toBe(1);
   });
 
   it("prioritizes dependency routes, rotates them, and supports sparse link sets", () => {
@@ -561,13 +692,29 @@ describe("constant-reference travel links", () => {
   it("bends each admitted route by the configured arc height", () => {
     const runtime = loadRuntime(concurrentFixtureModel([CONCURRENT_LINKS[0]]));
     runtime.state.zoom = 3;
-    const route = runtime.travelEpisodesThrough(2_000).find(episode => episode.route).route;
-    const distance = Math.hypot(
-      route.arrival[0] - route.departure[0],
-      route.arrival[1] - route.departure[1],
+    const initialYaw = runtime.state.yaw;
+    runtime.travelEpisodesThrough(0);
+    const episode = runtime.travelEpisodesThrough(2_000).find(candidate => candidate.route);
+    const route = episode.route;
+    const midpointElapsed = episode.startsAt + runtime.TRAVEL_PRESET.flightDurationMs / 2;
+    runtime.state.yaw = initialYaw + runtime.screenRotationYawSign(runtime.state.pitch) *
+      runtime.DRIFT_RADIANS_PER_SECOND * midpointElapsed / 1000;
+    const matrix = runtime.viewMatrix();
+    const departure = runtime.projectCoordinates(
+      route.departure[0], route.departure[1], route.departure[2], matrix,
     );
-    const midpointX = (route.departure[0] + route.arrival[0]) / 2;
-    const midpointY = (route.departure[1] + route.arrival[1]) / 2;
+    const control = runtime.projectCoordinates(
+      route.control[0], route.control[1], route.control[2], matrix,
+    );
+    const arrival = runtime.projectCoordinates(
+      route.arrival[0], route.arrival[1], route.arrival[2], matrix,
+    );
+    const distance = Math.hypot(
+      arrival[0] - departure[0],
+      arrival[1] - departure[1],
+    );
+    const midpointX = (departure[0] + arrival[0]) / 2;
+    const midpointY = (departure[1] + arrival[1]) / 2;
     const expectedArcHeight = Math.min(
       runtime.TRAVEL_PRESET.arcHeightMax,
       Math.max(
@@ -575,13 +722,8 @@ describe("constant-reference travel links", () => {
         distance * runtime.TRAVEL_PRESET.arcHeightPercent / 100,
       ),
     );
-    const curveMidpointX = runtime.quadraticCoordinate(route.departure[0], route.controlX, route.arrival[0], 0.5);
-    const curveMidpointY = runtime.quadraticCoordinate(route.departure[1], route.controlY, route.arrival[1], 0.5);
-
-    expect(Math.hypot(route.controlX - midpointX, route.controlY - midpointY))
+    expect(Math.hypot(control[0] - midpointX, control[1] - midpointY))
       .toBeCloseTo(expectedArcHeight, 10);
-    expect(Math.hypot(curveMidpointX - midpointX, curveMidpointY - midpointY))
-      .toBeCloseTo(expectedArcHeight / 2, 10);
   });
 
   it("suppresses imperceptible fade endpoints and projected routes shorter than 48 pixels", () => {
@@ -602,7 +744,7 @@ describe("constant-reference travel links", () => {
     expect(shortRuntime.context2D.strokes).toEqual([]);
   });
 
-  it("uses the broad, feathered meteor preset without a projectile head", () => {
+  it("uses the compact tapered meteor preset without a projectile head", () => {
     const runtime = loadRuntime(fixtureModel());
     const episode = launchEpisodes(runtime)[0];
     const startsAt = episode.startsAt;
@@ -625,18 +767,18 @@ describe("constant-reference travel links", () => {
     expect(stateForEpisode(runtime, endsAt - 0.001, episode)?.episode.linkIndex).toBe(episode.linkIndex);
     expect(stateForEpisode(runtime, endsAt + 0.001, episode)).toBeUndefined();
     expect(runtime.TRAVEL_PRESET.tailFraction).toBe(0.7);
-    expect(runtime.TRAVEL_PRESET.tailSegments).toBe(24);
-    expect(runtime.TRAVEL_PRESET.tailLengthPx).toBe(218.4);
-    expect(runtime.TRAVEL_PRESET.lineWidth).toBe(2.86);
+    expect(runtime.TRAVEL_PRESET.tailSegments).toBe(12);
+    expect(runtime.TRAVEL_PRESET.tailLengthPx).toBe(145.6);
+    expect(runtime.TRAVEL_PRESET.lineWidth).toBe(1.91);
     expect(runtime.TRAVEL_PRESET.tailAlpha).toBe(0.38);
-    expect(runtime.TRAVEL_PRESET.tailHaloAlpha).toBe(0.09);
-    expect(runtime.TRAVEL_PRESET.tailHaloBlur).toBe(2.86);
+    expect(runtime.TRAVEL_PRESET).not.toHaveProperty("tailHaloAlpha");
+    expect(runtime.TRAVEL_PRESET).not.toHaveProperty("tailHaloBlur");
     expect(runtime.TRAVEL_PRESET.tailHeadOverlap).toBe(0.82);
-    expect(runtime.TRAVEL_PRESET.headLengthPx).toBe(9.75);
-    expect(runtime.TRAVEL_PRESET.headWidthPx).toBe(2.73);
+    expect(runtime.TRAVEL_PRESET.headLengthPx).toBe(6.5);
+    expect(runtime.TRAVEL_PRESET.headWidthPx).toBe(1.82);
     expect(runtime.TRAVEL_PRESET.headAlpha).toBe(0.64);
     expect(runtime.TRAVEL_PRESET.headGlowAlpha).toBe(0.12);
-    expect(runtime.TRAVEL_PRESET.headGlowBlur).toBe(4.42);
+    expect(runtime.TRAVEL_PRESET.headGlowBlur).toBe(2.95);
     expect(runtime.TRAVEL_PRESET).not.toHaveProperty("tipLengthPx");
     expect(runtime.TRAVEL_PRESET).not.toHaveProperty("cycleDurationMs");
     expect(runtime.TRAVEL_PRESET).not.toHaveProperty("launchWindowMs");
@@ -682,7 +824,8 @@ describe("constant-reference travel links", () => {
       const tail = strokes;
       const head = runtime.context2D.fillPaths[index];
       const state = visibleStates[index];
-      const route = runtime.travelRouteAt(state.episode, activeAt);
+      const route = state.episode.route;
+      const matrix = runtime.viewMatrix();
       const renderedTailLength = tail.reduce((sum, stroke) => sum + stroke.length, 0);
       const peakTailWidth = Math.max(...tail.map(stroke => stroke.lineWidth));
       const expectedRgb = categoryRgb[runtime.travelEndpointCategory(links[index].departureIndex)];
@@ -695,7 +838,7 @@ describe("constant-reference travel links", () => {
       expect(tail.at(-1).lineWidth).toBeCloseTo(peakTailWidth, 12);
       expect(tail.every(stroke => stroke.lineCap === "round")).toBe(true);
       expect(tail.every(stroke => stroke.strokeStyle.startsWith(`rgba(${expectedRgb},`))).toBe(true);
-      expect(tail.every(stroke => stroke.shadowColor.startsWith(`rgba(${expectedRgb},`))).toBe(true);
+      expect(tail.every(stroke => stroke.shadowBlur === 0)).toBe(true);
       expect(tail.every(stroke => !stroke.strokeStyle.includes("255,248,244"))).toBe(true);
       expect(head.fillStyle.startsWith(`rgba(${expectedRgb},`)).toBe(true);
       expect(head.shadowColor.startsWith(`rgba(${expectedRgb},`)).toBe(true);
@@ -714,17 +857,12 @@ describe("constant-reference travel links", () => {
       expect(head.commands[2].slice(-2)).toEqual([0, 0]);
       expect(head.commands[1].at(-1)).toBeCloseTo(-runtime.TRAVEL_PRESET.headWidthPx / 2, 12);
       expect(head.commands[3].at(-1)).toBeCloseTo(runtime.TRAVEL_PRESET.headWidthPx / 2, 12);
-      const expectedHead = [
-        runtime.quadraticCoordinate(route.departure[0], route.controlX, route.arrival[0], state.progress),
-        runtime.quadraticCoordinate(route.departure[1], route.controlY, route.arrival[1], state.progress),
-      ];
-      const inverseProgress = 1 - state.progress;
-      const tangent = [
-        2 * inverseProgress * (route.controlX - route.departure[0]) +
-          2 * state.progress * (route.arrival[0] - route.controlX),
-        2 * inverseProgress * (route.controlY - route.departure[1]) +
-          2 * state.progress * (route.arrival[1] - route.controlY),
-      ];
+      const expectedHead = runtime.projectTravelRoutePoint(route, state.progress, matrix);
+      const tangentProgress = state.progress < 0.999 ? state.progress + 0.001 : state.progress - 0.001;
+      const tangentPoint = runtime.projectTravelRoutePoint(route, tangentProgress, matrix);
+      const tangent = tangentProgress > state.progress
+        ? [tangentPoint[0] - expectedHead[0], tangentPoint[1] - expectedHead[1]]
+        : [expectedHead[0] - tangentPoint[0], expectedHead[1] - tangentPoint[1]];
       const expectedAngle = Math.atan2(tangent[1], tangent[0]);
       head.translation.forEach((coordinate, at) => expect(coordinate).toBeCloseTo(expectedHead[at], 10));
       expect(head.rotation).toBeCloseTo(expectedAngle, 12);
