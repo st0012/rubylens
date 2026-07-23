@@ -342,4 +342,9 @@ describe("explorer runtime contract", () => {
     expect(RUNTIME_SOURCE).toContain("if (interactiveMode) {");
     expect(RUNTIME_SOURCE).toContain("if (exact) return exact.hub ? exact : null");
   });
+  it("keeps the shared runtime offline", () => {
+    // No URL may reach a generated artifact through the runtime: reports and
+    // showcases embed it verbatim and promise fully offline rendering.
+    expect(RUNTIME_SOURCE).not.toMatch(/https?:\/\//);
+  });
 });

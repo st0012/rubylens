@@ -37,4 +37,13 @@ class ShowcaseContractTest < Minitest::Test
     # Inline clip-frame opacity only works because clip mode turns fades off.
     assert_includes(STYLES, "html[data-rubylens-clip] .cinema-annotation")
   end
+
+  def test_showcase_shell_is_offline_and_noninteractive
+    # The offline and non-interactive contracts, scoped to the assets Ruby
+    # ships: the shared runtime's offline contract lives in the JS suite.
+    refute_match(%r{https?://}, SHELL)
+    refute_match(%r{https?://}, STYLES)
+    refute_match(/<(?:button|aside|iframe|input|select|textarea)\b/, SHELL)
+    refute_match(/<canvas[^>]*tabindex=/, SHELL)
+  end
 end

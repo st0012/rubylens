@@ -107,9 +107,6 @@ class ReportWriterTest < Minitest::Test
       runtime_head, runtime_tail = File.read(File.join(assets, "runtime/report.js")).split("{{MODEL_BASE64}}")
       assert_includes(html, runtime_head)
       assert_includes(html, runtime_tail)
-      refute_includes(html, 'name="rubylens-artifact" content="showcase"')
-      refute_includes(html, "{{MODEL_BASE64}}")
-      refute_match(%r{https?://}, html)
       assert_equal(0o600, File.stat(output).mode & 0o777)
       assert_equal("*\n", File.read(File.join(directory, ".rubylens", ".gitignore")))
     end

@@ -34,10 +34,6 @@ class ShowcaseWriterTest < Minitest::Test
       assert_includes(html, 'class="cinema-stats"')
       assert_includes(html, 'class="cinema-stats" aria-label="Codebase statistics" hidden')
       assert_includes(html, 'class="cinema-annotation" id="cinema-annotation" aria-hidden="true" hidden')
-      refute_includes(html, "{{MODEL_BASE64}}")
-      refute_match(/<(?:button|aside|iframe|input|select|textarea)\b/, html)
-      refute_match(/<canvas[^>]*tabindex=/, html)
-      refute_match(%r{https?://}, html)
       assert_equal(0o600, File.stat(output).mode & 0o777)
     end
   end

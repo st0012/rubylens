@@ -77,4 +77,10 @@ class ExplorerRuntimeTest < Minitest::Test
     assert_includes(STYLES, ".explorer-search[hidden] { display: none; }")
     assert_includes(STYLES, ".toolbar[hidden] { display: none; }")
   end
+
+  def test_explorer_shell_and_styles_are_offline
+    # Runtime offline coverage lives in the JS suite; these are Ruby's assets.
+    refute_match(%r{https?://}, SHELL)
+    refute_match(%r{https?://}, STYLES)
+  end
 end
