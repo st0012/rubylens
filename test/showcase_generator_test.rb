@@ -48,7 +48,7 @@ class ShowcaseGeneratorTest < Minitest::Test
   def test_details_opt_in_reaches_the_serialized_showcase_model
     with_repository do |directory|
       result = generate(path: directory, details: true)
-      encoded = File.read(result.output_path).match(/JSON\.parse\(atob\("([^"]+)"\)\)/)[1]
+      encoded = File.read(result.output_path).match(/const sceneModel = decodeBase64Json\("([^"]+)"\)/)[1]
       model = JSON.parse(Base64.strict_decode64(encoded))
 
       assert_equal(true, model.fetch("details"))

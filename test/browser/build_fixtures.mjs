@@ -25,7 +25,14 @@ function mulberry32(seed) {
   };
 }
 
-export function fixtureModel({ namespaces = 1500, packages = 12, stars = 2500 } = {}) {
+export function fixtureModel({
+  namespaces = 1500,
+  packages = 12,
+  stars = 2500,
+  projectName = "Fixture Cosmos",
+  namespacePrefix = "Core",
+  testPrefix = "Spec",
+} = {}) {
   const random = mulberry32(0x51a7e11a);
   const seed = () => Math.floor(random() * 0x1_0000_0000);
   const names = [];
@@ -36,7 +43,7 @@ export function fixtureModel({ namespaces = 1500, packages = 12, stars = 2500 } 
     const kind = random() < 0.8 ? 0 : 1;
     const rubyCounts = [kind === 0 ? 1 : 0, kind === 1 ? 1 : 0, 1 + (index % 40), index % 5];
     rubyCounts.forEach((count, at) => { categoryStats[test ? "tests" : "core"][at] += count; });
-    names.push(test ? `Spec::Case${index}` : `Core::Node${index}`);
+    names.push(test ? `${testPrefix}::Case${index}` : `${namespacePrefix}::Node${index}`);
     rows.push([seed(), kind, test, index % 9, 1 + (index % 3), index % 2, index % 30, index % 80, index % 20, ...rubyCounts, index % 4]);
   }
   const packageNames = [];
@@ -62,7 +69,7 @@ export function fixtureModel({ namespaces = 1500, packages = 12, stars = 2500 } 
   const domains = { ancestorDepth: 9, definitionSites: 3, reopenings: 2, descendants: 30, references: 80, members: 20 };
   return {
     schema: "rubylens.art.v13",
-    projectName: "Fixture Cosmos",
+    projectName,
     morphology: [2, 0, 240, 3, 105, 380, 0, 0, 0, 42],
     totals: { namespaces, packages, dependencyStars: stars },
     domains,
@@ -131,8 +138,37 @@ function assembleFixture(shellName, stylesName, model) {
   return substituteOnce(html, "{{MODEL_BASE64}}", Buffer.from(JSON.stringify(model)).toString("base64"));
 }
 
+function assembleCollectionFixture(models) {
+  const collection = {
+    schema: "rubylens.collection.v2",
+    galaxies: models,
+  };
+  return assembleFixture("report.html", "report.css", collection);
+}
+
 export default function buildFixtures() {
   mkdirSync(FIXTURES, { recursive: true });
   writeFileSync(join(FIXTURES, "explorer.html"), assembleFixture("report.html", "report.css", fixtureModel()));
   writeFileSync(join(FIXTURES, "showcase.html"), assembleFixture("showcase.html", "showcase.css", fixtureShowcaseModel()));
+  const collectionModels = [
+    fixtureModel({ namespaces: 320, packages: 5, stars: 480, projectName: "First Cosmos" }),
+    fixtureModel({
+      namespaces: 240,
+      packages: 4,
+      stars: 360,
+      projectName: "Second Cosmos",
+      namespacePrefix: "Other",
+      testPrefix: "OtherSpec",
+    }),
+    fixtureModel({
+      namespaces: 180,
+      packages: 3,
+      stars: 240,
+      projectName: "Second Cosmos",
+      namespacePrefix: "Third",
+      testPrefix: "ThirdSpec",
+    }),
+  ];
+  writeFileSync(join(FIXTURES, "collection.html"), assembleCollectionFixture(collectionModels));
+  writeFileSync(join(FIXTURES, "collection-pair.html"), assembleCollectionFixture(collectionModels.slice(0, 2)));
 }

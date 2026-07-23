@@ -1,6 +1,6 @@
 # Payload schemas
 
-RubyLens moves data through three schemas. One is an in-memory handoff; two are persisted inside generated HTML artifacts. This document is the contract for their shapes and for when the version strings must change.
+RubyLens moves data through four schemas. One is an in-memory handoff; three are persisted inside generated HTML artifacts. This document is the contract for their shapes and for when the version strings must change.
 
 ## Why the `schema` field exists
 
@@ -101,3 +101,15 @@ Details mode (`--details`) adds:
 | `categoryStats` | As in the art model |
 | `pinnedNamespaceAnchors` | Indexes of `Object`/`Kernel`/`BasicObject` rows kept anchorable without annotation |
 | `annotations` | Up to 200 safety-filtered `{"category", "name", "kind", "anchor"}` entries, category-interleaved |
+
+## `rubylens.collection.v2` — Explorer collection scene (persisted)
+
+Built by `CollectionGenerator`; base64-encoded into the ordinary Explorer model slot in `rubylens-collection.html`. The artifact uses the same shell, styles, and runtime as a standalone report.
+
+| Field | Shape |
+| --- | --- |
+| `galaxies` | Ordered array of `rubylens.art.v12` objects used as galaxy groups. At least two are present. Project names, counts, paths, and an aggregate total are not duplicated at collection level. |
+
+Each project is indexed through a separate Rubydex graph and retains its own morphology, domains, names, rows, dependency indexes, and warnings. The collection payload is one scene model: the browser builds each `galaxies` entry independently, rebases its runtime-only package and system indexes, and bakes every point and anchor into one world-space scene buffer before applying the shared camera. Collection order is the command-line target order; repeated names receive derived ordinal labels for accessibility.
+
+Version 2 replaces the v1 envelope of nested base64 report payloads with direct galaxy-group objects so the persisted shape matches the single scene rendered in the browser.

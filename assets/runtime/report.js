@@ -1,10 +1,20 @@
     "use strict";
-    const model = JSON.parse(atob("{{MODEL_BASE64}}"));
+    const decodeBase64Json = encoded => {
+      const bytes = Uint8Array.from(atob(encoded), character => character.charCodeAt(0));
+      return JSON.parse(new TextDecoder().decode(bytes));
+    };
+    const sceneModel = decodeBase64Json("{{MODEL_BASE64}}");
+    const galaxyModels = sceneModel.schema === "rubylens.collection.v2"
+      ? sceneModel.galaxies
+      : [sceneModel];
+    const collectionMode = galaxyModels.length > 1;
+    let model = galaxyModels[0];
     const showcaseMode = document.body.dataset.rubylensMode === "showcase";
     const showcaseDetails = showcaseMode && model.details === true;
     const interactiveMode = !showcaseMode;
     const canvas = document.getElementById("cosmos");
     const travelCanvas = showcaseMode ? document.getElementById("travel-cosmos") : canvas;
+    const projectLabelsLayer = document.getElementById("project-labels");
     const showcaseStage = document.getElementById("showcase-stage");
     const showcaseStatus = document.getElementById("showcase-status");
     const showcaseAnnotation = document.getElementById("cinema-annotation");
@@ -43,7 +53,13 @@
     const MORPHOLOGY_FAMILY_LABELS = Object.freeze(["Elliptical galaxy", "Lenticular galaxy", "Spiral galaxy", "Barred spiral galaxy", "Irregular galaxy"]);
     const FALLBACK_MORPHOLOGY_ROW = Object.freeze([MORPHOLOGY_FAMILY.spiral, 0, 240, 3, 105, 380, 0, 0, 0, 0]);
     const RSPEC_PROXY_PREFIX = "RSpec example group #";
-    const DEFAULT_CAMERA = Object.freeze({ yaw: -.36, pitch: .34, zoom: 2, panX: 0, panY: 0 });
+    const DEFAULT_CAMERA = Object.freeze({
+      yaw: -.36,
+      pitch: .34,
+      zoom: collectionMode ? 2 / Math.pow(galaxyModels.length, .7) : 2,
+      panX: 0,
+      panY: 0,
+    });
     const DEFAULT_ROTATION_DIRECTION = "clockwise";
     const DRIFT_RADIANS_PER_SECOND = .04125;
     const MAX_DRIFT_DELTA_MS = 50;
@@ -271,8 +287,8 @@
         phase: unit(phaseSeed, 80) * Math.PI * 2,
       });
     }
-    const morphology = decodeMorphology(model.morphology);
-    const spiralMorphology = morphology.family === MORPHOLOGY_FAMILY.spiral || morphology.family === MORPHOLOGY_FAMILY.barredSpiral;
+    let morphology;
+    let spiralMorphology;
     function screenRotationYawSign(pitchRadians) {
       const clockwiseSign = Math.sin(pitchRadians) > 0 ? -1 : 1;
       return DEFAULT_ROTATION_DIRECTION === "clockwise" ? clockwiseSign : -clockwiseSign;
@@ -326,11 +342,11 @@
       });
     }
 
-    const coreCount = model.namespaces.reduce((count, row) => count + (row[2] === 1 ? 0 : 1), 0);
-    const layoutScale = layoutMetricsForCoreCount(coreCount, morphology);
-    const cameraDistance = layoutScale.cameraDistance;
-    const cameraFocalLength = layoutScale.cameraFocalLength;
-    const barRadius = morphology.barLength * 48;
+    let coreCount;
+    let layoutScale;
+    let cameraDistance;
+    let cameraFocalLength;
+    let barRadius;
     // Arm recipe shared by the project galaxy and dependency clouds. Seeded
     // jitters draw from a galaxy's phase seed on the channels below, so each
     // galaxy varies while every one of its stars agrees.
@@ -377,22 +393,8 @@
       unbarredOriginRadial: 6,
       unbarredMinimumRadial: 8,
     });
-    const barredRing = morphology.family === MORPHOLOGY_FAMILY.barredSpiral &&
-      unit(morphology.phaseSeed, ARM_RECIPE.ringGalaxyChannel) < ARM_RECIPE.ringGalaxyShare;
-
-    const irregularClumpCenters = morphology.family === MORPHOLOGY_FAMILY.irregular
-      ? Array.from({ length: morphology.clumpCount }, (_, index) => {
-          const centerSpread = 12 + 18 * morphology.clumpSpread;
-          const angle = morphology.phase + index * Math.PI * 2 / morphology.clumpCount + (unit(morphology.phaseSeed, 90 + index * 3) - .5) * .8;
-          const distance = centerSpread * (.42 + unit(morphology.phaseSeed, 91 + index * 3) * .58);
-          return [
-            Math.cos(angle) * distance,
-            normal(morphology.phaseSeed, 92 + index * 3) * centerSpread * .12,
-            Math.sin(angle) * distance,
-            angle,
-          ];
-        })
-      : [];
+    let barredRing;
+    let irregularClumpCenters;
 
     function spheroidPosition(seed, outerShell) {
       const radius = outerShell
@@ -567,25 +569,10 @@
       return [Math.cos(theta) * radial * layoutScale.tests, vertical * layoutScale.tests, Math.sin(theta) * radial * layoutScale.tests];
     }
 
-    const dependencySystems = Array.isArray(model.dependencySystems) ? model.dependencySystems : [];
-    const systemMembers = Array.from({ length: dependencySystems.length }, () => []);
-    const packageMemberOrdinals = new Array(model.packages.length).fill(-1);
-    model.packages.forEach((row, packageIndex) => {
-      const systemIndex = Number(row[8]);
-      if (!Number.isInteger(systemIndex) || systemIndex < 0 || systemIndex >= systemMembers.length) return;
-      packageMemberOrdinals[packageIndex] = systemMembers[systemIndex].length;
-      systemMembers[systemIndex].push(packageIndex);
-    });
-    const systemAggregates = systemMembers.map(packageIndexes => {
-      const aggregate = { declarationCount: 0, directCount: 0, rubyCounts: [0, 0, 0, 0] };
-      for (const packageIndex of packageIndexes) {
-        const row = model.packages[packageIndex];
-        aggregate.declarationCount += Number(row[3]) || 0;
-        aggregate.directCount += row[1] === 0 ? 1 : 0;
-        for (let index = 0; index < aggregate.rubyCounts.length; index += 1) aggregate.rubyCounts[index] += Number(row[index + 4]) || 0;
-      }
-      return aggregate;
-    });
+    let dependencySystems;
+    let systemMembers;
+    let packageMemberOrdinals;
+    let systemAggregates;
 
     function decodePackageMorphology(raw, packageIndex) {
       const packageRow = model.packages[packageIndex] || [];
@@ -597,8 +584,8 @@
       });
     }
 
-    const encodedPackageMorphologies = Array.isArray(model.packageMorphologies) ? model.packageMorphologies : [];
-    const packageMorphologies = model.packages.map((_row, index) => decodePackageMorphology(encodedPackageMorphologies[index], index));
+    let encodedPackageMorphologies;
+    let packageMorphologies;
 
     function boundedDependencyOffset(x, y, z, radius) {
       const distance = Math.hypot(x, y, z);
@@ -688,41 +675,99 @@
       const vertical = normal(seed, 16) * 24 * Math.sqrt(layoutScale.tests);
       return [Math.cos(theta) * radius, vertical, Math.sin(theta) * radius, 1.6 + Math.sqrt(declarationCount) * .055];
     };
-    const systemAnchors = dependencySystems.map((row, index) => {
-      const anchor = dependencyAnchor(row[0], systemAggregates[index]?.declarationCount || 0);
-      anchor[3] += Math.min(5, systemMembers[index].length * .65);
-      anchor.push(index);
-      return anchor;
-    });
-    const packageAnchors = model.packages.map((row, index) => {
-      const systemIndex = Number(row[8]);
-      const cloudRadius = 1.6 + Math.sqrt(row[3]) * .055;
-      if (!Number.isInteger(systemIndex) || systemIndex < 0 || !systemAnchors[systemIndex]) {
-        return [...dependencyAnchor(row[0], row[3]), index, -1];
-      }
+    let systemAnchors;
+    let packageAnchors;
 
-      const parent = systemAnchors[systemIndex];
-      const memberCount = systemMembers[systemIndex].length;
-      const ordinal = packageMemberOrdinals[index];
-      const phase = unit(dependencySystems[systemIndex][0], 22) * Math.PI * 2;
-      const theta = phase + ordinal * Math.PI * 2 / memberCount;
-      const spread = Math.max(3.4, parent[3] * .58) * (.72 + unit(row[0], 23) * .18);
-      const vertical = normal(row[0], 24) * Math.max(1, spread * .16);
-      return [
-        parent[0] + Math.cos(theta) * spread,
-        parent[1] + vertical,
-        parent[2] + Math.sin(theta) * spread,
-        cloudRadius,
-        index,
-        systemIndex,
-      ];
-    });
-    for (const anchors of [systemAnchors, packageAnchors]) {
-      for (const anchor of anchors) {
-        anchor[0] *= DEPENDENCY_HALO_SPACING_SCALE;
-        anchor[1] *= DEPENDENCY_HALO_SPACING_SCALE;
-        anchor[2] *= DEPENDENCY_HALO_SPACING_SCALE;
+    let packageOrientations;
+    let packageSpinRates;
+
+    function activateProjectModel(activeModel) {
+      model = activeModel;
+      morphology = decodeMorphology(model.morphology);
+      spiralMorphology = morphology.family === MORPHOLOGY_FAMILY.spiral || morphology.family === MORPHOLOGY_FAMILY.barredSpiral;
+      coreCount = model.namespaces.reduce((count, row) => count + (row[2] === 1 ? 0 : 1), 0);
+      layoutScale = layoutMetricsForCoreCount(coreCount, morphology);
+      cameraDistance = layoutScale.cameraDistance;
+      cameraFocalLength = layoutScale.cameraFocalLength;
+      barRadius = morphology.barLength * 48;
+      barredRing = morphology.family === MORPHOLOGY_FAMILY.barredSpiral &&
+        unit(morphology.phaseSeed, ARM_RECIPE.ringGalaxyChannel) < ARM_RECIPE.ringGalaxyShare;
+      irregularClumpCenters = morphology.family === MORPHOLOGY_FAMILY.irregular
+        ? Array.from({ length: morphology.clumpCount }, (_, index) => {
+            const centerSpread = 12 + 18 * morphology.clumpSpread;
+            const angle = morphology.phase + index * Math.PI * 2 / morphology.clumpCount + (unit(morphology.phaseSeed, 90 + index * 3) - .5) * .8;
+            const distance = centerSpread * (.42 + unit(morphology.phaseSeed, 91 + index * 3) * .58);
+            return [
+              Math.cos(angle) * distance,
+              normal(morphology.phaseSeed, 92 + index * 3) * centerSpread * .12,
+              Math.sin(angle) * distance,
+              angle,
+            ];
+          })
+        : [];
+      dependencySystems = Array.isArray(model.dependencySystems) ? model.dependencySystems : [];
+      systemMembers = Array.from({ length: dependencySystems.length }, () => []);
+      packageMemberOrdinals = new Array(model.packages.length).fill(-1);
+      model.packages.forEach((row, packageIndex) => {
+        const systemIndex = Number(row[8]);
+        if (!Number.isInteger(systemIndex) || systemIndex < 0 || systemIndex >= systemMembers.length) return;
+        packageMemberOrdinals[packageIndex] = systemMembers[systemIndex].length;
+        systemMembers[systemIndex].push(packageIndex);
+      });
+      systemAggregates = systemMembers.map(packageIndexes => {
+        const aggregate = { declarationCount: 0, directCount: 0, rubyCounts: [0, 0, 0, 0] };
+        for (const packageIndex of packageIndexes) {
+          const row = model.packages[packageIndex];
+          aggregate.declarationCount += Number(row[3]) || 0;
+          aggregate.directCount += row[1] === 0 ? 1 : 0;
+          for (let index = 0; index < aggregate.rubyCounts.length; index += 1) aggregate.rubyCounts[index] += Number(row[index + 4]) || 0;
+        }
+        return aggregate;
+      });
+      encodedPackageMorphologies = Array.isArray(model.packageMorphologies) ? model.packageMorphologies : [];
+      packageMorphologies = model.packages.map((_row, index) => decodePackageMorphology(encodedPackageMorphologies[index], index));
+      systemAnchors = dependencySystems.map((row, index) => {
+        const anchor = dependencyAnchor(row[0], systemAggregates[index]?.declarationCount || 0);
+        anchor[3] += Math.min(5, systemMembers[index].length * .65);
+        anchor.push(index);
+        return anchor;
+      });
+      packageAnchors = model.packages.map((row, index) => {
+        const systemIndex = Number(row[8]);
+        const cloudRadius = 1.6 + Math.sqrt(row[3]) * .055;
+        if (!Number.isInteger(systemIndex) || systemIndex < 0 || !systemAnchors[systemIndex]) {
+          return [...dependencyAnchor(row[0], row[3]), index, -1];
+        }
+
+        const parent = systemAnchors[systemIndex];
+        const memberCount = systemMembers[systemIndex].length;
+        const ordinal = packageMemberOrdinals[index];
+        const phase = unit(dependencySystems[systemIndex][0], 22) * Math.PI * 2;
+        const theta = phase + ordinal * Math.PI * 2 / memberCount;
+        const spread = Math.max(3.4, parent[3] * .58) * (.72 + unit(row[0], 23) * .18);
+        const vertical = normal(row[0], 24) * Math.max(1, spread * .16);
+        return [
+          parent[0] + Math.cos(theta) * spread,
+          parent[1] + vertical,
+          parent[2] + Math.sin(theta) * spread,
+          cloudRadius,
+          index,
+          systemIndex,
+        ];
+      });
+      for (const anchors of [systemAnchors, packageAnchors]) {
+        for (const anchor of anchors) {
+          anchor[0] *= DEPENDENCY_HALO_SPACING_SCALE;
+          anchor[1] *= DEPENDENCY_HALO_SPACING_SCALE;
+          anchor[2] *= DEPENDENCY_HALO_SPACING_SCALE;
+        }
       }
+      packageOrientations = model.packages.map(row => dependencyOrientation(row[0]));
+      packageSpinRates = model.packages.map((row, index) => {
+        const direction = unit(row[0], DEPENDENCY_SPIN_RECIPE.directionChannel) < .5 ? -1 : 1;
+        const turns = dependencySpinTurns(row, packageAnchors[index]);
+        return direction * turns * Math.PI * 2 / (SHOWCASE_PRESET.durationMs / 1000);
+      });
     }
 
     const IDENTITY_DEPENDENCY_ORIENTATION = Object.freeze([0, 1, 0, 1, 0, 0, 0, 0, 1]);
@@ -738,7 +783,6 @@
         -sine, 0, cosine,
       ]);
     }
-    const packageOrientations = model.packages.map(row => dependencyOrientation(row[0]));
 
     function orientDependencyOffset(offset, orientation, out = [0, 0, 0]) {
       out[0] = offset[0] * orientation[3] + offset[1] * orientation[0] + offset[2] * orientation[6];
@@ -762,12 +806,6 @@
         DEPENDENCY_SPIN_RECIPE.maximumTurnsPerLoop,
       );
     }
-
-    const packageSpinRates = model.packages.map((row, index) => {
-      const direction = unit(row[0], DEPENDENCY_SPIN_RECIPE.directionChannel) < .5 ? -1 : 1;
-      const turns = dependencySpinTurns(row, packageAnchors[index]);
-      return direction * turns * Math.PI * 2 / (SHOWCASE_PRESET.durationMs / 1000);
-    });
 
     function dependencySpunPosition(positionX, positionY, positionZ, packageIndex, elapsed, out = [0, 0, 0]) {
       const anchor = packageAnchors[packageIndex];
@@ -799,7 +837,7 @@
 
     function createDependencySpinTexture(gl) {
       const maximumSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
-      const texelCount = Math.max(1, model.packages.length * 2);
+      const texelCount = Math.max(1, packageAnchors.length * 2);
       const width = Math.min(maximumSize, texelCount);
       const height = Math.ceil(texelCount / width);
       if (height > maximumSize) throw new Error("Dependency package count exceeds WebGL2 texture capacity");
@@ -938,14 +976,165 @@
       });
       return { sceneData, scenePointCount, interactivePoints, dependencyHubs, packageHubs, systemHubs };
     }
-    const { sceneData, scenePointCount, interactivePoints, dependencyHubs, packageHubs, systemHubs } = buildPoints();
+    const rawGalaxies = galaxyModels.map((projectModel, projectIndex) => {
+      activateProjectModel(projectModel);
+      const constantReferenceLinks = decodeConstantReferenceLinks(projectModel.constantReferenceLinks);
+      delete projectModel.constantReferenceLinks;
+      return {
+        projectIndex,
+        model: projectModel,
+        morphology,
+        spiralMorphology,
+        layoutScale,
+        cameraDistance,
+        cameraFocalLength,
+        barRadius,
+        barredRing,
+        irregularClumpCenters,
+        systemMembers,
+        systemAggregates,
+        systemAnchors,
+        packageAnchors,
+        packageMorphologies,
+        packageOrientations,
+        packageSpinRates,
+        constantReferenceLinks,
+        ...buildPoints(),
+      };
+    });
+    function activateRawGalaxy(rawScene) {
+      model = rawScene.model;
+      morphology = rawScene.morphology;
+      spiralMorphology = rawScene.spiralMorphology;
+      layoutScale = rawScene.layoutScale;
+      cameraDistance = rawScene.cameraDistance;
+      cameraFocalLength = rawScene.cameraFocalLength;
+      barRadius = rawScene.barRadius;
+      barredRing = rawScene.barredRing;
+      irregularClumpCenters = rawScene.irregularClumpCenters;
+      systemMembers = rawScene.systemMembers;
+      systemAggregates = rawScene.systemAggregates;
+      systemAnchors = rawScene.systemAnchors;
+      packageAnchors = rawScene.packageAnchors;
+      packageMorphologies = rawScene.packageMorphologies;
+      packageOrientations = rawScene.packageOrientations;
+      packageSpinRates = rawScene.packageSpinRates;
+    }
+    const projectNameCounts = galaxyModels.reduce((counts, projectModel) => {
+      counts.set(projectModel.projectName, (counts.get(projectModel.projectName) || 0) + 1);
+      return counts;
+    }, new Map());
+    const projectNameOrdinals = new Map();
+    const projectLabels = galaxyModels.map(projectModel => {
+      const name = projectModel.projectName;
+      if (projectNameCounts.get(name) === 1) return name;
+      const ordinal = (projectNameOrdinals.get(name) || 0) + 1;
+      projectNameOrdinals.set(name, ordinal);
+      return `${name} (${ordinal})`;
+    });
+    const sharedCameraDistance = collectionMode ? 270 : rawGalaxies[0].cameraDistance;
+    const sharedCameraFocalLength = rawGalaxies[0].cameraFocalLength;
+    const galaxySpacing = 240;
+    const scenePointCount = rawGalaxies.reduce((count, scene) => count + scene.scenePointCount, 0);
+    const sceneData = new Float32Array(scenePointCount * SCENE_POINT_STRIDE);
+    const interactivePoints = [];
+    const dependencyHubs = [];
+    const packageHubs = [];
+    const systemHubs = [];
+    const packageAnchorsByProject = [];
+    const systemAnchorsByProject = [];
+    const packageOrientationsByProject = [];
+    const packageSpinRatesByProject = [];
+    const constantReferenceLinks = [];
+    const galaxyGroups = [];
+    let renderIndexBase = 0;
+    let packageIndexBase = 0;
+    let systemIndexBase = 0;
+    for (const rawScene of rawGalaxies) {
+      const scale = sharedCameraDistance / rawScene.cameraDistance;
+      const worldOffset = (rawScene.projectIndex - (rawGalaxies.length - 1) / 2) * galaxySpacing;
+      rawScene.renderIndexBase = renderIndexBase;
+      rawScene.packageIndexBase = packageIndexBase;
+      rawScene.systemIndexBase = systemIndexBase;
+      rawScene.scale = scale;
+      rawScene.worldOffset = worldOffset;
+      const scaledSystemAnchors = rawScene.systemAnchors.map((anchor, index) => [
+        anchor[0] * scale + worldOffset,
+        anchor[1] * scale,
+        anchor[2] * scale,
+        anchor[3] * scale,
+        systemIndexBase + index,
+      ]);
+      const scaledPackageAnchors = rawScene.packageAnchors.map((anchor, index) => [
+        anchor[0] * scale + worldOffset,
+        anchor[1] * scale,
+        anchor[2] * scale,
+        anchor[3] * scale,
+        packageIndexBase + index,
+        anchor[5] >= 0 ? systemIndexBase + anchor[5] : -1,
+      ]);
+      systemAnchorsByProject.push(...scaledSystemAnchors);
+      packageAnchorsByProject.push(...scaledPackageAnchors);
+      packageOrientationsByProject.push(...rawScene.packageOrientations);
+      packageSpinRatesByProject.push(...rawScene.packageSpinRates);
+      for (let localIndex = 0; localIndex < rawScene.scenePointCount; localIndex += 1) {
+        const source = localIndex * SCENE_POINT_STRIDE;
+        const target = (renderIndexBase + localIndex) * SCENE_POINT_STRIDE;
+        sceneData[target] = rawScene.sceneData[source] * scale + worldOffset;
+        sceneData[target + 1] = rawScene.sceneData[source + 1] * scale;
+        sceneData[target + 2] = rawScene.sceneData[source + 2] * scale;
+        sceneData[target + 3] = rawScene.sceneData[source + 3];
+        sceneData[target + 4] = rawScene.sceneData[source + 4];
+        sceneData[target + 5] = rawScene.sceneData[source + 5];
+        sceneData[target + 6] = rawScene.sceneData[source + 6];
+        sceneData[target + 7] = rawScene.sceneData[source + 7] >= 0 ? rawScene.sceneData[source + 7] + packageIndexBase : -1;
+        sceneData[target + 8] = rawScene.sceneData[source + 8] >= 0 ? rawScene.sceneData[source + 8] + systemIndexBase : -1;
+      }
+      for (const link of rawScene.constantReferenceLinks) {
+        constantReferenceLinks.push(Object.freeze({
+          departureIndex: link.departureIndex + renderIndexBase,
+          arrivalIndex: link.arrivalIndex + renderIndexBase,
+        }));
+      }
+      const adoptPoint = point => {
+        point.position = [
+          point.position[0] * scale + worldOffset,
+          point.position[1] * scale,
+          point.position[2] * scale,
+        ];
+        point.renderIndex += renderIndexBase;
+        if (point.packageIndex >= 0) point.packageIndex += packageIndexBase;
+        if (point.systemIndex >= 0) point.systemIndex += systemIndexBase;
+        point.projectIndex = rawScene.projectIndex;
+        point.projectLabel = projectLabels[rawScene.projectIndex];
+        return point;
+      };
+      interactivePoints.push(...rawScene.interactivePoints.map(adoptPoint));
+      dependencyHubs.push(...rawScene.dependencyHubs.map(point => point.projectIndex === rawScene.projectIndex ? point : adoptPoint(point)));
+      packageHubs.push(...rawScene.packageHubs.map(point => point.projectIndex === rawScene.projectIndex ? point : adoptPoint(point)));
+      systemHubs.push(...rawScene.systemHubs.map(point => point.projectIndex === rawScene.projectIndex ? point : adoptPoint(point)));
+      galaxyGroups.push(Object.freeze({
+        projectIndex: rawScene.projectIndex,
+        projectLabel: projectLabels[rawScene.projectIndex],
+        center: Object.freeze([worldOffset, 0, 0]),
+        coreOuterRadius: rawScene.layoutScale.coreOuterRadius * scale,
+      }));
+      renderIndexBase += rawScene.scenePointCount;
+      packageIndexBase += rawScene.model.packages.length;
+      systemIndexBase += rawScene.systemAnchors.length;
+    }
+    activateProjectModel(galaxyModels[0]);
+    packageAnchors = packageAnchorsByProject;
+    systemAnchors = systemAnchorsByProject;
+    packageOrientations = packageOrientationsByProject;
+    packageSpinRates = packageSpinRatesByProject;
+    cameraDistance = sharedCameraDistance;
+    cameraFocalLength = sharedCameraFocalLength;
     const travelFlightLimit = travelFlightLimitForPointCount(scenePointCount);
-    const constantReferenceLinks = decodeConstantReferenceLinks(model.constantReferenceLinks);
     const travelScheduleSeed = hash((
       morphology.phaseSeed ^ scenePointCount ^
       Math.imul(constantReferenceLinks.length + 1, 0x9e3779b9)
     ) >>> 0);
-    delete model.constantReferenceLinks;
     function travelEndpointCategory(renderIndex) {
       const categoryCode = sceneData[renderIndex * SCENE_POINT_STRIDE + 5];
       if (categoryCode === categoryCodes.tests) return "tests";
@@ -960,7 +1149,7 @@
         : workspaceTravelLinkIndices;
       pool.push(index);
     });
-    const packageCount = model.packages.length;
+    const packageCount = galaxyModels.reduce((count, projectModel) => count + projectModel.packages.length, 0);
 
     // Unresolved-glow population. The milky texture of a real galaxy is not a
     // halo around bright stars; it is millions of separate faint stars too
@@ -997,19 +1186,20 @@
       sparkleSize: Object.freeze({ floor: .3, span: .18 }),
       maxSize: 1.2,
     });
-    function buildHazePoints() {
+    function buildHazePoints(rawScene, budgetScale) {
+      activateRawGalaxy(rawScene);
+      const sourceSceneData = rawScene.sceneData;
+      const sourceScenePointCount = rawScene.scenePointCount;
       const markCounts = [0, 0, 0];
       const alphaSums = [0, 0, 0];
-      for (let index = 0; index < scenePointCount; index += 1) {
+      for (let index = 0; index < sourceScenePointCount; index += 1) {
         const offset = index * SCENE_POINT_STRIDE;
-        if (sceneData[offset + 6] > 4) continue;
-        const category = sceneData[offset + 5];
+        if (sourceSceneData[offset + 6] > 4) continue;
+        const category = sourceSceneData[offset + 5];
         markCounts[category] += 1;
-        alphaSums[category] += sceneData[offset + 4];
+        alphaSums[category] += sourceSceneData[offset + 4];
       }
       const perMark = [HAZE_RECIPE.starsPerMark.core, HAZE_RECIPE.starsPerMark.tests, HAZE_RECIPE.starsPerMark.dependencyStar];
-      const requested = markCounts[0] * perMark[0] + markCounts[1] * perMark[1] + markCounts[2] * perMark[2];
-      const budgetScale = Math.min(1, HAZE_RECIPE.pointBudget / Math.max(1, requested));
       const poolCounts = markCounts.map((count, category) => Math.round(count * perMark[category] * budgetScale));
       // The budget is a hard cap: rounding and dither tails trim, never spill.
       poolCounts[0] = Math.min(poolCounts[0], HAZE_RECIPE.pointBudget);
@@ -1021,9 +1211,9 @@
       const dependencyRows = [];
       if (poolCounts[2] > 0) {
         const perStar = perMark[2] * budgetScale;
-        for (let index = 0; index < scenePointCount; index += 1) {
+        for (let index = 0; index < sourceScenePointCount; index += 1) {
           const offset = index * SCENE_POINT_STRIDE;
-          if (sceneData[offset + 5] !== categoryCodes.dependencies || sceneData[offset + 6] > 4) continue;
+          if (sourceSceneData[offset + 5] !== categoryCodes.dependencies || sourceSceneData[offset + 6] > 4) continue;
           const stars = Math.floor(perStar) +
             (unit(hash(index + 1, HAZE_RECIPE.ditherSeedChannel), HAZE_RECIPE.ditherChannel) < perStar % 1 ? 1 : 0);
           for (let star = 0; star < stars; star += 1) dependencyRows.push(index * 8 + star);
@@ -1081,10 +1271,10 @@
         const offset = Math.floor(row / 8) * SCENE_POINT_STRIDE;
         const seed = hash(row + 1, HAZE_RECIPE.poolSeedChannel + categoryCodes.dependencies);
         writeHazeStar(
-          dependencyPosition(seed, sceneData[offset + 7]),
+          dependencyPosition(seed, sourceSceneData[offset + 7]),
           categoryCodes.dependencies,
-          sceneData[offset + 7],
-          sceneData[offset + 8],
+          sourceSceneData[offset + 7],
+          sourceSceneData[offset + 8],
           seed,
         );
       }
@@ -1160,9 +1350,65 @@
     let hazeBufferState = null;
     function hazeBuffers() {
       if (!hazeBufferState) {
-        const hazeData = buildHazePoints();
-        applyDustLanes(sceneData, scenePointCount, 0);
-        applyDustLanes(hazeData, hazeData.length / SCENE_POINT_STRIDE, HAZE_CATEGORY_OFFSET);
+        const requestedHazePoints = rawGalaxies.reduce((total, rawScene) => {
+          for (let index = 0; index < rawScene.scenePointCount; index += 1) {
+            const offset = index * SCENE_POINT_STRIDE;
+            if (rawScene.sceneData[offset + 6] > 4) continue;
+            const category = rawScene.sceneData[offset + 5];
+            if (category === categoryCodes.core) total += HAZE_RECIPE.starsPerMark.core;
+            else if (category === categoryCodes.tests) total += HAZE_RECIPE.starsPerMark.tests;
+            else if (category === categoryCodes.dependencies) total += HAZE_RECIPE.starsPerMark.dependencyStar;
+          }
+          return total;
+        }, 0);
+        const budgetScale = Math.min(1, HAZE_RECIPE.pointBudget / Math.max(1, requestedHazePoints));
+        const hazeChunks = [];
+        let remainingHazePoints = HAZE_RECIPE.pointBudget;
+        for (const rawScene of rawGalaxies) {
+          const localHazeData = buildHazePoints(rawScene, budgetScale);
+          applyDustLanes(rawScene.sceneData, rawScene.scenePointCount, 0);
+          applyDustLanes(localHazeData, localHazeData.length / SCENE_POINT_STRIDE, HAZE_CATEGORY_OFFSET);
+          for (let localIndex = 0; localIndex < rawScene.scenePointCount; localIndex += 1) {
+            const localOffset = localIndex * SCENE_POINT_STRIDE;
+            const worldOffset = (rawScene.renderIndexBase + localIndex) * SCENE_POINT_STRIDE;
+            sceneData[worldOffset + 4] = rawScene.sceneData[localOffset + 4];
+          }
+          const localHazePointCount = localHazeData.length / SCENE_POINT_STRIDE;
+          const acceptedHazePointCount = Math.min(localHazePointCount, remainingHazePoints);
+          const worldHazeData = new Float32Array(acceptedHazePointCount * SCENE_POINT_STRIDE);
+          for (let localIndex = 0; localIndex < acceptedHazePointCount; localIndex += 1) {
+            const localOffset = localIndex * SCENE_POINT_STRIDE;
+            const worldRowOffset = localOffset;
+            worldHazeData[worldRowOffset] = localHazeData[localOffset] * rawScene.scale + rawScene.worldOffset;
+            worldHazeData[worldRowOffset + 1] = localHazeData[localOffset + 1] * rawScene.scale;
+            worldHazeData[worldRowOffset + 2] = localHazeData[localOffset + 2] * rawScene.scale;
+            worldHazeData[worldRowOffset + 3] = localHazeData[localOffset + 3];
+            worldHazeData[worldRowOffset + 4] = localHazeData[localOffset + 4];
+            worldHazeData[worldRowOffset + 5] = localHazeData[localOffset + 5];
+            worldHazeData[worldRowOffset + 6] = localHazeData[localOffset + 6];
+            worldHazeData[worldRowOffset + 7] = localHazeData[localOffset + 7] >= 0
+              ? localHazeData[localOffset + 7] + rawScene.packageIndexBase
+              : -1;
+            worldHazeData[worldRowOffset + 8] = localHazeData[localOffset + 8] >= 0
+              ? localHazeData[localOffset + 8] + rawScene.systemIndexBase
+              : -1;
+          }
+          hazeChunks.push(worldHazeData);
+          remainingHazePoints -= acceptedHazePointCount;
+        }
+        const hazeData = new Float32Array(hazeChunks.reduce((length, chunk) => length + chunk.length, 0));
+        let hazeOffset = 0;
+        for (const chunk of hazeChunks) {
+          hazeData.set(chunk, hazeOffset);
+          hazeOffset += chunk.length;
+        }
+        activateRawGalaxy(rawGalaxies[0]);
+        packageAnchors = packageAnchorsByProject;
+        systemAnchors = systemAnchorsByProject;
+        packageOrientations = packageOrientationsByProject;
+        packageSpinRates = packageSpinRatesByProject;
+        cameraDistance = sharedCameraDistance;
+        cameraFocalLength = sharedCameraFocalLength;
         const renderPointData = new Float32Array(sceneData.length + hazeData.length);
         renderPointData.set(sceneData, 0);
         renderPointData.set(hazeData, sceneData.length);
@@ -1173,8 +1419,40 @@
       return hazeBufferState;
     }
 
-    const embeddedDependencyDeclarations = model.dependencyStars.length;
+    const embeddedDependencyDeclarations = galaxyModels.reduce(
+      (count, projectModel) => count + projectModel.dependencyStars.length,
+      0,
+    );
     let plottedDependencyDeclarations = embeddedDependencyDeclarations;
+    const projectLabelElements = collectionMode && projectLabelsLayer
+      ? galaxyGroups.map(scene => {
+          const label = document.createElement("span");
+          label.className = "project-label";
+          label.textContent = scene.projectLabel;
+          projectLabelsLayer.append(label);
+          return label;
+        })
+      : [];
+    if (projectLabelsLayer) projectLabelsLayer.hidden = !collectionMode;
+
+    function rotateUniverse(dx, dy) {
+      yaw += dx * .006;
+      pitch = clamp(pitch + dy * .004, -TOP_DOWN_PITCH, TOP_DOWN_PITCH);
+      rebaseExplorerTravelAdmission();
+    }
+
+    function updateProjectLabels() {
+      if (!collectionMode || !projectLabelsLayer || !explorerRenderer) return;
+      galaxyGroups.forEach((group, index) => {
+        const label = projectLabelElements[index];
+        const center = projectGalaxyCenter(group);
+        const x = center[0];
+        const labelY = center[1] + Math.min(132, sceneBottom * .17);
+        label.style.left = `${x}px`;
+        label.style.top = `${labelY}px`;
+        label.hidden = x < -80 || x > sceneRight + 80 || labelY < -30 || labelY > sceneBottom + 30;
+      });
+    }
 
     function updateGalaxySummary() {
       const summary = document.getElementById("galaxy-summary");
@@ -1182,10 +1460,13 @@
         ? document.documentElement.dataset.showcaseRenderer === "unavailable"
         : document.documentElement.dataset.explorerRenderer === "unavailable";
       if (rendererUnavailable) {
-        summary.textContent = `${MORPHOLOGY_FAMILY_LABELS[morphology.family]} · WebGL2 required`;
+        summary.textContent = `${collectionMode ? `${galaxyModels.length} galaxies` : MORPHOLOGY_FAMILY_LABELS[morphology.family]} · WebGL2 required`;
         return;
       }
-      summary.textContent = `${MORPHOLOGY_FAMILY_LABELS[morphology.family]} · ${scenePointCount.toLocaleString("en-US")} ${scenePointCount === 1 ? "star" : "stars"}`;
+      const description = collectionMode
+        ? `${galaxyModels.length} separately indexed galaxies`
+        : MORPHOLOGY_FAMILY_LABELS[morphology.family];
+      summary.textContent = `${description} · ${scenePointCount.toLocaleString("en-US")} ${scenePointCount === 1 ? "star" : "stars"}`;
     }
 
     function disableExplorerControls() {
@@ -1224,6 +1505,7 @@
       doubleClickTarget = null;
       tooltip.hidden = true;
       canvas.classList.remove("is-dragging-pan", "is-star");
+      if (projectLabelsLayer) projectLabelsLayer.hidden = true;
       if (!helpOverlay.hidden) closeHelp();
       plottedDependencyDeclarations = 0;
       document.documentElement.dataset.explorerRenderer = "unavailable";
@@ -1413,7 +1695,7 @@
         layout(location = 5) in float a_packageIndex;
         uniform vec2 u_resolution;
         uniform vec2 u_center;
-        uniform vec4 u_trig;
+        uniform vec4 u_viewTrig;
         uniform float u_zoom;
         uniform float u_cameraDistance;
         uniform float u_cameraFocalLength;
@@ -1438,14 +1720,14 @@
           bool hazePoint = a_category >= 2.5;
           float categoryCode = hazePoint ? a_category - 3.0 : a_category;
           vec3 position = dependencySpinPosition(a_position, categoryCode, a_maxSize, a_packageIndex);
-          float cy = u_trig.x;
-          float sy = u_trig.y;
-          float cp = u_trig.z;
-          float sp = u_trig.w;
-          float x1 = position.x * cy - position.z * sy;
-          float z1 = position.x * sy + position.z * cy;
-          float y2 = position.y * cp - z1 * sp;
-          float z2 = position.y * sp + z1 * cp;
+          float viewCosYaw = u_viewTrig.x;
+          float viewSinYaw = u_viewTrig.y;
+          float viewCosPitch = u_viewTrig.z;
+          float viewSinPitch = u_viewTrig.w;
+          float x1 = position.x * viewCosYaw - position.z * viewSinYaw;
+          float z1 = position.x * viewSinYaw + position.z * viewCosYaw;
+          float y2 = position.y * viewCosPitch - z1 * viewSinPitch;
+          float z2 = position.y * viewSinPitch + z1 * viewCosPitch;
           float depth = u_cameraDistance - z2;
           if (depth <= 35.0) { hidePoint(); return; }
 
@@ -1555,7 +1837,7 @@
       const pointUniforms = {
         resolution: gl.getUniformLocation(pointProgram, "u_resolution"),
         center: gl.getUniformLocation(pointProgram, "u_center"),
-        trig: gl.getUniformLocation(pointProgram, "u_trig"),
+        viewTrig: gl.getUniformLocation(pointProgram, "u_viewTrig"),
         zoom: gl.getUniformLocation(pointProgram, "u_zoom"),
         cameraDistance: gl.getUniformLocation(pointProgram, "u_cameraDistance"),
         cameraFocalLength: gl.getUniformLocation(pointProgram, "u_cameraFocalLength"),
@@ -1603,14 +1885,14 @@
           gl.uniform1f(pointUniforms.dependencySpinElapsed, dependencySpinElapsed / 1000);
           gl.uniform2f(pointUniforms.resolution, width, height);
           gl.uniform2f(pointUniforms.center, sceneCenterX, sceneCenterY);
-          const [cy, sy, cp, sp] = viewMatrix();
-          gl.uniform4f(pointUniforms.trig, cy, sy, cp, sp);
           gl.uniform1f(pointUniforms.zoom, zoom);
           gl.uniform1f(pointUniforms.cameraDistance, cameraDistance);
           gl.uniform1f(pointUniforms.cameraFocalLength, cameraFocalLength);
           gl.uniform1f(pointUniforms.brightness, SHOWCASE_PRESET.starBrightnessPercent);
           gl.uniform1f(pointUniforms.glow, SHOWCASE_PRESET.pointGlowPercent);
           gl.uniform1f(pointUniforms.deepDetail, deepDetail);
+          const [viewCosYaw, viewSinYaw, viewCosPitch, viewSinPitch] = viewMatrix();
+          gl.uniform4f(pointUniforms.viewTrig, viewCosYaw, viewSinYaw, viewCosPitch, viewSinPitch);
 
           ensureMilkTarget();
           gl.bindFramebuffer(gl.FRAMEBUFFER, milkFramebuffer);
@@ -1719,7 +2001,7 @@
         uniform vec2 u_resolution;
         uniform vec2 u_center;
         uniform vec2 u_sceneBounds;
-        uniform vec4 u_trig;
+        uniform vec4 u_viewTrig;
         uniform float u_zoom;
         uniform float u_cameraDistance;
         uniform float u_cameraFocalLength;
@@ -1757,14 +2039,14 @@
           bool expandedPoint = (u_expandedPackage >= 0.0 && a_packageIndex == u_expandedPackage)
             || (u_expandedSystem >= 0.0 && a_systemIndex == u_expandedSystem);
           if (expandedPoint) position = u_expandedAnchor + (position - u_expandedAnchor) * u_expansion;
-          float cy = u_trig.x;
-          float sy = u_trig.y;
-          float cp = u_trig.z;
-          float sp = u_trig.w;
-          float x1 = position.x * cy - position.z * sy;
-          float z1 = position.x * sy + position.z * cy;
-          float y2 = position.y * cp - z1 * sp;
-          float z2 = position.y * sp + z1 * cp;
+          float viewCosYaw = u_viewTrig.x;
+          float viewSinYaw = u_viewTrig.y;
+          float viewCosPitch = u_viewTrig.z;
+          float viewSinPitch = u_viewTrig.w;
+          float x1 = position.x * viewCosYaw - position.z * viewSinYaw;
+          float z1 = position.x * viewSinYaw + position.z * viewCosYaw;
+          float y2 = position.y * viewCosPitch - z1 * viewSinPitch;
+          float z2 = position.y * viewSinPitch + z1 * viewCosPitch;
           float depth = u_cameraDistance - z2;
           if (depth <= 35.0) { hidePoint(); return; }
 
@@ -1841,7 +2123,7 @@
         center: gl.getUniformLocation(backgroundProgram, "u_center"),
       };
       const pointUniforms = Object.fromEntries([
-        "u_resolution", "u_center", "u_sceneBounds", "u_trig", "u_zoom",
+        "u_resolution", "u_center", "u_sceneBounds", "u_viewTrig", "u_zoom",
         "u_cameraDistance", "u_cameraFocalLength", "u_exposure", "u_deepDetail", "u_dpr",
         "u_categoryVisible", "u_categoryEmphasis", "u_expandedPackage", "u_expandedSystem",
         "u_expandedAnchor", "u_expansion", "u_selectedIndex", "u_dependencySpins",
@@ -1896,8 +2178,6 @@
           gl.uniform2f(pointUniforms.resolution, width, height);
           gl.uniform2f(pointUniforms.center, centerX, centerY);
           gl.uniform2f(pointUniforms.sceneBounds, sceneRight, sceneBottom);
-          const [cy, sy, cp, sp] = viewMatrix();
-          gl.uniform4f(pointUniforms.trig, cy, sy, cp, sp);
           gl.uniform1f(pointUniforms.zoom, zoom);
           gl.uniform1f(pointUniforms.cameraDistance, cameraDistance);
           gl.uniform1f(pointUniforms.cameraFocalLength, cameraFocalLength);
@@ -1916,6 +2196,8 @@
           gl.uniform3f(pointUniforms.expandedAnchor, anchor ? anchor[0] : 0, anchor ? anchor[1] : 0, anchor ? anchor[2] : 0);
           gl.uniform1f(pointUniforms.expansion, DEPENDENCY_EXPANSION);
           gl.uniform1i(pointUniforms.selectedIndex, selectedPoint ? selectedPoint.renderIndex : -1);
+          const [viewCosYaw, viewSinYaw, viewCosPitch, viewSinPitch] = viewMatrix();
+          gl.uniform4f(pointUniforms.viewTrig, viewCosYaw, viewSinYaw, viewCosPitch, viewSinPitch);
           for (let pass = 0; pass < 3; pass += 1) {
             gl.uniform1i(pointUniforms.pass, pass);
             gl.drawArrays(gl.POINTS, 0, pass === 1 ? renderPointCount : scenePointCount);
@@ -1950,22 +2232,32 @@
     }
     const context = interactiveMode ? canvas.getContext("2d", { alpha: Boolean(explorerRenderer) }) : null;
     const travelContext = showcaseMode ? travelCanvas.getContext("2d", { alpha: true }) : context;
-    const directGemCount = model.packages.filter(row => row[1] === 0).length;
+    const directGemCount = galaxyModels.reduce(
+      (count, projectModel) => count + projectModel.packages.filter(row => row[1] === 0).length,
+      0,
+    );
     const transitiveGemCount = packageCount - directGemCount;
     const allRubyMetricIndexes = [0, 1, 2, 3];
     const testRubyMetricIndexes = [0, 2];
-    const dependencyRubyCounts = model.packages.reduce(
+    const dependencyRubyCounts = galaxyModels.flatMap(projectModel => projectModel.packages).reduce(
       (counts, row) => counts.map((count, index) => count + Number(row[index + 4] || 0)),
       [0, 0, 0, 0],
     );
+    const categoryRubyCounts = category => galaxyModels.reduce(
+      (counts, projectModel) => counts.map((count, index) => count + Number(projectModel.categoryStats?.[category]?.[index] || 0)),
+      [0, 0, 0, 0],
+    );
+    const focusZoomScale = collectionMode ? DEFAULT_CAMERA.zoom / 2 : 1;
     const categoryMeta = {
-      core: { title: "Core code", rubyCounts: model.categoryStats?.core || [0, 0, 0, 0], metricIndexes: allRubyMetricIndexes, focusZoom: 2.8 },
-      tests: { title: "Tests", rubyCounts: model.categoryStats?.tests || [0, 0, 0, 0], metricIndexes: testRubyMetricIndexes, focusZoom: 1.35 },
-      dependencies: { title: "Gems", rubyCounts: dependencyRubyCounts, metricIndexes: allRubyMetricIndexes, note: `${directGemCount.toLocaleString()} direct · ${transitiveGemCount.toLocaleString()} transitive`, focusZoom: .72 },
+      core: { title: "Core code", rubyCounts: categoryRubyCounts("core"), metricIndexes: allRubyMetricIndexes, focusZoom: 2.8 * focusZoomScale },
+      tests: { title: "Tests", rubyCounts: categoryRubyCounts("tests"), metricIndexes: testRubyMetricIndexes, focusZoom: 1.35 * focusZoomScale },
+      dependencies: { title: "Gems", rubyCounts: dependencyRubyCounts, metricIndexes: allRubyMetricIndexes, note: `${directGemCount.toLocaleString()} direct · ${transitiveGemCount.toLocaleString()} transitive`, focusZoom: .72 * focusZoomScale },
     };
-    model.namespaces = [];
-    model.packages = [];
-    model.dependencyStars = [];
+    galaxyModels.forEach(projectModel => {
+      projectModel.namespaces = [];
+      projectModel.packages = [];
+      projectModel.dependencyStars = [];
+    });
 
     function applyCameraTarget(target) {
       yaw = target.yaw;
@@ -1978,28 +2270,42 @@
 
     function contextualSelectionCameraTarget(point, preferredZoom = point.hub ? 4 : point.category === "dependencies" ? 5 : 7) {
       const [x, y, z] = point.position;
-      const radialDistance = Math.hypot(x, z);
-      const targetYaw = radialDistance > 1 ? Math.PI - Math.atan2(z, x) : yaw;
+      const group = galaxyGroups[point.projectIndex];
+      const [coreX, coreY, coreZ] = group.center;
+      const relativeX = x - coreX;
+      const relativeZ = z - coreZ;
+      const radialDistance = Math.hypot(relativeX, relativeZ);
+      const targetYaw = radialDistance > 1 ? Math.PI - Math.atan2(relativeZ, relativeX) : yaw;
       const targetPitch = pitch >= 0 ? TOP_DOWN_PITCH : -TOP_DOWN_PITCH;
       const cy = Math.cos(targetYaw), sy = Math.sin(targetYaw);
       const cp = Math.cos(targetPitch), sp = Math.sin(targetPitch);
-      const x1 = x * cy - z * sy;
-      const z1 = x * sy + z * cy;
-      const y2 = y * cp - z1 * sp;
-      const z2 = y * sp + z1 * cp;
+      const targetX1 = x * cy - z * sy;
+      const targetZ1 = x * sy + z * cy;
+      const targetY2 = y * cp - targetZ1 * sp;
+      const targetZ2 = y * sp + targetZ1 * cp;
+      const coreX1 = coreX * cy - coreZ * sy;
+      const coreZ1 = coreX * sy + coreZ * cy;
+      const coreY2 = coreY * cp - coreZ1 * sp;
+      const coreZ2 = coreY * sp + coreZ1 * cp;
+      const targetDepth = Math.max(35, cameraDistance - targetZ2);
+      const coreDepth = Math.max(35, cameraDistance - coreZ2);
+      const targetUnitX = targetX1 * cameraFocalLength / targetDepth;
+      const targetUnitY = targetY2 * cameraFocalLength / targetDepth;
+      const coreUnitX = coreX1 * cameraFocalLength / coreDepth;
+      const coreUnitY = coreY2 * cameraFocalLength / coreDepth;
       const desiredSeparation = sceneRight * (CONTEXT_CORE_X - CONTEXT_TARGET_X);
       const fitZoom = radialDistance > 1
-        ? desiredSeparation * Math.max(35, cameraDistance - z2) / (radialDistance * cameraFocalLength)
+        ? desiredSeparation / Math.max(.001, Math.abs(targetUnitX - coreUnitX))
         : preferredZoom;
-      const coreFitZoom = Math.min(sceneRight, sceneBottom) * .28 * cameraDistance / (layoutScale.coreOuterRadius * cameraFocalLength);
+      const coreFitZoom = Math.min(sceneRight, sceneBottom) * .28 * coreDepth /
+        (group.coreOuterRadius * cameraFocalLength);
       const targetZoom = clamp(fitZoom, MIN_ZOOM, Math.min(preferredZoom, coreFitZoom));
-      const actualSeparation = Math.abs(x1) * cameraFocalLength / Math.max(35, cameraDistance - z2) * targetZoom;
       return {
         yaw: targetYaw,
         pitch: targetPitch,
         zoom: targetZoom,
-        panX: sceneRight * .5 + actualSeparation * .5 - sceneCenterX,
-        panY: sceneBottom * CONTEXT_CENTER_Y - sceneCenterY - y2 * cameraFocalLength / Math.max(35, cameraDistance - z2) * targetZoom * .5,
+        panX: sceneRight * .5 - sceneCenterX - (targetUnitX + coreUnitX) * targetZoom * .5,
+        panY: sceneBottom * CONTEXT_CENTER_Y - sceneCenterY - (targetUnitY + coreUnitY) * targetZoom * .5,
       };
     }
 
@@ -2102,10 +2408,10 @@
       }
       const elapsed = lastDriftTimestamp === null ? 1000 / 60 : clamp(timestamp - lastDriftTimestamp, 0, MAX_DRIFT_DELTA_MS);
       lastDriftTimestamp = timestamp;
-      const driftDelta = screenRotationYawSign(pitch) * DRIFT_RADIANS_PER_SECOND * elapsed / 1000;
       if (!cameraFlight) {
-        yaw += driftDelta;
+        yaw += screenRotationYawSign(pitch) * DRIFT_RADIANS_PER_SECOND * elapsed / 1000;
       } else if (cameraFlight.followDrift) {
+        const driftDelta = screenRotationYawSign(pitch) * DRIFT_RADIANS_PER_SECOND * elapsed / 1000;
         yaw += driftDelta;
         cameraFlight.start.yaw += driftDelta;
         cameraFlight.target.yaw += driftDelta;
@@ -2150,7 +2456,8 @@
     function updateTooltipContent(point) {
       tooltipMetrics.textContent = "";
       const parentSystem = point.systemHub && !point.packageHub;
-      tooltipCategory.textContent = parentSystem ? "Dependency system" : point.hub ? "Gem" : point.category === "tests" ? "Tests" : "Core code";
+      const category = parentSystem ? "Dependency system" : point.hub ? "Gem" : point.category === "tests" ? "Tests" : "Core code";
+      tooltipCategory.textContent = collectionMode ? `${point.projectLabel} · ${category}` : category;
       tooltipName.textContent = point.name || "Unnamed Ruby item";
       if (parentSystem) {
         const expanded = expandedSystemIndex === point.systemIndex && expandedPackageIndex === null ? " · Expanded system · Escape to exit" : " · Double-click or F to expand";
@@ -2206,11 +2513,11 @@
       return [Math.cos(yaw), Math.sin(yaw), Math.cos(pitch), Math.sin(pitch)];
     }
 
-    function screenDataFor(point, matrix, cullMargin) {
+    function screenDataFor(point, cullMargin) {
       point.screen = null;
       if (point.hub) point.cloudScreenRadius = null;
       if (!visibleCategories[point.category]) return null;
-      const projected = project(point, matrix, projectionScratch);
+      const projected = project(point, viewMatrix(), projectionScratch);
       if (!projected) return null;
       const x = projected[0], y = projected[1], perspective = projected[2];
       if (x < -cullMargin || x > sceneRight + cullMargin || y < -cullMargin || y > sceneBottom + cullMargin) return null;
@@ -2253,7 +2560,7 @@
 
     function hitTestProjected(x, y) {
       const rows = ensureHitScanRows();
-      const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+      const [viewCosYaw, viewSinYaw, viewCosPitch, viewSinPitch] = viewMatrix();
       const centerX = sceneCenterX + panX;
       const centerY = sceneCenterY + panY;
       const rightBound = sceneRight + 20;
@@ -2281,10 +2588,10 @@
           py = anchor[1] + (py - anchor[1]) * DEPENDENCY_EXPANSION;
           pz = anchor[2] + (pz - anchor[2]) * DEPENDENCY_EXPANSION;
         }
-        const x1 = px * cy - pz * sy;
-        const z1 = px * sy + pz * cy;
-        const y2 = py * cp - z1 * sp;
-        const z2 = py * sp + z1 * cp;
+        const x1 = px * viewCosYaw - pz * viewSinYaw;
+        const z1 = px * viewSinYaw + pz * viewCosYaw;
+        const y2 = py * viewCosPitch - z1 * viewSinPitch;
+        const z2 = py * viewSinPitch + z1 * viewCosPitch;
         const pointDepth = cameraDistance - z2;
         if (pointDepth <= 35) continue;
         const perspective = cameraFocalLength / pointDepth * zoom;
@@ -2315,9 +2622,8 @@
 
       let nearestHub = null;
       let nearestRatio = Infinity;
-      const matrix = viewMatrix();
       for (const point of dependencyHubs) {
-        screenDataFor(point, matrix, 20);
+        screenDataFor(point, 20);
         if (!point.screen || !point.cloudScreenRadius) continue;
         if (expandedPackageIndex !== null && point.packageIndex !== expandedPackageIndex) continue;
         if (expandedPackageIndex === null && expandedSystemIndex !== null && point.systemIndex !== expandedSystemIndex) continue;
@@ -2612,7 +2918,10 @@
       const details = document.getElementById("status");
       const summary = document.getElementById("warning-summary");
       const container = document.getElementById("warning-details");
-      const counts = Object.fromEntries(["manifest", "index", "integrity"].map(category => [category, Math.max(0, Number(model.warningCounts?.[category]) || 0)]));
+      const counts = Object.fromEntries(["manifest", "index", "integrity"].map(category => [
+        category,
+        galaxyModels.reduce((count, projectModel) => count + Math.max(0, Number(projectModel.warningCounts?.[category]) || 0), 0),
+      ]));
       const warningTotal = Object.values(counts).reduce((sum, count) => sum + count, 0);
       const rendererUnavailable = interactiveMode && document.documentElement.dataset.explorerRenderer === "unavailable";
       container.textContent = "";
@@ -2637,8 +2946,13 @@
         );
       }
 
-      const safeWarnings = (Array.isArray(model.dependencyWarnings) ? model.dependencyWarnings : []).filter(warning =>
-        warning && typeof warning.name === "string" && warning.name.length > 0 && typeof warning.reason === "string" && warning.reason.length > 0
+      const safeWarnings = galaxyModels.flatMap((projectModel, projectIndex) =>
+        (Array.isArray(projectModel.dependencyWarnings) ? projectModel.dependencyWarnings : [])
+          .filter(warning => warning && typeof warning.name === "string" && warning.name.length > 0 && typeof warning.reason === "string" && warning.reason.length > 0)
+          .map(warning => ({
+            name: collectionMode ? `${projectLabels[projectIndex]} · ${warning.name}` : warning.name,
+            reason: warning.reason,
+          }))
       );
       const seen = new Set();
       const uniqueWarnings = safeWarnings.filter(warning => {
@@ -2683,7 +2997,8 @@
       const category = point.category === "core" ? "Core" : point.category === "tests" ? "Tests" : "Gems";
       const kind = point.systemHub && !point.packageHub ? "Dependency system" : point.packageHub ? "Gem package" : point.kind;
       const duplicate = duplicateTotal > 1 ? ` · Result ${duplicateOrdinal} of ${duplicateTotal}` : "";
-      return `${kind} · ${category}${duplicate}`;
+      const project = collectionMode ? `${point.projectLabel} · ` : "";
+      return `${project}${kind} · ${category}${duplicate}`;
     }
 
     function activateSearchResult(point) {
@@ -3119,6 +3434,22 @@
       const projected = out || [0, 0, 0];
       projected[0] = sceneCenterX + (camera?.panX ?? panX) + x1 * perspective;
       projected[1] = sceneCenterY + (camera?.panY ?? panY) + y2 * perspective;
+      projected[2] = perspective;
+      return projected;
+    }
+
+    function projectGalaxyCenter(group, targetZoom = zoom, out) {
+      const [viewCosYaw, viewSinYaw, viewCosPitch, viewSinPitch] = viewMatrix();
+      const [x, y, z] = group.center;
+      const x1 = x * viewCosYaw - z * viewSinYaw;
+      const z1 = x * viewSinYaw + z * viewCosYaw;
+      const y2 = y * viewCosPitch - z1 * viewSinPitch;
+      const z2 = y * viewSinPitch + z1 * viewCosPitch;
+      const depth = cameraDistance - z2;
+      const perspective = cameraFocalLength / Math.max(35, depth) * targetZoom;
+      const projected = out || [0, 0, 0];
+      projected[0] = sceneCenterX + panX + x1 * perspective;
+      projected[1] = sceneCenterY + panY + y2 * perspective;
       projected[2] = perspective;
       return projected;
     }
@@ -3670,6 +4001,8 @@
     }
 
     function updateExplorerOverlay(timestamp) {
+      context.clearRect(0, 0, width, height);
+      updateProjectLabels();
       if (constantReferenceLinks.length) {
         const travelEnabled = drifting;
         drawTravelOverlay(explorerTravelElapsedAt(timestamp, travelEnabled), travelEnabled);
@@ -4042,9 +4375,7 @@
       if (Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) > 3) gesture.moved = true;
       if (gesture.mode === "pan") panBy(dx, dy);
       else {
-        yaw += dx * .006;
-        pitch = clamp(pitch + dy * .004, -TOP_DOWN_PITCH, TOP_DOWN_PITCH);
-        rebaseExplorerTravelAdmission();
+        rotateUniverse(dx, dy);
       }
       gesture.lastX = event.clientX;
       gesture.lastY = event.clientY;
@@ -4161,7 +4492,8 @@
     }
 
     window.addEventListener("resize", resize);
-    document.querySelector("h1").textContent = model.projectName;
+    const explorerTitle = collectionMode ? projectLabels.join(" + ") : model.projectName;
+    document.querySelector("h1").textContent = explorerTitle;
     updateGalaxySummary();
     if (showcaseMode) {
       document.title = `${model.projectName} · RubyLens showcase`;
@@ -4172,9 +4504,14 @@
       resize();
       startShowcase();
     } else {
-      document.title = `RubyLens · ${model.projectName}`;
+      document.title = `RubyLens · ${explorerTitle}`;
+      if (collectionMode) {
+        panel.querySelector("h2").textContent = "Explore these codebases";
+        panel.querySelector(".panel-header p").textContent = "Drag to orbit the whole universe. Search every project or fly to a Ruby code highlight.";
+        searchInput.placeholder = "Project, class, module, or gem name";
+      }
       if (explorerRenderer) {
-        canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class or module stars, dependency systems, or gem clouds for details. Selections open a top-down view that keeps the selected target and Core visible. Double-click a dependency system or gem cloud, press Enter or F on its selected marker, or tap that marker again to expand it. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, use arrow keys to move the view, Space to pause or resume drift, H to hide or show the interface, 0 to reset, slash to search, and question mark for the full shortcut list.`);
+        canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${collectionMode ? `${galaxyModels.length} separately indexed projects in one universe: ${projectLabels.join(", ")}` : model.projectName}. Hover class or module stars, dependency systems, or gem clouds for details. Selections open a top-down view that keeps the selected target and Core visible. Double-click a dependency system or gem cloud, press Enter or F on its selected marker, or tap that marker again to expand it. Drag to orbit ${collectionMode ? "the whole universe" : "the galaxy"}, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, use arrow keys to move the view, Space to pause or resume drift, H to hide or show the interface, 0 to reset, slash to search, and question mark for the full shortcut list.`);
       }
       populateWarningDisclosure();
       applyCameraTarget(DEFAULT_CAMERA);

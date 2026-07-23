@@ -14,7 +14,7 @@ describe("explorer runtime contract", () => {
   });
 
   it("explorer initial and reset camera use 200 percent without changing drift", () => {
-    expect(RUNTIME_SOURCE).toContain("const DEFAULT_CAMERA = Object.freeze({ yaw: -.36, pitch: .34, zoom: 2, panX: 0, panY: 0 })");
+    expect(RUNTIME_SOURCE).toContain("zoom: collectionMode ? 2 / Math.pow(galaxyModels.length, .7) : 2");
     expect(RUNTIME_SOURCE).toMatch(/populateWarningDisclosure\(\).*?applyCameraTarget\(DEFAULT_CAMERA\).*?createExplorer\(\).*?resize\(\)/s);
     expect(RUNTIME_SOURCE).toContain("function resetView()");
     expect(RUNTIME_SOURCE).toMatch(
@@ -72,10 +72,10 @@ describe("explorer runtime contract", () => {
     expect(RUNTIME_SOURCE).toContain("function contextualSelectionCameraTarget(point");
     expect(RUNTIME_SOURCE).toContain("const CONTEXT_TARGET_X = .32");
     expect(RUNTIME_SOURCE).toContain("const CONTEXT_CORE_X = .68");
-    expect(RUNTIME_SOURCE).toContain("Math.PI - Math.atan2(z, x)");
+    expect(RUNTIME_SOURCE).toContain("Math.PI - Math.atan2(relativeZ, relativeX)");
     expect(RUNTIME_SOURCE).toContain("const desiredSeparation = sceneRight * (CONTEXT_CORE_X - CONTEXT_TARGET_X)");
-    expect(RUNTIME_SOURCE).toContain("const coreFitZoom = Math.min(sceneRight, sceneBottom) * .28");
-    expect(RUNTIME_SOURCE).toContain("panX: sceneRight * .5 + actualSeparation * .5 - sceneCenterX");
+    expect(RUNTIME_SOURCE).toContain("const coreFitZoom = Math.min(sceneRight, sceneBottom) * .28 * coreDepth");
+    expect(RUNTIME_SOURCE).toContain("panX: sceneRight * .5 - sceneCenterX - (targetUnitX + coreUnitX) * targetZoom * .5");
     expect(RUNTIME_SOURCE).toContain("const targetPitch = pitch >= 0 ? TOP_DOWN_PITCH : -TOP_DOWN_PITCH");
     expect(RUNTIME_SOURCE).toContain("pitch: targetPitch");
     expect(RUNTIME_SOURCE).toContain("pitch: pitch >= 0 ? TOP_DOWN_PITCH : -TOP_DOWN_PITCH");
@@ -252,7 +252,7 @@ describe("explorer runtime contract", () => {
     expect(runtimeFunction("dependencyPackageAt")).toContain("if (!explorerRenderer) return null");
 
     expect(RUNTIME_SOURCE).toContain('document.documentElement.dataset.showcaseRenderer = "unavailable"');
-    expect(orderedIndex(RUNTIME_SOURCE, "const dependencyRubyCounts")).toBeLessThan(orderedIndex(RUNTIME_SOURCE, "model.dependencyStars = []"));
+    expect(orderedIndex(RUNTIME_SOURCE, "const dependencyRubyCounts")).toBeLessThan(orderedIndex(RUNTIME_SOURCE, "projectModel.dependencyStars = []"));
   });
 
   it("unavailable renderer uses the standard warning disclosure", () => {

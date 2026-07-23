@@ -44,6 +44,7 @@ module RubyLens
       command = arguments.shift
       return print_version if %w[-v --version version].include?(command)
       return print_help(0) if command.nil? || %w[-h --help help].include?(command)
+      return generate_collection(arguments) if command == "collection"
       return generate(command, arguments) if COMMANDS.key?(command)
 
       $stderr.puts "Unknown command: #{command}"
@@ -54,6 +55,41 @@ module RubyLens
     end
 
     private
+
+    def generate_collection(arguments)
+      options = {}
+      help = false
+      parser = OptionParser.new do |option|
+        option.banner = "Usage: rubylens collection [OPTIONS] TARGET TARGET..."
+        option.separator ""
+        option.separator "The collection keeps every target separate and shows all galaxies in one Explorer."
+        option.separator ""
+        option.on("-o", "--output FILE", "Output HTML (default: first TARGET/rubylens-collection.html)") do |value|
+          options[:output] = value
+        end
+        option.on("--lockfile FILE", "Gemfile.lock used for every target instead of each target's default") do |value|
+          options[:lockfile] = value
+        end
+        option.on_tail("-h", "--help", "Show this help") do
+          help = true
+        end
+      end
+      parser.parse!(arguments)
+      if help
+        $stdout.puts parser
+        return 0
+      end
+      raise OptionParser::InvalidArgument, "collection requires at least two targets" if arguments.length < 2
+
+      result = CollectionGenerator.new(
+        paths: arguments,
+        output: options[:output],
+        lockfile: options[:lockfile],
+      ).call
+      print_result(result)
+      $stderr.puts "RubyLens collections contain private codebase structure from every included project. Keep the output local unless you intend to share it."
+      0
+    end
 
     def generate(command, arguments)
       specification = COMMANDS.fetch(command)
@@ -126,11 +162,12 @@ module RubyLens
 
         Commands:
           report [OPTIONS] [TARGET]     Generate a private, interactive galaxy report
+          collection [OPTIONS] TARGET... Generate one private Explorer containing separate project galaxies
           clip [OPTIONS] [TARGET]       Generate a shareable galaxy video (MP4, needs Chrome + ffmpeg)
           showcase [OPTIONS] [TARGET]   Generate a shareable, cinematic galaxy showcase page
           version                       Print the RubyLens version
 
-        Run `rubylens report --help`, `rubylens clip --help`, or `rubylens showcase --help` for options.
+        Run `rubylens report --help`, `rubylens collection --help`, `rubylens clip --help`, or `rubylens showcase --help` for options.
       HELP
       status
     end

@@ -104,6 +104,59 @@ class CLITest < Minitest::Test
     assert_includes(errors, "selected Ruby and dependency names")
   end
 
+  def test_collection_requires_multiple_targets_and_prints_project_results
+    result = RubyLens::CollectionResult.new(
+      output_path: "/tmp/collection.html",
+      projects: [
+        RubyLens::CollectionProjectResult.new(name: "First", counts: { "namespaces" => 2 }, warnings: []),
+        RubyLens::CollectionProjectResult.new(name: "Second", counts: { "namespaces" => 3 }, warnings: ["partial"]),
+      ],
+    )
+    generator = mock("collection generator")
+    RubyLens::CollectionGenerator.expects(:new)
+      .with(paths: %w[first second], output: "/tmp/collection.html", lockfile: nil)
+      .returns(generator)
+    generator.expects(:call).returns(result)
+
+    status, output, errors = run_cli(["collection", "first", "second", "--output", "/tmp/collection.html"])
+    payload = JSON.parse(output)
+
+    assert_equal(0, status)
+    assert_equal("/tmp/collection.html", payload.fetch("output"))
+    assert_equal(%w[First Second], payload.fetch("projects").map { |project| project.fetch("name") })
+    assert_includes(errors, "every included project")
+  end
+
+  def test_collection_shared_lockfile_and_help
+    result = RubyLens::CollectionResult.new(output_path: "/tmp/collection.html", projects: [])
+    generator = mock("collection generator")
+    RubyLens::CollectionGenerator.expects(:new)
+      .with(paths: %w[first second], output: nil, lockfile: "/tmp/Gemfile.lock")
+      .returns(generator)
+    generator.expects(:call).returns(result)
+
+    status, = run_cli(["collection", "--lockfile", "/tmp/Gemfile.lock", "first", "second"])
+    assert_equal(0, status)
+
+    RubyLens::CollectionGenerator.expects(:new).never
+    status, output, errors = run_cli(["collection", "--help"])
+    assert_equal(0, status)
+    assert_includes(output, "Usage: rubylens collection [OPTIONS] TARGET TARGET...")
+    assert_includes(output, "shows all galaxies in one Explorer")
+    assert_empty(errors)
+  end
+
+  def test_collection_rejects_fewer_than_two_targets_before_generation
+    RubyLens::CollectionGenerator.expects(:new).never
+
+    [[], ["first"]].each do |targets|
+      status, _output, errors = run_cli(["collection", *targets])
+
+      assert_equal(2, status)
+      assert_includes(errors, "collection requires at least two targets")
+    end
+  end
+
   def test_clip_help_documents_the_mp4_output_without_generating
     RubyLens.expects(:generate_clip).never
 
@@ -197,6 +250,7 @@ class CLITest < Minitest::Test
     assert_includes(output, "rubylens clip --help")
     assert_includes(output, "rubylens showcase --help")
     assert_includes(output, "report [OPTIONS] [TARGET]")
+    assert_includes(output, "collection [OPTIONS] TARGET...")
     assert_includes(output, "clip [OPTIONS] [TARGET]")
     assert_includes(output, "showcase [OPTIONS] [TARGET]")
   end

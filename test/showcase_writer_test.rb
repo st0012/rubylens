@@ -24,7 +24,7 @@ class ShowcaseWriterTest < Minitest::Test
       assert(RubyLens::ArtifactMarker.present?(output, RubyLens::ShowcaseWriter::MARKER))
       # The embedded model must decode back to what was written: a leftover
       # placeholder or wrong payload fails here, before a browser ever parses.
-      encoded = html.match(/atob\("([A-Za-z0-9+\/=]+)"\)/).captures.first
+      encoded = html.match(/decodeBase64Json\("([A-Za-z0-9+\/=]+)"\)/).captures.first
       assert_equal(model, JSON.parse(Base64.strict_decode64(encoded)))
 
       # The shipped assets arrive verbatim: shell segments, the stylesheet in

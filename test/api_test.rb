@@ -60,7 +60,7 @@ class APITest < Minitest::Test
   private
 
   def embedded_model(path)
-    encoded = File.read(path).match(/JSON\.parse\(atob\("([^"]+)"\)\)/)[1]
+    encoded = File.read(path).match(/const sceneModel = decodeBase64Json\("([^"]+)"\)/)[1]
     JSON.parse(Base64.strict_decode64(encoded))
   end
 end
