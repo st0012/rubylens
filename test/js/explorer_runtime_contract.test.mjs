@@ -226,7 +226,10 @@ describe("explorer runtime contract", () => {
 
   it("explorer requires webgl2 across every unavailable path", () => {
     const renderer = runtimeFunction("createExplorerRenderer");
-    expect(renderer).toContain("const maxSpriteCssSize = 3.2 * 3.4 * 2 + 2");
+    // The Core/Test glow floor, wrapped with the capped milk sprite; the
+    // milk-vs-glow bound itself is pinned in explorer_milk.test.mjs.
+    expect(renderer).toContain("3.2 * 3.4 * 2,");
+    expect(renderer).toContain("const maxSpriteCssSize = Math.max(");
     expect(renderer).toContain('document.documentElement.dataset.explorerUnavailableReason = "webgl2-unavailable"');
     expect(renderer).toContain('document.documentElement.dataset.explorerUnavailableReason = "webgl2-point-size-range"');
     expect(RUNTIME_SOURCE).toContain('document.documentElement.dataset.explorerUnavailableReason = "webgl2-initialization-error"');

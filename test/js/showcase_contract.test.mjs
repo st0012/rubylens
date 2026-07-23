@@ -149,7 +149,8 @@ describe("showcase contract", () => {
     expect(renderer).toContain("radius = float(${SHOWCASE_PRESET.hazeMilkRadius});");
     expect(renderer).toContain("alpha = visibleAlpha * float(${SHOWCASE_PRESET.hazeMilkGainPercent}) / 100.0;");
     expect(renderer).toContain("v_radius = u_pass == 3 ? -radius : radius;");
-    expect(renderer).toContain("const ensureMilkTarget = () => {");
+    expect(renderer).toContain("const milk = createMilkPipeline(gl);");
+    expect(runtimeFunction("createMilkPipeline")).toContain("Math.round(targetCanvas.width / 4)");
     expect(RUNTIME_SOURCE).toContain("if (v_radius < 0.0) {");
     expect(runtimeFunction("updateGalaxySummary")).toContain('${scenePointCount.toLocaleString("en-US")} ${scenePointCount === 1 ? "star" : "stars"}');
   });

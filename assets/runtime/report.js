@@ -84,6 +84,21 @@
       "mastheadTop": 40,
       "mastheadWidth": 632
     });
+    // Explorer reuses the Showcase milk treatment on a live camera: the
+    // unresolved population reads as integrated light only until zoom starts
+    // resolving it, so milk dissolves across the same deep-detail band where
+    // the pass-1 haze points brighten into resolved stars (the telescope
+    // handoff). Sprite radius tracks sqrt(zoom) around the 200% reset view so
+    // the glow stays glued to the galaxy without exploding fill cost.
+    const EXPLORER_MILK_PRESET = Object.freeze({
+      "radius": 10,
+      "gainPercent": 4,
+      "referenceZoom": 2,
+      "minRadiusScale": 0.5,
+      "maxRadiusScale": 2,
+      "fadeStartDetail": 0.25,
+      "fadeEndDetail": 0.6,
+    });
     // Self-gravitating systems have a characteristic angular frequency
     // proportional to sqrt(mass / radius^3). The host's tidal gradient adds a
     // weaker distance^-3/2 frequency term. Declaration count is the local mass
@@ -1354,6 +1369,66 @@
       return program;
     }
 
+    // The milk pass accumulates into a quarter-resolution offscreen target and
+    // is composited up with linear filtering: identical integrated light at a
+    // sixteenth of the fragment work, which keeps large scenes and the
+    // software rasterizers CI and clip export run on inside frame budgets.
+    function createMilkPipeline(gl) {
+      const texture = gl.createTexture();
+      const framebuffer = gl.createFramebuffer();
+      let width = 0;
+      let height = 0;
+      const compositeProgram = createGlProgram(gl, FULLSCREEN_TRIANGLE_VERTEX_SOURCE, `#version 300 es
+        precision highp float;
+        uniform sampler2D u_milk;
+        uniform vec2 u_resolution;
+        out vec4 outColor;
+        void main() { outColor = texture(u_milk, gl_FragCoord.xy / u_resolution); }
+      `);
+      const compositeUniforms = {
+        milk: gl.getUniformLocation(compositeProgram, "u_milk"),
+        resolution: gl.getUniformLocation(compositeProgram, "u_resolution"),
+      };
+      const ensureTarget = (targetCanvas) => {
+        const targetWidth = Math.max(1, Math.round(targetCanvas.width / 4));
+        const targetHeight = Math.max(1, Math.round(targetCanvas.height / 4));
+        if (targetWidth === width && targetHeight === height) return;
+        width = targetWidth;
+        height = targetHeight;
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      };
+      return Object.freeze({
+        ensureTarget,
+        beginPass(targetCanvas) {
+          ensureTarget(targetCanvas);
+          gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+          gl.viewport(0, 0, width, height);
+          gl.clearColor(0, 0, 0, 0);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+        },
+        composite(targetCanvas) {
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+          gl.viewport(0, 0, targetCanvas.width, targetCanvas.height);
+          gl.useProgram(compositeProgram);
+          gl.bindVertexArray(null);
+          gl.activeTexture(gl.TEXTURE1);
+          gl.bindTexture(gl.TEXTURE_2D, texture);
+          gl.uniform1i(compositeUniforms.milk, 1);
+          gl.uniform2f(compositeUniforms.resolution, targetCanvas.width, targetCanvas.height);
+          gl.drawArrays(gl.TRIANGLES, 0, 3);
+        },
+      });
+    }
+
     function createShowcaseRenderer() {
       const gl = canvas.getContext("webgl2", {
         alpha: false,
@@ -1510,42 +1585,7 @@
       gl.bindVertexArray(null);
       const dependencySpins = createDependencySpinTexture(gl);
 
-      // The milk pass accumulates into a quarter-resolution offscreen target
-      // and is composited up with linear filtering: identical integrated light
-      // at a sixteenth of the fragment work, which keeps large scenes and the
-      // software rasterizers CI and clip export run on inside frame budgets.
-      const milkTexture = gl.createTexture();
-      const milkFramebuffer = gl.createFramebuffer();
-      let milkWidth = 0;
-      let milkHeight = 0;
-      const ensureMilkTarget = () => {
-        const targetWidth = Math.max(1, Math.round(canvas.width / 4));
-        const targetHeight = Math.max(1, Math.round(canvas.height / 4));
-        if (targetWidth === milkWidth && targetHeight === milkHeight) return;
-        milkWidth = targetWidth;
-        milkHeight = targetHeight;
-        gl.bindTexture(gl.TEXTURE_2D, milkTexture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, milkWidth, milkHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        gl.bindTexture(gl.TEXTURE_2D, null);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, milkFramebuffer);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, milkTexture, 0);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      };
-      const milkCompositeProgram = createProgram(FULLSCREEN_TRIANGLE_VERTEX_SOURCE, `#version 300 es
-        precision highp float;
-        uniform sampler2D u_milk;
-        uniform vec2 u_resolution;
-        out vec4 outColor;
-        void main() { outColor = texture(u_milk, gl_FragCoord.xy / u_resolution); }
-      `);
-      const milkCompositeUniforms = {
-        milk: gl.getUniformLocation(milkCompositeProgram, "u_milk"),
-        resolution: gl.getUniformLocation(milkCompositeProgram, "u_resolution"),
-      };
+      const milk = createMilkPipeline(gl);
 
       const backgroundUniforms = {
         resolution: gl.getUniformLocation(backgroundProgram, "u_resolution"),
@@ -1579,7 +1619,7 @@
           canvas.width = Math.round(viewportWidth);
           canvas.height = Math.round(viewportHeight);
           gl.viewport(0, 0, canvas.width, canvas.height);
-          ensureMilkTarget();
+          milk.ensureTarget(canvas);
         },
         render() {
           const deepDetail = clamp(Math.log2(Math.max(1, zoom)) / 5, 0, 1);
@@ -1612,22 +1652,10 @@
           gl.uniform1f(pointUniforms.glow, SHOWCASE_PRESET.pointGlowPercent);
           gl.uniform1f(pointUniforms.deepDetail, deepDetail);
 
-          ensureMilkTarget();
-          gl.bindFramebuffer(gl.FRAMEBUFFER, milkFramebuffer);
-          gl.viewport(0, 0, milkWidth, milkHeight);
-          gl.clearColor(0, 0, 0, 0);
-          gl.clear(gl.COLOR_BUFFER_BIT);
+          milk.beginPass(canvas);
           gl.uniform1i(pointUniforms.pass, 3);
           gl.drawArrays(gl.POINTS, scenePointCount, renderPointCount - scenePointCount);
-          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-          gl.viewport(0, 0, canvas.width, canvas.height);
-          gl.useProgram(milkCompositeProgram);
-          gl.bindVertexArray(null);
-          gl.activeTexture(gl.TEXTURE1);
-          gl.bindTexture(gl.TEXTURE_2D, milkTexture);
-          gl.uniform1i(milkCompositeUniforms.milk, 1);
-          gl.uniform2f(milkCompositeUniforms.resolution, canvas.width, canvas.height);
-          gl.drawArrays(gl.TRIANGLES, 0, 3);
+          milk.composite(canvas);
           gl.useProgram(pointProgram);
           gl.bindVertexArray(pointVao);
 
@@ -1678,9 +1706,14 @@
         document.documentElement.dataset.explorerUnavailableReason = "webgl2-unavailable";
         return null;
       }
-      // Dependency marks skip this pass, so an ordinary Core/Test glow is the
-      // largest Explorer sprite: radius 3.2 * 3.4 CSS pixels.
-      const maxSpriteCssSize = 3.2 * 3.4 * 2 + 2;
+      // Dependency marks skip the glow pass, so an ordinary Core/Test glow is
+      // the largest Explorer sprite: radius 3.2 * 3.4 CSS pixels — unless the
+      // milk sprite at its zoom cap outgrows it (drawn at quarter resolution,
+      // so its device size is a quarter of its doubled radius).
+      const maxSpriteCssSize = Math.max(
+        3.2 * 3.4 * 2,
+        EXPLORER_MILK_PRESET.radius * EXPLORER_MILK_PRESET.maxRadiusScale * 2 * 0.25,
+      ) + 2;
       const pointSizeRange = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE);
       if (pointSizeRange[1] < maxSpriteCssSize) {
         liveCanvas.remove();
@@ -1793,7 +1826,19 @@
             ? ${glslVec3(colours.core)} / 255.0
             : (categoryCode < 1.5 ? ${glslVec3(colours.tests)} / 255.0 : ${glslVec3(colours.dependencies)} / 255.0);
 
-          if (u_pass == 0) {
+          if (u_pass == 3) {
+            // Milk pass: the unresolved population as its integrated light,
+            // rendered into the quarter-resolution target exactly as in
+            // Showcase — but on a live camera it dissolves across the same
+            // deep-detail band where the pass-1 haze points brighten into
+            // resolved stars, handing one texture to the other the way focus
+            // sweeps on a telescope.
+            if (!hazePoint) { hidePoint(); return; }
+            float milkStrength = 1.0 - smoothstep(float(${EXPLORER_MILK_PRESET.fadeStartDetail}), float(${EXPLORER_MILK_PRESET.fadeEndDetail}), u_deepDetail);
+            float radiusScale = clamp(sqrt(u_zoom / float(${EXPLORER_MILK_PRESET.referenceZoom})), float(${EXPLORER_MILK_PRESET.minRadiusScale}), float(${EXPLORER_MILK_PRESET.maxRadiusScale}));
+            radius = float(${EXPLORER_MILK_PRESET.radius}) * radiusScale;
+            alpha = visibleAlpha * float(${EXPLORER_MILK_PRESET.gainPercent}) / 100.0 * milkStrength;
+          } else if (u_pass == 0) {
             if (size <= 1.35 || !detailed) { hidePoint(); return; }
             float glowScale = 3.4 - u_deepDetail * 1.3;
             radius = size * glowScale;
@@ -1816,10 +1861,10 @@
           }
 
           gl_Position = vec4(screen.x / u_resolution.x * 2.0 - 1.0, 1.0 - screen.y / u_resolution.y * 2.0, 0.0, 1.0);
-          gl_PointSize = max(1.0, radius * 2.0) * u_dpr;
+          gl_PointSize = max(1.0, radius * 2.0) * u_dpr * (u_pass == 3 ? 0.25 : 1.0);
           v_colour = colour;
           v_alpha = alpha;
-          v_radius = radius * u_dpr;
+          v_radius = (u_pass == 3 ? -radius : radius) * u_dpr;
         }
       `, POINT_FRAGMENT_SOURCE);
 
@@ -1835,6 +1880,7 @@
       });
       gl.bindVertexArray(null);
       const dependencySpins = createDependencySpinTexture(gl);
+      const milk = createMilkPipeline(gl);
 
       const backgroundUniforms = {
         resolution: gl.getUniformLocation(backgroundProgram, "u_resolution"),
@@ -1871,6 +1917,7 @@
           liveCanvas.width = Math.round(width * rendererDpr);
           liveCanvas.height = Math.round(height * rendererDpr);
           gl.viewport(0, 0, liveCanvas.width, liveCanvas.height);
+          milk.ensureTarget(liveCanvas);
         },
         render() {
           const deepDetail = clamp(Math.log2(Math.max(1, zoom)) / 5, 0, 1);
@@ -1916,6 +1963,18 @@
           gl.uniform3f(pointUniforms.expandedAnchor, anchor ? anchor[0] : 0, anchor ? anchor[1] : 0, anchor ? anchor[2] : 0);
           gl.uniform1f(pointUniforms.expansion, DEPENDENCY_EXPANSION);
           gl.uniform1i(pointUniforms.selectedIndex, selectedPoint ? selectedPoint.renderIndex : -1);
+          // Mirrors the shader's milkStrength: once zoom has fully resolved
+          // the haze the milk pass is all clears and hidden points, so skip
+          // its passes entirely instead of paying fill cost for black.
+          const milkStrength = 1 - smoothstep(EXPLORER_MILK_PRESET.fadeStartDetail, EXPLORER_MILK_PRESET.fadeEndDetail, deepDetail);
+          if (milkStrength > 0.001) {
+            milk.beginPass(liveCanvas);
+            gl.uniform1i(pointUniforms.pass, 3);
+            gl.drawArrays(gl.POINTS, scenePointCount, renderPointCount - scenePointCount);
+            milk.composite(liveCanvas);
+            gl.useProgram(pointProgram);
+            gl.bindVertexArray(pointVao);
+          }
           for (let pass = 0; pass < 3; pass += 1) {
             gl.uniform1i(pointUniforms.pass, pass);
             gl.drawArrays(gl.POINTS, 0, pass === 1 ? renderPointCount : scenePointCount);
