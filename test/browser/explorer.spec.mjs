@@ -92,6 +92,21 @@ test("hide UI gives the galaxy the full viewport and disables hover", async ({ p
   await page.getByRole("button", { name: "Hide interface" }).click();
   await page.mouse.click(640, 700);
   await expect(page.locator("body")).not.toHaveClass(/is-ui-hidden/);
+
+  await page.getByRole("button", { name: "Hide interface" }).click();
+  await page.keyboard.press("/");
+  await expect(page.locator("body")).not.toHaveClass(/is-ui-hidden/);
+  await expect(page.locator("#explorer-search")).toBeFocused();
+});
+
+test("renderer loss reveals its warning while the UI is hidden", async ({ page }) => {
+  await openExplorer(page);
+  await page.getByRole("button", { name: "Hide interface" }).click();
+  await page.evaluate(() => {
+    document.getElementById("explorer-cosmos").dispatchEvent(new Event("webglcontextlost"));
+  });
+  await expect(page.locator("body")).not.toHaveClass(/is-ui-hidden/);
+  await expect(page.locator("#warning-summary")).toContainText("WebGL2 required");
 });
 
 test("a tap restoring the UI cannot expand a remembered dependency", async ({ page }) => {

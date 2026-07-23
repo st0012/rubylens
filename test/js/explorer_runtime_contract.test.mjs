@@ -114,9 +114,10 @@ describe("explorer runtime contract", () => {
     expect(RUNTIME_SOURCE).toContain("function handleViewShortcut(event)");
     const handler = runtimeFunction("handleViewShortcut");
     expect(handler).toContain("if (event.metaKey || event.ctrlKey || event.altKey) return false");
+    expect(handler).toContain('const uiHidden = document.body.classList.contains("is-ui-hidden")');
     expect(handler).toContain("if (isEditableTarget(event.target)) return false");
-    expect(handler).toContain('else if (event.key === "/") focusSearch()');
-    expect(handler).toContain('else if (event.key === "?" && !document.body.classList.contains("is-ui-hidden")) { if (!event.repeat) toggleHelp(); }');
+    expect(handler).toContain('else if (event.key === "/") { if (uiHidden) setUiHidden(false); focusSearch(); }');
+    expect(handler).toContain('else if (event.key === "?" && !uiHidden) { if (!event.repeat) toggleHelp(); }');
     expect(handler).toContain('if (event.key === "Enter" && event.target !== canvas && event.target !== document.body) return false');
     expect(RUNTIME_SOURCE).toContain("else if (!handleViewShortcut(event)) moveViewWithArrow(event)");
     expect(RUNTIME_SOURCE).not.toContain('canvas.addEventListener("keydown"');

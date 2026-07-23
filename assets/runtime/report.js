@@ -1206,6 +1206,7 @@
     function markExplorerUnavailable(reason, error = null) {
       const activeElement = document.activeElement;
       const hadInteractiveFocus = !helpOverlay.hidden || activeElement === canvas || Boolean(activeElement?.closest?.(".toolbar, #controls, #explorer-search-region"));
+      document.body.classList.remove("is-ui-hidden");
       if (animationFrame) cancelAnimationFrame(animationFrame);
       if (hoverFrame) cancelAnimationFrame(hoverFrame);
       animationFrame = 0;
@@ -3046,14 +3047,15 @@
     function handleViewShortcut(event) {
       if (pointers.size > 0) return false;
       if (event.metaKey || event.ctrlKey || event.altKey) return false;
+      const uiHidden = document.body.classList.contains("is-ui-hidden");
       if (isEditableTarget(event.target)) return false;
       if (event.key === "+" || event.key === "=") { cancelCameraFlight(); zoomBetween(zoom * ZOOM_STEP, sceneCenterX, sceneCenterY); }
       else if (event.key === "-") { cancelCameraFlight(); zoomBetween(zoom / ZOOM_STEP, sceneCenterX, sceneCenterY); }
       else if (event.key === "0") resetView();
       else if (event.key.toLowerCase() === "p") { cancelCameraFlight(); setNavigationMode(navigationMode === "pan" ? "orbit" : "pan"); }
-      else if (event.key === "/") focusSearch();
-      else if (event.key.toLowerCase() === "h") setUiHidden(!document.body.classList.contains("is-ui-hidden"));
-      else if (event.key === "?" && !document.body.classList.contains("is-ui-hidden")) { if (!event.repeat) toggleHelp(); }
+      else if (event.key === "/") { if (uiHidden) setUiHidden(false); focusSearch(); }
+      else if (event.key.toLowerCase() === "h") setUiHidden(!uiHidden);
+      else if (event.key === "?" && !uiHidden) { if (!event.repeat) toggleHelp(); }
       else if ((event.key === "Enter" || event.key.toLowerCase() === "f") && selectedPoint?.category === "dependencies") {
         if (event.key === "Enter" && event.target !== canvas && event.target !== document.body) return false;
         if (selectedPoint.systemHub && !selectedPoint.packageHub) focusDependencySystem(selectedPoint.systemIndex);
