@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RUNTIME_SOURCE, runtimeFunction } from "./helpers/runtime_source.mjs";
+import { orderedIndex, RUNTIME_SOURCE, runtimeFunction } from "./helpers/runtime_source.mjs";
 
 describe("layout density contract", () => {
   it("cpu projection and webgl share the adaptive camera", () => {
@@ -20,9 +20,9 @@ describe("layout density contract", () => {
   it("adaptive layout work is confined to load time setup", () => {
     expect(RUNTIME_SOURCE.split("layoutMetricsForCoreCount(").length - 1).toBe(2);
     expect(RUNTIME_SOURCE.split("model.namespaces.reduce").length - 1).toBe(1);
-    expect(RUNTIME_SOURCE.indexOf("model.namespaces.reduce")).toBeLessThan(RUNTIME_SOURCE.indexOf("function corePosition"));
-    expect(RUNTIME_SOURCE.indexOf("const layoutScale = layoutMetricsForCoreCount(coreCount, morphology);")).toBeLessThan(
-      RUNTIME_SOURCE.indexOf("function buildPoints"),
+    expect(orderedIndex(RUNTIME_SOURCE, "model.namespaces.reduce")).toBeLessThan(orderedIndex(RUNTIME_SOURCE, "function corePosition"));
+    expect(orderedIndex(RUNTIME_SOURCE, "const layoutScale = layoutMetricsForCoreCount(coreCount, morphology);")).toBeLessThan(
+      orderedIndex(RUNTIME_SOURCE, "function buildPoints"),
     );
 
     for (const name of ["createShowcaseRenderer", "project", "render", "applyShowcaseCamera", "renderShowcase"]) {

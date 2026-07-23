@@ -274,4 +274,28 @@ describe("explorer runtime contract", () => {
     expect(RUNTIME_SOURCE).toContain("arrow keys to move the view");
     expect(RUNTIME_SOURCE).toContain("Shift-drag or Pan mode to move");
   });
+  it("keeps camera flight mechanics under contract", () => {
+    // Restored from the retired Ruby writer assertions: focus flights cancel
+    // pending hover, honor reduced motion, wrap yaw by shortest angle,
+    // interpolate zoom logarithmically, and complete at tight thresholds.
+    expect(RUNTIME_SOURCE).toContain("function flyCamera");
+    expect(RUNTIME_SOURCE).toContain("function updateCameraFlight");
+    expect(RUNTIME_SOURCE).toContain("function cancelCameraFlight");
+    expect(RUNTIME_SOURCE).toContain("function cancelPendingHover");
+    expect(RUNTIME_SOURCE).toContain("function completeCameraFlight");
+    expect(RUNTIME_SOURCE).toContain("Math.atan2(Math.sin(target.yaw - yaw), Math.cos(target.yaw - yaw))");
+    expect(RUNTIME_SOURCE).toContain("Math.exp(Math.log(start.zoom)");
+    expect(RUNTIME_SOURCE).toContain("angularDistance < .001 && zoomStops < .01 && panDistance < .5");
+    expect(runtimeFunction("flyCamera")).toContain("reducedMotionQuery.matches");
+  });
+
+  it("keeps arrow-key pan semantics and editable guards under contract", () => {
+    const moveView = runtimeFunction("moveViewWithArrow");
+    expect(RUNTIME_SOURCE).toContain('target.matches("textarea, select")');
+    expect(RUNTIME_SOURCE).toContain('!["checkbox", "radio", "button", "submit", "reset"].includes(target.type)');
+    expect(moveView).toContain('if (event.key === "ArrowLeft") panBy(distance, 0)');
+    expect(moveView).toContain('else if (event.key === "ArrowRight") panBy(-distance, 0)');
+    expect(moveView).toContain('else if (event.key === "ArrowUp") panBy(0, distance)');
+    expect(moveView).toContain('else if (event.key === "ArrowDown") panBy(0, -distance)');
+  });
 });
