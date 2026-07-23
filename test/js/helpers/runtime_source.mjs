@@ -7,6 +7,8 @@ import { join } from "node:path";
 export const RUNTIME_SOURCE = readFileSync(join(process.cwd(), "assets/runtime/report.js"), "utf8");
 export const SHELL_SOURCE = readFileSync(join(process.cwd(), "assets/shells/report.html"), "utf8");
 export const SHOWCASE_SHELL_SOURCE = readFileSync(join(process.cwd(), "assets/shells/showcase.html"), "utf8");
+export const STYLES_SOURCE = readFileSync(join(process.cwd(), "assets/styles/report.css"), "utf8");
+export const SHOWCASE_STYLES_SOURCE = readFileSync(join(process.cwd(), "assets/styles/showcase.css"), "utf8");
 
 // Mirrors the extraction the retired Ruby helper performed: a top-level
 // `function name(...)` through its closing four-space brace.

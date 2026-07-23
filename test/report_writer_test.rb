@@ -90,23 +90,13 @@ class ReportWriterTest < Minitest::Test
       html = File.read(output)
       encoded = html.match(/atob\("([A-Za-z0-9+\/=]+)"\)/).captures.first
       assert_equal(model, JSON.parse(Base64.strict_decode64(encoded)))
-      assert_includes(html, "connect-src 'none'")
       assert(RubyLens::ArtifactMarker.present?(output, RubyLens::ReportWriter::MARKER))
-      assert_includes(html, "RubyLens · Explorer")
-      assert_includes(html, "Explore this codebase")
-      # The privacy footer is a product contract of every generated report:
-      # the owner-only warning must reach the reader.
-      assert_includes(html, "dependency stars remain anonymous")
-      assert_includes(html, "Do not share the HTML unless you intend to disclose codebase structure.")
 
-      # The shipped assets arrive verbatim: the stylesheet in full, and the
-      # runtime in full around the one model substitution. What the runtime
-      # contains is the JS suite's concern, not this writer's.
-      assets = File.expand_path("../assets", __dir__)
-      assert_includes(html, File.read(File.join(assets, "styles/report.css")))
-      runtime_head, runtime_tail = File.read(File.join(assets, "runtime/report.js")).split("{{MODEL_BASE64}}")
-      assert_includes(html, runtime_head)
-      assert_includes(html, runtime_tail)
+      # The assembled assets arrive verbatim around the one model
+      # substitution; what the assets contain is the JS suite's concern.
+      assembled_head, assembled_tail = RubyLens::ReportAssetAssembler.new.assemble.split("{{MODEL_BASE64}}")
+      assert_includes(html, assembled_head)
+      assert_includes(html, assembled_tail)
       assert_equal(0o600, File.stat(output).mode & 0o777)
       assert_equal("*\n", File.read(File.join(directory, ".rubylens", ".gitignore")))
     end
