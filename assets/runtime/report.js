@@ -1678,8 +1678,9 @@
         document.documentElement.dataset.explorerUnavailableReason = "webgl2-unavailable";
         return null;
       }
-      // Largest sprite is an unexpanded hub glow: radius 5.2 * 3.4 CSS pixels.
-      const maxSpriteCssSize = 5.2 * 3.4 * 2 + 2;
+      // Dependency marks skip this pass, so an ordinary Core/Test glow is the
+      // largest Explorer sprite: radius 3.2 * 3.4 CSS pixels.
+      const maxSpriteCssSize = 3.2 * 3.4 * 2 + 2;
       const pointSizeRange = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE);
       if (pointSizeRange[1] < maxSpriteCssSize) {
         liveCanvas.remove();
@@ -1751,6 +1752,7 @@
           float categoryCode = hazePoint ? a_category - 3.0 : a_category;
           int category = int(categoryCode + 0.5);
           if (u_categoryVisible[category] < 0.5) { hidePoint(); return; }
+          if (u_pass == 0 && (hazePoint || category == 2)) { hidePoint(); return; }
           vec3 position = dependencySpinPosition(a_position, categoryCode, a_maxSize, a_packageIndex);
           bool expandedPoint = (u_expandedPackage >= 0.0 && a_packageIndex == u_expandedPackage)
             || (u_expandedSystem >= 0.0 && a_systemIndex == u_expandedSystem);
@@ -1792,7 +1794,7 @@
             : (categoryCode < 1.5 ? ${glslVec3(colours.tests)} / 255.0 : ${glslVec3(colours.dependencies)} / 255.0);
 
           if (u_pass == 0) {
-            if (hazePoint || category == 2 || size <= 1.35 || !detailed) { hidePoint(); return; }
+            if (size <= 1.35 || !detailed) { hidePoint(); return; }
             float glowScale = 3.4 - u_deepDetail * 1.3;
             radius = size * glowScale;
             alpha = visibleAlpha * 0.055 * (1.0 - 0.78 * u_deepDetail);

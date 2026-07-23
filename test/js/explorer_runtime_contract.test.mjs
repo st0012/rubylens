@@ -178,7 +178,9 @@ describe("explorer runtime contract", () => {
     expect(explorerRenderer).toContain("min(u_exposure, float(${explorerExposureForZoom(DEFAULT_CAMERA.zoom * ZOOM_STEP)}))");
     expect(explorerRenderer).toContain("a_alpha * emphasis) * categoryExposure");
     expect(explorerRenderer).toContain("mix(categoryExposure, 1.35, u_deepDetail)");
-    expect(explorerRenderer).toContain("hazePoint || category == 2 || size <= 1.35 || !detailed");
+    const skippedDependencyGlow = explorerRenderer.indexOf("u_pass == 0 && (hazePoint || category == 2)");
+    expect(skippedDependencyGlow).toBeGreaterThan(-1);
+    expect(skippedDependencyGlow).toBeLessThan(explorerRenderer.indexOf("vec3 position = dependencySpinPosition"));
     expect(explorerRenderer).toContain("gl.uniform1f(pointUniforms.exposure, explorerExposureForZoom(zoom))");
 
     const showcaseRendererBody = RUNTIME_SOURCE.match(/function createShowcaseRenderer\(\) \{(?<body>.*?)^    \}/sm).groups.body;
@@ -224,6 +226,7 @@ describe("explorer runtime contract", () => {
 
   it("explorer requires webgl2 across every unavailable path", () => {
     const renderer = runtimeFunction("createExplorerRenderer");
+    expect(renderer).toContain("const maxSpriteCssSize = 3.2 * 3.4 * 2 + 2");
     expect(renderer).toContain('document.documentElement.dataset.explorerUnavailableReason = "webgl2-unavailable"');
     expect(renderer).toContain('document.documentElement.dataset.explorerUnavailableReason = "webgl2-point-size-range"');
     expect(RUNTIME_SOURCE).toContain('document.documentElement.dataset.explorerUnavailableReason = "webgl2-initialization-error"');
