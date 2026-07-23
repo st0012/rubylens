@@ -1780,7 +1780,10 @@
           bool focusedDependencyHub = focusedDependencyPoint && a_maxSize > 4.0;
           float emphasis = focusedDependencyPoint || selected ? 1.0 : u_categoryEmphasis[category];
           float focusedAlpha = max(focusedDependencyHub ? 0.34 : 0.289, a_alpha);
-          float visibleAlpha = (focusedDependencyPoint ? focusedAlpha : a_alpha * emphasis) * u_exposure;
+          float categoryExposure = category == 2
+            ? min(u_exposure, float(${explorerExposureForZoom(DEFAULT_CAMERA.zoom * ZOOM_STEP)}))
+            : u_exposure;
+          float visibleAlpha = (focusedDependencyPoint ? focusedAlpha : a_alpha * emphasis) * categoryExposure;
           bool detailed = emphasis >= 0.1;
           float radius = size;
           float alpha = visibleAlpha;
@@ -1789,17 +1792,17 @@
             : (categoryCode < 1.5 ? ${glslVec3(colours.tests)} / 255.0 : ${glslVec3(colours.dependencies)} / 255.0);
 
           if (u_pass == 0) {
-            if (hazePoint || size <= 1.35 || !detailed) { hidePoint(); return; }
-            float glowScale = focusedDependencyPoint ? 2.2 - u_deepDetail * 0.8 : 3.4 - u_deepDetail * 1.3;
+            if (hazePoint || category == 2 || size <= 1.35 || !detailed) { hidePoint(); return; }
+            float glowScale = 3.4 - u_deepDetail * 1.3;
             radius = size * glowScale;
-            alpha = visibleAlpha * (focusedDependencyPoint ? 0.045 : 0.055) * (1.0 - 0.78 * u_deepDetail);
+            alpha = visibleAlpha * 0.055 * (1.0 - 0.78 * u_deepDetail);
           } else if (u_pass == 1) {
             if (hazePoint) {
               // Haze escapes the zoom exposure dimming: as marks calm down at
               // depth, the unresolved field stays lit and reads as resolved
               // faint stars, the way a telescope resolves the Milky Way.
               radius = size * (1.0 + 0.4 * u_deepDetail);
-              alpha = a_alpha * emphasis * mix(u_exposure, 1.35, u_deepDetail);
+              alpha = a_alpha * emphasis * mix(categoryExposure, 1.35, u_deepDetail);
             } else {
               radius = (!detailed || size < 0.85) ? 0.5 : size;
             }
