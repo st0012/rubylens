@@ -1678,8 +1678,9 @@
         document.documentElement.dataset.explorerUnavailableReason = "webgl2-unavailable";
         return null;
       }
-      // Largest sprite is an unexpanded hub glow: radius 5.2 * 3.4 CSS pixels.
-      const maxSpriteCssSize = 5.2 * 3.4 * 2 + 2;
+      // Dependency marks skip this pass, so an ordinary Core/Test glow is the
+      // largest Explorer sprite: radius 3.2 * 3.4 CSS pixels.
+      const maxSpriteCssSize = 3.2 * 3.4 * 2 + 2;
       const pointSizeRange = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE);
       if (pointSizeRange[1] < maxSpriteCssSize) {
         liveCanvas.remove();
@@ -1751,6 +1752,7 @@
           float categoryCode = hazePoint ? a_category - 3.0 : a_category;
           int category = int(categoryCode + 0.5);
           if (u_categoryVisible[category] < 0.5) { hidePoint(); return; }
+          if (u_pass == 0 && (hazePoint || category == 2)) { hidePoint(); return; }
           vec3 position = dependencySpinPosition(a_position, categoryCode, a_maxSize, a_packageIndex);
           bool expandedPoint = (u_expandedPackage >= 0.0 && a_packageIndex == u_expandedPackage)
             || (u_expandedSystem >= 0.0 && a_systemIndex == u_expandedSystem);
@@ -1780,7 +1782,10 @@
           bool focusedDependencyHub = focusedDependencyPoint && a_maxSize > 4.0;
           float emphasis = focusedDependencyPoint || selected ? 1.0 : u_categoryEmphasis[category];
           float focusedAlpha = max(focusedDependencyHub ? 0.34 : 0.289, a_alpha);
-          float visibleAlpha = (focusedDependencyPoint ? focusedAlpha : a_alpha * emphasis) * u_exposure;
+          float categoryExposure = category == 2
+            ? min(u_exposure, float(${explorerExposureForZoom(DEFAULT_CAMERA.zoom * ZOOM_STEP)}))
+            : u_exposure;
+          float visibleAlpha = (focusedDependencyPoint ? focusedAlpha : a_alpha * emphasis) * categoryExposure;
           bool detailed = emphasis >= 0.1;
           float radius = size;
           float alpha = visibleAlpha;
@@ -1789,17 +1794,17 @@
             : (categoryCode < 1.5 ? ${glslVec3(colours.tests)} / 255.0 : ${glslVec3(colours.dependencies)} / 255.0);
 
           if (u_pass == 0) {
-            if (hazePoint || size <= 1.35 || !detailed) { hidePoint(); return; }
-            float glowScale = focusedDependencyPoint ? 2.2 - u_deepDetail * 0.8 : 3.4 - u_deepDetail * 1.3;
+            if (size <= 1.35 || !detailed) { hidePoint(); return; }
+            float glowScale = 3.4 - u_deepDetail * 1.3;
             radius = size * glowScale;
-            alpha = visibleAlpha * (focusedDependencyPoint ? 0.045 : 0.055) * (1.0 - 0.78 * u_deepDetail);
+            alpha = visibleAlpha * 0.055 * (1.0 - 0.78 * u_deepDetail);
           } else if (u_pass == 1) {
             if (hazePoint) {
               // Haze escapes the zoom exposure dimming: as marks calm down at
               // depth, the unresolved field stays lit and reads as resolved
               // faint stars, the way a telescope resolves the Milky Way.
               radius = size * (1.0 + 0.4 * u_deepDetail);
-              alpha = a_alpha * emphasis * mix(u_exposure, 1.35, u_deepDetail);
+              alpha = a_alpha * emphasis * mix(categoryExposure, 1.35, u_deepDetail);
             } else {
               radius = (!detailed || size < 0.85) ? 0.5 : size;
             }

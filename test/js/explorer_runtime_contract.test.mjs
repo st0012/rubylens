@@ -174,7 +174,13 @@ describe("explorer runtime contract", () => {
   it("explorer exposure does not change showcase rendering", () => {
     const explorerRenderer = runtimeFunction("createExplorerRenderer");
     expect(explorerRenderer).toContain("uniform float u_exposure");
-    expect(explorerRenderer).toContain("a_alpha * emphasis) * u_exposure");
+    expect(explorerRenderer).toContain("float categoryExposure = category == 2");
+    expect(explorerRenderer).toContain("min(u_exposure, float(${explorerExposureForZoom(DEFAULT_CAMERA.zoom * ZOOM_STEP)}))");
+    expect(explorerRenderer).toContain("a_alpha * emphasis) * categoryExposure");
+    expect(explorerRenderer).toContain("mix(categoryExposure, 1.35, u_deepDetail)");
+    const skippedDependencyGlow = explorerRenderer.indexOf("u_pass == 0 && (hazePoint || category == 2)");
+    expect(skippedDependencyGlow).toBeGreaterThan(-1);
+    expect(skippedDependencyGlow).toBeLessThan(explorerRenderer.indexOf("vec3 position = dependencySpinPosition"));
     expect(explorerRenderer).toContain("gl.uniform1f(pointUniforms.exposure, explorerExposureForZoom(zoom))");
 
     const showcaseRendererBody = RUNTIME_SOURCE.match(/function createShowcaseRenderer\(\) \{(?<body>.*?)^    \}/sm).groups.body;
@@ -215,10 +221,12 @@ describe("explorer runtime contract", () => {
     const explorerRenderer = runtimeFunction("createExplorerRenderer");
     expect(explorerRenderer).toContain("focusedDependencyPoint && a_maxSize > 4.0");
     expect(explorerRenderer).toContain("max(focusedDependencyHub ? 0.34 : 0.289, a_alpha)");
+    expect(explorerRenderer).toContain("(focusedDependencyPoint ? focusedAlpha : a_alpha * emphasis) * categoryExposure");
   });
 
   it("explorer requires webgl2 across every unavailable path", () => {
     const renderer = runtimeFunction("createExplorerRenderer");
+    expect(renderer).toContain("const maxSpriteCssSize = 3.2 * 3.4 * 2 + 2");
     expect(renderer).toContain('document.documentElement.dataset.explorerUnavailableReason = "webgl2-unavailable"');
     expect(renderer).toContain('document.documentElement.dataset.explorerUnavailableReason = "webgl2-point-size-range"');
     expect(RUNTIME_SOURCE).toContain('document.documentElement.dataset.explorerUnavailableReason = "webgl2-initialization-error"');
