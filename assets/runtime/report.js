@@ -17,6 +17,7 @@
     const searchInput = document.getElementById("explorer-search");
     const searchStatus = document.getElementById("search-status");
     const searchResults = document.getElementById("search-results");
+    const uiToggle = document.getElementById("ui-toggle");
     const helpOverlay = document.getElementById("shortcuts-help");
     const helpClose = document.getElementById("help-close");
     let helpReturnFocus = null;
@@ -53,6 +54,7 @@
     let lastDriftTimestamp = null;
     let lastDependencySpinTimestamp = null;
     let doubleClickTarget = null;
+    let restoreTapDoubleClickDeadline = 0;
     let searchIndex = null;
     let searchTimer = 0;
     let searchMatches = [];
@@ -1204,6 +1206,7 @@
     function markExplorerUnavailable(reason, error = null) {
       const activeElement = document.activeElement;
       const hadInteractiveFocus = !helpOverlay.hidden || activeElement === canvas || Boolean(activeElement?.closest?.(".toolbar, #controls, #explorer-search-region"));
+      document.body.classList.remove("is-ui-hidden");
       if (animationFrame) cancelAnimationFrame(animationFrame);
       if (hoverFrame) cancelAnimationFrame(hoverFrame);
       animationFrame = 0;
@@ -1954,7 +1957,7 @@
     const categoryMeta = {
       core: { title: "Core code", rubyCounts: model.categoryStats?.core || [0, 0, 0, 0], metricIndexes: allRubyMetricIndexes, focusZoom: 2.8 },
       tests: { title: "Tests", rubyCounts: model.categoryStats?.tests || [0, 0, 0, 0], metricIndexes: testRubyMetricIndexes, focusZoom: 1.35 },
-      dependencies: { title: "Gems", summary: `${packageCount.toLocaleString()} dependency gems`, rubyCounts: dependencyRubyCounts, metricIndexes: allRubyMetricIndexes, note: `${directGemCount.toLocaleString()} direct · ${transitiveGemCount.toLocaleString()} transitive`, focusZoom: .72 },
+      dependencies: { title: "Gems", rubyCounts: dependencyRubyCounts, metricIndexes: allRubyMetricIndexes, note: `${directGemCount.toLocaleString()} direct · ${transitiveGemCount.toLocaleString()} transitive`, focusZoom: .72 },
     };
     model.namespaces = [];
     model.packages = [];
@@ -2164,7 +2167,7 @@
     }
 
     function positionTooltip(point) {
-      if (cameraFlight || !point?.screen) { tooltip.hidden = true; return; }
+      if (document.body.classList.contains("is-ui-hidden") || cameraFlight || !point?.screen) { tooltip.hidden = true; return; }
       tooltip.hidden = false;
       const bounds = tooltip.getBoundingClientRect();
       if (bounds.width === 0 || bounds.height === 0) {
@@ -2329,7 +2332,7 @@
     }
 
     function queueHover(x, y) {
-      if (cameraFlight || dragging || pointers.size > 0) return;
+      if (document.body.classList.contains("is-ui-hidden") || cameraFlight || dragging || pointers.size > 0) return;
       pendingHover = [x, y];
       if (hoverFrame) return;
       hoverFrame = requestAnimationFrame(() => {
@@ -2350,10 +2353,28 @@
 
     function setPanelCollapsed(collapsed) {
       if (collapsed && panelBody.contains(document.activeElement)) panelToggle.focus();
+      const action = collapsed ? "Expand" : "Collapse";
       panel.classList.toggle("is-collapsed", collapsed);
       panelBody.hidden = collapsed;
       panelToggle.setAttribute("aria-expanded", String(!collapsed));
-      panelToggle.textContent = collapsed ? "Show" : "Hide";
+      panelToggle.setAttribute("aria-label", `${action} Explorer`);
+      panelToggle.textContent = action;
+      updateSceneViewport();
+      requestRender();
+    }
+
+    function setUiHidden(hidden) {
+      const action = hidden ? "Show" : "Hide";
+      document.body.classList.toggle("is-ui-hidden", hidden);
+      uiToggle.setAttribute("aria-pressed", String(hidden));
+      uiToggle.setAttribute("aria-label", `${action} interface`);
+      uiToggle.textContent = `${action} UI`;
+      uiToggle.title = `${action} interface (H)`;
+      cancelPendingHover();
+      canvas.classList.remove("is-star");
+      tooltip.hidden = true;
+      if (!selectionLocked) selectPoint(null);
+      if (hidden && document.activeElement !== canvas) canvas.focus({ preventScroll: true });
       updateSceneViewport();
       requestRender();
     }
@@ -2719,7 +2740,7 @@
       searchInput.value = "";
       searchResults.textContent = "";
       searchResults.hidden = true;
-      searchStatus.textContent = "Search Core, Tests, and Gems.";
+      searchStatus.textContent = "";
       if (focus) searchInput.focus();
     }
 
@@ -2794,21 +2815,27 @@
       for (const category of ["core", "tests", "dependencies"]) {
         const meta = categoryMeta[category];
         const details = document.createElement("details");
+        details.className = `explorer-section ${category}`;
         details.open = category === "core";
         const summary = document.createElement("summary");
-        const swatch = document.createElement("span");
-        swatch.className = `swatch ${category}`;
         const heading = document.createElement("span");
         heading.className = "section-heading";
         const title = document.createElement("strong");
         title.textContent = meta.title;
-        heading.append(title);
-        if (meta.summary) {
-          const summaryText = document.createElement("small");
-          summaryText.textContent = meta.summary;
-          heading.append(summaryText);
+        const summaryText = document.createElement("small");
+        summaryText.textContent = category === "dependencies"
+          ? `${packageCount.toLocaleString()} dependency gems`
+          : `${Number(meta.rubyCounts[0] || 0).toLocaleString()} classes · ${Number(meta.rubyCounts[2] || 0).toLocaleString()} methods`;
+        heading.append(title, summaryText);
+        const state = document.createElement("span");
+        state.className = "section-state";
+        for (const [className, label] of [["visible", "In view"], ["focused", "Focused"], ["hidden", "Hidden"]]) {
+          const stateLabel = document.createElement("span");
+          stateLabel.className = className;
+          stateLabel.textContent = label;
+          state.append(stateLabel);
         }
-        summary.append(swatch, heading);
+        summary.append(heading, state);
 
         const body = document.createElement("div");
         body.className = "section-body";
@@ -2823,8 +2850,11 @@
         checkbox.addEventListener("change", () => setCategoryVisible(category, checkbox.checked));
         visibilityInputs[category] = checkbox;
         const visibilityText = document.createElement("span");
-        visibilityText.textContent = "Visible";
-        visibility.append(checkbox, visibilityText);
+        const visibilityTrack = document.createElement("span");
+        visibilityTrack.className = "visibility-track";
+        visibilityTrack.setAttribute("aria-hidden", "true");
+        visibilityText.textContent = "Show stars";
+        visibility.append(checkbox, visibilityTrack, visibilityText);
         const focus = document.createElement("button");
         focus.type = "button";
         focus.textContent = "Focus";
@@ -2871,7 +2901,7 @@
         if (categoryFacts.length) {
           const factLabel = document.createElement("p");
           factLabel.className = "fact-label";
-          factLabel.textContent = "Ruby code highlights";
+          factLabel.textContent = "Fly to a landmark";
           body.append(factLabel, facts);
         }
         details.append(summary, body);
@@ -2957,6 +2987,13 @@
         sceneCenterY = height * activeShowcaseLayout.centerYPercent / 100;
         return;
       }
+      if (document.body.classList.contains("is-ui-hidden")) {
+        sceneRight = width;
+        sceneBottom = height;
+        sceneCenterX = width / 2;
+        sceneCenterY = height / 2;
+        return;
+      }
       const panelBounds = panel.getBoundingClientRect();
       sceneRight = width > 760 && !panel.classList.contains("is-collapsed") ? panelBounds.left - 14 : width;
       sceneBottom = width <= 760 && !panel.classList.contains("is-collapsed") ? panelBounds.top - 12 : height;
@@ -3010,13 +3047,15 @@
     function handleViewShortcut(event) {
       if (pointers.size > 0) return false;
       if (event.metaKey || event.ctrlKey || event.altKey) return false;
+      const uiHidden = document.body.classList.contains("is-ui-hidden");
       if (isEditableTarget(event.target)) return false;
       if (event.key === "+" || event.key === "=") { cancelCameraFlight(); zoomBetween(zoom * ZOOM_STEP, sceneCenterX, sceneCenterY); }
       else if (event.key === "-") { cancelCameraFlight(); zoomBetween(zoom / ZOOM_STEP, sceneCenterX, sceneCenterY); }
       else if (event.key === "0") resetView();
       else if (event.key.toLowerCase() === "p") { cancelCameraFlight(); setNavigationMode(navigationMode === "pan" ? "orbit" : "pan"); }
-      else if (event.key === "/") focusSearch();
-      else if (event.key === "?") { if (!event.repeat) toggleHelp(); }
+      else if (event.key === "/") { if (uiHidden) setUiHidden(false); focusSearch(); }
+      else if (event.key.toLowerCase() === "h") setUiHidden(!uiHidden);
+      else if (event.key === "?" && !uiHidden) { if (!event.repeat) toggleHelp(); }
       else if ((event.key === "Enter" || event.key.toLowerCase() === "f") && selectedPoint?.category === "dependencies") {
         if (event.key === "Enter" && event.target !== canvas && event.target !== document.body) return false;
         if (selectedPoint.systemHub && !selectedPoint.packageHub) focusDependencySystem(selectedPoint.systemIndex);
@@ -3617,7 +3656,7 @@
       } else {
         hideTravelOverlay();
       }
-      if (!selectedPoint) return;
+      if (document.body.classList.contains("is-ui-hidden") || !selectedPoint) return;
       const screen = screenDataFor(selectedPoint, viewMatrix(), 0);
       if (!screen) return;
       const [x, y, size] = screen;
@@ -3999,6 +4038,12 @@
       dragging = pointers.size > 0;
       canvas.classList.remove("is-dragging-pan");
       if (wasTap) {
+        if (document.body.classList.contains("is-ui-hidden")) {
+          doubleClickTarget = null;
+          restoreTapDoubleClickDeadline = event.timeStamp + 1000;
+          setUiHidden(false);
+          return;
+        }
         const point = hoverTargetAt(event.clientX, event.clientY);
         const rememberedTapIsFresh = doubleClickTarget &&
           event.timeStamp - doubleClickTarget.at <= 1000 &&
@@ -4038,6 +4083,11 @@
     }, { passive: false });
     canvas.addEventListener("dblclick", event => {
       if (pointers.size > 0) return;
+      if (event.timeStamp <= restoreTapDoubleClickDeadline) {
+        restoreTapDoubleClickDeadline = 0;
+        doubleClickTarget = null;
+        return;
+      }
       const remembered = doubleClickTarget;
       doubleClickTarget = null;
       const rememberedPoint = remembered &&
@@ -4078,6 +4128,7 @@
     document.getElementById("zoom-in").addEventListener("click", () => { if (pointers.size === 0) { cancelCameraFlight(); zoomBetween(zoom * ZOOM_STEP, sceneCenterX, sceneCenterY); } requestRender(); });
     document.getElementById("zoom-out").addEventListener("click", () => { if (pointers.size === 0) { cancelCameraFlight(); zoomBetween(zoom / ZOOM_STEP, sceneCenterX, sceneCenterY); } requestRender(); });
     document.getElementById("reset-view").addEventListener("click", resetView);
+    uiToggle.addEventListener("click", () => setUiHidden(!document.body.classList.contains("is-ui-hidden")));
     document.getElementById("help-open").addEventListener("click", toggleHelp);
     helpClose.addEventListener("click", closeHelp);
     helpOverlay.addEventListener("click", event => { if (event.target === helpOverlay) closeHelp(); });
@@ -4103,7 +4154,7 @@
     } else {
       document.title = `RubyLens · ${model.projectName}`;
       if (explorerRenderer) {
-        canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class or module stars, dependency systems, or gem clouds for details. Selections open a top-down view that keeps the selected target and Core visible. Double-click a dependency system or gem cloud, press Enter or F on its selected marker, or tap that marker again to expand it. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, use arrow keys to move the view, Space to pause or resume drift, 0 to reset, slash to search, and question mark for the full shortcut list.`);
+        canvas.setAttribute("aria-label", `Interactive three-dimensional stellar artwork of ${model.projectName}. Hover class or module stars, dependency systems, or gem clouds for details. Selections open a top-down view that keeps the selected target and Core visible. Double-click a dependency system or gem cloud, press Enter or F on its selected marker, or tap that marker again to expand it. Drag to orbit, Shift-drag or Pan mode to move, scroll or pinch to zoom at a point, use arrow keys to move the view, Space to pause or resume drift, H to hide or show the interface, 0 to reset, slash to search, and question mark for the full shortcut list.`);
       }
       populateWarningDisclosure();
       applyCameraTarget(DEFAULT_CAMERA);

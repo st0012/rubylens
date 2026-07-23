@@ -114,9 +114,10 @@ describe("explorer runtime contract", () => {
     expect(RUNTIME_SOURCE).toContain("function handleViewShortcut(event)");
     const handler = runtimeFunction("handleViewShortcut");
     expect(handler).toContain("if (event.metaKey || event.ctrlKey || event.altKey) return false");
+    expect(handler).toContain('const uiHidden = document.body.classList.contains("is-ui-hidden")');
     expect(handler).toContain("if (isEditableTarget(event.target)) return false");
-    expect(handler).toContain('else if (event.key === "/") focusSearch()');
-    expect(handler).toContain('else if (event.key === "?") { if (!event.repeat) toggleHelp(); }');
+    expect(handler).toContain('else if (event.key === "/") { if (uiHidden) setUiHidden(false); focusSearch(); }');
+    expect(handler).toContain('else if (event.key === "?" && !uiHidden) { if (!event.repeat) toggleHelp(); }');
     expect(handler).toContain('if (event.key === "Enter" && event.target !== canvas && event.target !== document.body) return false');
     expect(RUNTIME_SOURCE).toContain("else if (!handleViewShortcut(event)) moveViewWithArrow(event)");
     expect(RUNTIME_SOURCE).not.toContain('canvas.addEventListener("keydown"');
@@ -155,8 +156,10 @@ describe("explorer runtime contract", () => {
 
   it("star hover and hub tooltips advertise their interactions", () => {
     const hover = runtimeFunction("queueHover");
+    expect(hover).toContain('document.body.classList.contains("is-ui-hidden")');
     expect(hover).toContain('canvas.classList.toggle("is-star", Boolean(point))');
     expect(hover).toContain("if (!selectionLocked && point !== selectedPoint) selectPoint(point)");
+    expect(runtimeFunction("positionTooltip")).toContain('document.body.classList.contains("is-ui-hidden")');
     expect(RUNTIME_SOURCE).toContain('" · Double-click or F to expand"');
     expect(RUNTIME_SOURCE).toContain('motion.title = `${label} (Space)`');
   });
@@ -269,7 +272,7 @@ describe("explorer runtime contract", () => {
     expect(RUNTIME_SOURCE).toContain('if (point.category === "core") addCoreTooltipMetrics(point)');
     expect(RUNTIME_SOURCE).toContain("Most methods");
     expect(RUNTIME_SOURCE).toContain("Most constants");
-    expect(RUNTIME_SOURCE).toContain("Ruby code highlights");
+    expect(RUNTIME_SOURCE).toContain("Fly to a landmark");
     expect(RUNTIME_SOURCE).toContain("Expanded gem cloud");
     expect(RUNTIME_SOURCE).toContain("arrow keys to move the view");
     expect(RUNTIME_SOURCE).toContain("Shift-drag or Pan mode to move");
@@ -314,9 +317,9 @@ describe("explorer runtime contract", () => {
     expect(RUNTIME_SOURCE).toContain("cameraFlight = null");
     expect(RUNTIME_SOURCE).toContain("function render(timestamp)");
     expect(RUNTIME_SOURCE).toContain("if (reducedMotionQuery.matches)");
-    expect(RUNTIME_SOURCE).toContain("if (cameraFlight || dragging || pointers.size > 0) return");
+    expect(RUNTIME_SOURCE).toContain('if (document.body.classList.contains("is-ui-hidden") || cameraFlight || dragging || pointers.size > 0) return');
     expect(RUNTIME_SOURCE).toContain("const TOP_DOWN_PITCH = Math.PI / 2");
-    expect(RUNTIME_SOURCE).toContain("if (cameraFlight || !point?.screen)");
+    expect(RUNTIME_SOURCE).toContain('if (document.body.classList.contains("is-ui-hidden") || cameraFlight || !point?.screen)');
     expect(RUNTIME_SOURCE).toContain("canvas.setAttribute(\"aria-busy\", \"true\")");
     expect(RUNTIME_SOURCE).toContain("Double-click a dependency system or gem cloud, press Enter");
     expect(RUNTIME_SOURCE).toContain("press Enter or F on its selected marker");
