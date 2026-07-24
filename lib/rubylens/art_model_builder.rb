@@ -6,112 +6,169 @@ require_relative "morphology_classifier"
 
 module RubyLens
   class ArtModelBuilder
+    SCHEMA = "rubylens.art.v13"
     SIGNAL_FIELDS = %w[ancestorDepth definitionSites reopenings descendants references members].freeze
+    # Namespace row columns carrying the six signals, aligned with SIGNAL_FIELDS.
+    NAMESPACE_SIGNAL_COLUMNS = (3..8).freeze
+
+    # `index` maps a snapshot ordinal to its shuffled position; `order` is the
+    # inverse, listing snapshot ordinals in draw order.
+    Namespaces = Data.define(:order, :index, :rows, :names, :reference_rows) do
+      # Link endpoints past the namespace block address dependency stars, which
+      # the snapshot numbers from zero after the namespaces.
+      def referenced_dependency_ordinals
+        reference_rows.map { |_referring_index, referenced_index| referenced_index - order.length }
+      end
+    end
+    Packages = Data.define(:order, :index, :rows, :names, :morphologies, :systems)
+    Dependencies = Data.define(:rows, :index)
 
     def initialize(seed: 0x51A7_E11A)
       @seed = seed
     end
 
+    # Draw order is shuffled so neighbouring stars come from unrelated parts of
+    # the codebase: adjacent points would otherwise share a package or a name
+    # prefix and read as structure the galaxy does not mean to show. Every
+    # ordinal the snapshot used is therefore remapped onto the shuffled order.
     def build(snapshot)
       random = Random.new(@seed)
-      morphology = MorphologyClassifier.new(snapshot).call
-      namespace_order = (0...snapshot.fetch("namespaces").length).to_a.shuffle(random: random)
-      namespace_index = Array.new(namespace_order.length)
-      namespace_order.each_with_index { |old_index, new_index| namespace_index[old_index] = new_index }
-      constant_reference_rows = valid_constant_reference_rows(snapshot)
-      namespaces = namespace_order.map do |index|
-        row = snapshot.fetch("namespaces").fetch(index)
-        [random.rand(0..0xffff_ffff), *row]
-      end
-      namespace_names = namespace_order.map { |index| snapshot.fetch("namespace_names").fetch(index) }
-      package_order = (0...snapshot.fetch("packages").length).to_a.shuffle(random: random)
-      package_index = package_order.each_with_index.to_h
-      dependency_systems, dependency_system_index = build_dependency_systems(snapshot, package_index)
-      package_morphologies = []
-      packages = package_order.map do |old_index|
-        package = snapshot.fetch("packages").fetch(old_index)
-        package_seed = random.rand(0..0xffff_ffff)
-        package_morphology = MorphologyClassifier.new(package:, phase_seed: package_seed).call
-        package_morphologies << [package_morphology.fetch("family"), *package_morphology.fetch("knobs")]
-        [
-          package_seed,
-          package.fetch("role"),
-          package.fetch("location"),
-          package.fetch("declarations").length,
-          *package.fetch("ruby_counts"),
-          dependency_system_index.fetch(old_index, -1),
-        ]
-      end
-      package_names = package_order.map { |old_index| snapshot.fetch("packages").fetch(old_index).fetch("name") }
-      dependency_offsets = []
-      dependency_count = 0
-      snapshot.fetch("packages").each do |package|
-        dependency_offsets << dependency_count
-        dependency_count += package.fetch("declarations").length
-      end
-      dependency_target_rows = {}.compare_by_identity
-      constant_reference_rows.each do |_referring_index, referenced_index|
-        dependency_ordinal = referenced_index - namespace_order.length
-        next if dependency_ordinal.negative? || dependency_ordinal >= dependency_count
+      namespaces = build_namespaces(snapshot, random)
+      packages = build_packages(snapshot, random)
+      dependencies = build_dependencies(snapshot, packages, namespaces, random)
 
-        next_package_index = dependency_offsets.bsearch_index { |offset| offset > dependency_ordinal }
-        old_package_index = (next_package_index || dependency_offsets.length) - 1
-        package = snapshot.fetch("packages").fetch(old_package_index)
-        local_index = dependency_ordinal - dependency_offsets.fetch(old_package_index)
-        dependency_target_rows[package.fetch("declarations").fetch(local_index)] = dependency_ordinal
-      end
-      dependencies = []
-      dependency_index = {}
-      package_order.each do |old_index|
-        package = snapshot.fetch("packages").fetch(old_index)
-        declarations = package.fetch("declarations").sort.shuffle(random: random)
-        declarations.each do |declaration|
-          original_ordinal = dependency_target_rows[declaration]
-          dependency_index[original_ordinal] = dependencies.length if original_ordinal
-          dependencies << [
-            random.rand(0..0xffff_ffff),
-            package_index.fetch(old_index),
-            *declaration.drop(1),
-          ]
-        end
-      end
-      constant_reference_links = build_constant_reference_links(
-        constant_reference_rows,
-        namespace_index,
-        dependency_index,
-      )
       {
-        "schema" => "rubylens.art.v13",
+        "schema" => SCHEMA,
         "projectName" => snapshot.fetch("project_name"),
-        "morphology" => [morphology.fetch("family"), *morphology.fetch("knobs")],
+        "morphology" => morphology_row(MorphologyClassifier.new(snapshot).call),
         "totals" => {
-          "namespaces" => namespaces.length,
-          "packages" => packages.length,
-          "dependencyStars" => dependencies.length,
+          "namespaces" => namespaces.rows.length,
+          "packages" => packages.rows.length,
+          "dependencyStars" => dependencies.rows.length,
         },
-        "domains" => signal_domains(namespaces, snapshot.fetch("dependency_signal_maxima")),
+        "domains" => signal_domains(namespaces.rows, snapshot.fetch("dependency_signal_maxima")),
         "categoryStats" => snapshot.fetch("category_stats"),
-        "namespaceNames" => namespace_names,
-        "namespaces" => namespaces,
-        "constantReferenceLinks" => constant_reference_links,
-        "packageNames" => package_names,
-        "packages" => packages,
-        "packageMorphologies" => package_morphologies,
-        "dependencySystems" => dependency_systems,
-        "dependencyStars" => dependencies,
-        "dependencyWarnings" => snapshot.fetch("dependency_warnings", []).filter_map do |warning|
-          name = warning.fetch("name")
-          reason = warning.fetch("reason")
-          next unless name.is_a?(String) && DependencyWarning::NAME_PATTERN.match?(name)
-          next unless reason.is_a?(String) && DependencyWarning::ALLOWED_REASONS.include?(reason)
-
-          { "name" => name, "reason" => reason }
-        end,
+        "namespaceNames" => namespaces.names,
+        "namespaces" => namespaces.rows,
+        "constantReferenceLinks" => build_constant_reference_links(
+          namespaces.reference_rows,
+          namespaces.index,
+          dependencies.index,
+        ),
+        "packageNames" => packages.names,
+        "packages" => packages.rows,
+        "packageMorphologies" => packages.morphologies,
+        "dependencySystems" => packages.systems,
+        "dependencyStars" => dependencies.rows,
+        "dependencyWarnings" => allowed_dependency_warnings(snapshot),
         "warningCounts" => snapshot.fetch("warning_counts"),
       }
     end
 
     private
+
+    def build_namespaces(snapshot, random)
+      rows = snapshot.fetch("namespaces")
+      names = snapshot.fetch("namespace_names")
+      order = (0...rows.length).to_a.shuffle(random: random)
+      index = Array.new(order.length)
+      order.each_with_index { |old_index, new_index| index[old_index] = new_index }
+
+      Namespaces.new(
+        order: order,
+        index: index,
+        rows: order.map { |old_index| [random.rand(0..0xffff_ffff), *rows.fetch(old_index)] },
+        names: order.map { |old_index| names.fetch(old_index) },
+        reference_rows: valid_constant_reference_rows(snapshot),
+      )
+    end
+
+    def build_packages(snapshot, random)
+      snapshot_packages = snapshot.fetch("packages")
+      order = (0...snapshot_packages.length).to_a.shuffle(random: random)
+      index = order.each_with_index.to_h
+      systems, system_index = build_dependency_systems(snapshot, index)
+      morphologies = []
+
+      rows = order.map do |old_index|
+        package = snapshot_packages.fetch(old_index)
+        seed = random.rand(0..0xffff_ffff)
+        morphologies << morphology_row(MorphologyClassifier.new(package: package, phase_seed: seed).call)
+        [
+          seed,
+          package.fetch("role"),
+          package.fetch("location"),
+          package.fetch("declarations").length,
+          *package.fetch("ruby_counts"),
+          system_index.fetch(old_index, -1),
+        ]
+      end
+
+      Packages.new(
+        order: order,
+        index: index,
+        rows: rows,
+        names: order.map { |old_index| snapshot_packages.fetch(old_index).fetch("name") },
+        morphologies: morphologies,
+        systems: systems,
+      )
+    end
+
+    # Dependency stars are emitted package by package in shuffled order, so a
+    # snapshot ordinal is only recoverable for the rows travel actually targets.
+    # Those rows are identified before the shuffle and tracked by object
+    # identity, since equal declaration rows are common and interchangeable.
+    def build_dependencies(snapshot, packages, namespaces, random)
+      targeted = travel_target_rows(snapshot, namespaces.referenced_dependency_ordinals)
+      rows = []
+      index = {}
+      packages.order.each do |old_index|
+        package = snapshot.fetch("packages").fetch(old_index)
+        package.fetch("declarations").sort.shuffle(random: random).each do |declaration|
+          original_ordinal = targeted[declaration]
+          index[original_ordinal] = rows.length if original_ordinal
+          rows << [random.rand(0..0xffff_ffff), packages.index.fetch(old_index), *declaration.drop(1)]
+        end
+      end
+      Dependencies.new(rows: rows, index: index)
+    end
+
+    def travel_target_rows(snapshot, dependency_ordinals)
+      offsets = []
+      total = 0
+      snapshot.fetch("packages").each do |package|
+        offsets << total
+        total += package.fetch("declarations").length
+      end
+
+      targeted = {}.compare_by_identity
+      dependency_ordinals.each do |ordinal|
+        next if ordinal.negative? || ordinal >= total
+
+        next_package = offsets.bsearch_index { |offset| offset > ordinal }
+        package_index = (next_package || offsets.length) - 1
+        declarations = snapshot.fetch("packages").fetch(package_index).fetch("declarations")
+        targeted[declarations.fetch(ordinal - offsets.fetch(package_index))] = ordinal
+      end
+      targeted
+    end
+
+    def morphology_row(morphology)
+      [morphology.fetch("family"), *morphology.fetch("knobs")]
+    end
+
+    # Warnings reach the artifact only if they match the closed vocabulary, so a
+    # tampered snapshot cannot smuggle arbitrary text into a shareable page.
+    def allowed_dependency_warnings(snapshot)
+      snapshot.fetch("dependency_warnings", []).filter_map do |warning|
+        name = warning.fetch("name")
+        reason = warning.fetch("reason")
+        next unless name.is_a?(String) && DependencyWarning::NAME_PATTERN.match?(name)
+        next unless reason.is_a?(String) && DependencyWarning::ALLOWED_REASONS.include?(reason)
+
+        { "name" => name, "reason" => reason }
+      end
+    end
 
     def valid_constant_reference_rows(snapshot)
       rows = snapshot.fetch("constant_reference_links", [])
@@ -156,17 +213,15 @@ module RubyLens
       [systems, package_system_index]
     end
 
-    def signal_domains(namespaces, dependency_maxima)
-      namespace_columns = [3, 4, 5, 6, 7, 8]
-      namespace_domains = namespace_columns.map { |column| maximum(namespaces, column) }
+    # Each signal is scaled against the larger of its workspace and dependency
+    # maxima, so the two populations stay comparable in the same scene.
+    def signal_domains(namespace_rows, dependency_maxima)
+      namespace_domains = NAMESPACE_SIGNAL_COLUMNS.map do |column|
+        namespace_rows.map { |row| row[column].to_i }.max || 0
+      end
       SIGNAL_FIELDS.each_with_index.to_h do |field, index|
         [field, [namespace_domains[index], dependency_maxima[index]].max]
       end
     end
-
-    def maximum(rows, column)
-      rows.map { |row| row[column].to_i }.max || 0
-    end
-
   end
 end

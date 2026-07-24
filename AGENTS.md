@@ -85,6 +85,16 @@ concerns. Keep new indexing work inside whichever one already owns the concern.
   every package source. Its `NixStoreProvider` is the only reason a checkout
   resolving outside the bundle is ever trusted; widening that pattern widens
   what RubyLens will read, so `test/index/git_package_source_test.rb` pins it.
+- `LocationIndex` answers per-URI questions (path, workspace membership,
+  test/core scope, owning package) and memoizes them. Every other collaborator
+  asks it instead of re-deriving paths, which is what makes per-definition
+  questions affordable.
+- `DeclarationCollector` streams `graph.declarations` once into workspace
+  namespaces, category tallies, and dependency rows. `ConstantReferenceCollector`
+  owns inbound counts and the bounded travel-link sample.
+- `RubydexAdapter` orchestrates those and assembles the snapshot. It is the
+  privacy boundary: rows leave as integers, and the only strings that survive
+  are namespace, package, and project names.
 
 ## Rubydex 0.2.9 integration notes
 
