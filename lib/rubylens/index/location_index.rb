@@ -19,8 +19,13 @@ module RubyLens
       CORE = 0
       TEST_SEGMENTS = %w[test tests spec specs feature features].freeze
 
+      #: Set[String]
       attr_reader :package_document_paths
 
+      # The manifest is duck-typed: production passes a Manifest, tests pass
+      # stubs answering the same four questions.
+      #
+      #: (untyped manifest) -> void
       def initialize(manifest)
         @manifest = manifest
         @path_by_uri = {}
@@ -33,6 +38,8 @@ module RubyLens
       # One sweep over the indexed documents resolves each URI once, recording
       # which of them belong to audited packages and returning the
       # [document, path] pairs so callers need not re-enumerate or re-parse.
+      #
+      #: (Rubydex::Graph) -> Array[[Rubydex::Document, String]]
       def resolve_documents(graph)
         audited = @manifest.packages.flat_map(&:files).to_set
         documents_with_paths = []
@@ -46,12 +53,14 @@ module RubyLens
         documents_with_paths
       end
 
+      #: (String) -> String?
       def path_for(uri)
         @path_by_uri.fetch(uri) do
           @path_by_uri[uri] = SourcePath.from_file_uri(uri)
         end
       end
 
+      #: (Rubydex::Location) -> bool
       def workspace?(location)
         uri = location.uri
         @workspace_by_uri.fetch(uri) do
@@ -63,6 +72,8 @@ module RubyLens
       end
 
       # TEST, CORE, or nil when the URI has no workspace-relative path.
+      #
+      #: (String) -> Integer?
       def scope_for(uri)
         @scope_by_uri.fetch(uri) do
           relative = @manifest.relative_workspace_path(path_for(uri))
@@ -75,6 +86,8 @@ module RubyLens
 
       # Package attribution is deliberately limited to documents Rubydex actually
       # indexed, so a path that merely sits inside a package root cannot claim it.
+      #
+      #: (Rubydex::Location) -> Integer?
       def package_index_for(location)
         uri = location.uri
         @package_index_by_uri.fetch(uri) do

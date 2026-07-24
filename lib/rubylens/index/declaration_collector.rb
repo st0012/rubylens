@@ -13,17 +13,31 @@ module RubyLens
     # It is a single pass because Rubydex materializes a new wrapper for every
     # accessor call, so revisiting the stream costs as much as producing it.
     class DeclarationCollector
+      # Shapes shared with the other collectors. A site key is a definition's
+      # location flattened for comparison and grouping; a definition range is a
+      # namespace's span within one file, tagged with the namespace's ordinal.
+      #
+      # @rbs!
+      #   type site_key = [String, Integer, Integer, Integer, Integer]
+      #   type definition_range = [Integer, Integer, Integer, Integer, Integer]
+      #   type dependency_package = { ruby_counts: Array[Integer], declarations: Array[Array[Integer]] }
+
       # A workspace namespace that earned a scene point, with the canonical
       # definition sites that decide where its constant references land.
-      Namespace = Data.define(:declaration, :name, :definition_sites, :scope)
+      Namespace = Data.define(
+        :declaration, #: Rubydex::Namespace
+        :name, #: String
+        :definition_sites, #: Integer
+        :scope, #: Integer
+      )
 
       Result = Data.define(
-        :namespaces,
-        :definition_ranges,
-        :category_stats,
-        :dependency_packages,
-        :dependency_signal_maxima,
-        :dependency_ordinal_by_name,
+        :namespaces, #: Array[Namespace]
+        :definition_ranges, #: Hash[String, Array[definition_range]]
+        :category_stats, #: Hash[String, Array[Integer]]
+        :dependency_packages, #: Array[dependency_package]
+        :dependency_signal_maxima, #: Array[Integer]
+        :dependency_ordinal_by_name, #: Hash[String, Integer]
       )
 
       CLASS = 0
@@ -33,11 +47,13 @@ module RubyLens
       OTHER_KIND = 2
       MIXED_SCOPE = 2
 
+      #: (manifest: untyped, locations: LocationIndex) -> void
       def initialize(manifest:, locations:)
         @manifest = manifest
         @locations = locations
       end
 
+      #: (Enumerable[Rubydex::Declaration]) -> Result
       def call(declarations)
         namespaces = []
         category_stats = { "core" => Array.new(4, 0), "tests" => Array.new(4, 0) }
@@ -93,6 +109,8 @@ module RubyLens
       # Rubydex reports synthetic declarations RubyLens never draws: anonymous
       # namespaces, Todo placeholders standing in for unresolved constants, and
       # singleton classes attached to either.
+      #
+      #: (Rubydex::Declaration, ?String?) -> bool
       def eligible?(declaration, name = declaration.name)
         return false if name.nil? || name.empty? || name.include?("<anonymous>")
         return false if declaration.is_a?(Rubydex::Todo)
@@ -102,6 +120,7 @@ module RubyLens
         !attached.is_a?(Rubydex::SingletonClass) && !attached.is_a?(Rubydex::Todo)
       end
 
+      #: (Rubydex::Declaration) -> Integer?
       def construct_index(declaration)
         case declaration
         when Rubydex::SingletonClass then nil
@@ -120,6 +139,8 @@ module RubyLens
       # canonical_scope, package_site_keys]; the site-key collections stay nil
       # until a definition contributes one, since most declarations contribute
       # neither a canonical namespace site nor a package site.
+      #
+      #: (Rubydex::Declaration, bool) -> [Integer, bool, Array[site_key]?, Integer, Hash[Integer, Array[site_key]]?]
       def summarize(declaration, namespace)
         workspace_count = 0
         tests_seen = false
@@ -164,6 +185,7 @@ module RubyLens
         ]
       end
 
+      #: (bool, bool) -> Integer
       def canonical_scope(tests_seen, core_seen)
         return LocationIndex::CORE unless tests_seen
 
@@ -172,6 +194,8 @@ module RubyLens
 
       # A declaration reopened across packages is attributed to the one holding
       # the most of its definitions, ties going to the earliest package.
+      #
+      #: (Model::DependencyAggregation, Hash[String, [Integer, Integer]], Rubydex::Declaration, String, bool, Integer?, Hash[Integer, Array[site_key]]) -> void
       def collect_dependency(aggregation, positions, declaration, name, namespace, construct, package_site_keys)
         package_index = nil
         site_keys = nil
@@ -202,6 +226,8 @@ module RubyLens
 
       # Dependency stars are addressed by a single ordinal spanning every
       # package, so per-package positions are rebased onto that flat sequence.
+      #
+      #: (Array[dependency_package], Hash[String, [Integer, Integer]]) -> Hash[String, Integer]
       def global_dependency_ordinals(packages, positions)
         offsets = []
         offset = 0
@@ -215,6 +241,7 @@ module RubyLens
         positions.freeze
       end
 
+      #: (Rubydex::Declaration) -> Integer
       def namespace_kind(declaration)
         case declaration
         when Rubydex::Class then CLASS
@@ -223,12 +250,14 @@ module RubyLens
         end
       end
 
+      #: (Rubydex::Declaration, bool) -> bool
       def constant_reference_target?(declaration, namespace)
         namespace ||
           declaration.is_a?(Rubydex::Constant) ||
           declaration.is_a?(Rubydex::ConstantAlias)
       end
 
+      #: (Rubydex::Declaration, Rubydex::Definition) -> bool
       def canonical_definition?(declaration, definition)
         (declaration.is_a?(Rubydex::Class) && definition.is_a?(Rubydex::ClassDefinition)) ||
           (declaration.is_a?(Rubydex::Module) && definition.is_a?(Rubydex::ModuleDefinition))
@@ -238,6 +267,8 @@ module RubyLens
       # and this pre-1.0 interface can raise from either. A dependency star that
       # cannot report a signal is still a real declaration, so an unreadable
       # count degrades to zero rather than losing the row.
+      #
+      #: (untyped, Symbol) -> Integer
       def length_of(object, name)
         records = object.public_send(name)
         size = records.size
@@ -246,6 +277,7 @@ module RubyLens
         count_of(records)
       end
 
+      #: (untyped) -> Integer
       def count_of(records)
         records ? records.count : 0
       rescue StandardError

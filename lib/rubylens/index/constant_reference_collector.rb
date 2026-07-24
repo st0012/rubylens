@@ -16,8 +16,14 @@ module RubyLens
       LINK_LIMIT = 1_024
       ATTRIBUTION_LIMIT = LINK_LIMIT * 2
 
-      Summary = Data.define(:inbound_counts, :links)
+      # `inbound_counts` is keyed by namespace ordinal, absent meaning zero;
+      # each link is [referring namespace ordinal, referenced endpoint ordinal].
+      Summary = Data.define(
+        :inbound_counts, #: Hash[Integer, Integer]
+        :links, #: Array[[Integer, Integer]]
+      )
 
+      #: (locations: LocationIndex) -> void
       def initialize(locations:)
         @locations = locations
       end
@@ -25,6 +31,8 @@ module RubyLens
       # `namespaces` are the collector's workspace namespaces in ordinal order;
       # `ordinal_by_name` and `dependency_ordinal_by_name` address link
       # endpoints, with dependency ordinals offset past the namespace block.
+      #
+      #: (graph: Rubydex::Graph, namespaces: Array[DeclarationCollector::Namespace], definition_ranges: Hash[String, Array[DeclarationCollector::definition_range]], ordinal_by_name: Hash[String, Integer], dependency_ordinal_by_name: Hash[String, Integer], namespace_count: Integer) -> Summary
       def call(graph:, namespaces:, definition_ranges:, ordinal_by_name:, dependency_ordinal_by_name:, namespace_count:)
         Summary.new(
           inbound_counts: inbound_counts(namespaces),
@@ -36,6 +44,8 @@ module RubyLens
 
       # Asking each namespace for its own references is bounded by the
       # namespaces actually drawn, unlike scanning the global reference stream.
+      #
+      #: (Array[DeclarationCollector::Namespace]) -> Hash[Integer, Integer]
       def inbound_counts(namespaces)
         counts = Hash.new(0)
         namespaces.each_with_index do |namespace, index|
@@ -51,6 +61,7 @@ module RubyLens
         counts.freeze
       end
 
+      #: (Rubydex::Graph, Hash[String, Array[DeclarationCollector::definition_range]], Hash[String, Integer], Hash[String, Integer], Integer) -> Array[[Integer, Integer]]
       def links(graph, definition_ranges, ordinal_by_name, dependency_ordinal_by_name, namespace_count)
         links = []
         retained = Set.new
@@ -95,6 +106,7 @@ module RubyLens
         links.freeze
       end
 
+      #: (Rubydex::ResolvedConstantReference) -> String?
       def referenced_name(reference)
         reference.declaration.name
       rescue StandardError
@@ -104,6 +116,8 @@ module RubyLens
       # A reference belongs to the innermost namespace definition containing it.
       # Two definitions sharing the exact same span cannot be told apart, so the
       # reference is dropped rather than attributed to an arbitrary one.
+      #
+      #: (DeclarationCollector::site_key, Hash[String, Array[DeclarationCollector::definition_range]]) -> Integer?
       def enclosing_namespace_ordinal(location_values, ranges_by_uri)
         uri, start_line, start_column, end_line, end_column = location_values
         best = nil
@@ -126,6 +140,7 @@ module RubyLens
         ambiguous ? nil : best&.fetch(4)
       end
 
+      #: (Integer, Integer, Integer, Integer) -> Integer
       def compare(left_line, left_column, right_line, right_column)
         line_comparison = left_line <=> right_line
         line_comparison.zero? ? left_column <=> right_column : line_comparison
