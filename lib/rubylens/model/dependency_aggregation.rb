@@ -17,10 +17,12 @@ module RubyLens
         local_index = @rows[package_index].length
         @ruby_counts[package_index][construct_index] += 1 if construct_index
         maxima = @signal_maxima
-        SIGNAL_COLUMNS.each do |column|
+        column = SIGNAL_COLUMNS.begin
+        while column <= SIGNAL_COLUMNS.end
           value = row[column]
           index = column - 1
           maxima[index] = value if value > maxima[index]
+          column += 1
         end
         @rows[package_index] << (row.frozen? ? row : row.dup.freeze)
         local_index
