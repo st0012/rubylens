@@ -19,11 +19,16 @@ module RubyLens
       SCHEMA = "rubylens.snapshot.v9"
       RSPEC_ROW = [0, 1, *Array.new(11, 0)].freeze
 
+      # The manifest is duck-typed: production passes a Manifest, tests pass
+      # stubs, and `index` probes it with respond_to? for the optional parts.
+      #
+      #: (untyped manifest) -> void
       def initialize(manifest)
         @manifest = manifest
         @locations = LocationIndex.new(manifest)
       end
 
+      #: () -> Hash[String, untyped]
       def index
         graph = Rubydex::Graph.new(workspace_path: @manifest.root.to_s)
         index_errors = graph.index_all(@manifest.files)
@@ -77,12 +82,14 @@ module RubyLens
 
       private
 
+      #: (Array[DeclarationCollector::Namespace]) -> Hash[String, Integer]
       def ordinal_by_name(namespaces)
         ordinals = {}
         namespaces.each_with_index { |namespace, index| ordinals[namespace.name] = index }
         ordinals
       end
 
+      #: (Array[DeclarationCollector::Namespace], Hash[Integer, Integer], Integer) -> Array[Array[Integer]]
       def namespace_rows(namespaces, inbound_counts, rspec_group_count)
         drawn_names = ordinal_by_name(namespaces)
         rows = namespaces.each_with_index.map do |namespace, index|
@@ -122,6 +129,8 @@ module RubyLens
       # workspace member count, the method and constant construct counts, and
       # the instance-variable count together, since each of the three otherwise
       # re-reads every member's definitions.
+      #
+      #: (Rubydex::Namespace, kind: Integer, count_instance_variables: bool) -> [Integer, Array[Integer], Integer]
       def member_statistics(declaration, kind:, count_instance_variables:)
         members = 0
         instance_variables = 0
@@ -151,6 +160,7 @@ module RubyLens
         [members, ruby_counts, instance_variables]
       end
 
+      #: (Array[DeclarationCollector::dependency_package]) -> Array[Hash[String, untyped]]
       def package_rows(aggregates)
         @manifest.packages.each_with_index.map do |package, index|
           aggregate = aggregates.fetch(index)
@@ -164,6 +174,7 @@ module RubyLens
         end
       end
 
+      #: () -> Array[Hash[String, untyped]]
       def dependency_system_rows
         return [] unless @manifest.respond_to?(:dependency_systems)
 
@@ -176,6 +187,7 @@ module RubyLens
         end
       end
 
+      #: () -> String
       def project_name
         basename = @manifest.root.basename.to_s
         return "IRB" if basename.casecmp("irb").zero?

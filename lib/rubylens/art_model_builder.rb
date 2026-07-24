@@ -11,18 +11,48 @@ module RubyLens
     # Namespace row columns carrying the six signals, aligned with SIGNAL_FIELDS.
     NAMESPACE_SIGNAL_COLUMNS = (3..8).freeze
 
-    # `index` maps a snapshot ordinal to its shuffled position; `order` is the
-    # inverse, listing snapshot ordinals in draw order.
-    Namespaces = Data.define(:order, :index, :rows, :names, :reference_rows) do
+    # `order` lists snapshot ordinals in draw order and is the single authority
+    # for each shuffle; the snapshot-ordinal-to-draw-position inverse is derived
+    # where it is needed rather than stored beside it.
+    Namespaces = Data.define(
+      :order, #: Array[Integer]
+      :rows, #: Array[Array[Integer]]
+      :names, #: Array[String]
+      :reference_rows, #: Array[[Integer, Integer]]
+    ) do
       # Link endpoints past the namespace block address dependency stars, which
       # the snapshot numbers from zero after the namespaces.
+      #
+      #: () -> Array[Integer]
       def referenced_dependency_ordinals
         reference_rows.map { |_referring_index, referenced_index| referenced_index - order.length }
       end
-    end
-    Packages = Data.define(:order, :index, :rows, :names, :morphologies, :systems)
-    Dependencies = Data.define(:rows, :index)
 
+      #: () -> Array[Integer]
+      def draw_positions
+        positions = Array.new(order.length)
+        order.each_with_index { |old_index, new_index| positions[old_index] = new_index }
+        positions
+      end
+    end
+
+    Packages = Data.define(
+      :order, #: Array[Integer]
+      :rows, #: Array[Array[Integer]]
+      :names, #: Array[String]
+      :morphologies, #: Array[Array[Integer]]
+      :systems, #: Array[Array[Integer]]
+    )
+
+    # Unlike the other two, this index is not an inverse of any stored order:
+    # a dependency star's snapshot ordinal is only known for rows travel
+    # targets, and is captured as the shuffled rows are emitted.
+    Dependencies = Data.define(
+      :rows, #: Array[Array[Integer]]
+      :index, #: Hash[Integer, Integer]
+    )
+
+    #: (?seed: Integer) -> void
     def initialize(seed: 0x51A7_E11A)
       @seed = seed
     end
@@ -31,6 +61,7 @@ module RubyLens
     # the codebase: adjacent points would otherwise share a package or a name
     # prefix and read as structure the galaxy does not mean to show. Every
     # ordinal the snapshot used is therefore remapped onto the shuffled order.
+    #: (Hash[String, untyped]) -> Hash[String, untyped]
     def build(snapshot)
       random = Random.new(@seed)
       namespaces = build_namespaces(snapshot, random)
@@ -52,7 +83,7 @@ module RubyLens
         "namespaces" => namespaces.rows,
         "constantReferenceLinks" => build_constant_reference_links(
           namespaces.reference_rows,
-          namespaces.index,
+          namespaces.draw_positions,
           dependencies.index,
         ),
         "packageNames" => packages.names,
@@ -67,27 +98,24 @@ module RubyLens
 
     private
 
+    #: (Hash[String, untyped], Random) -> Namespaces
     def build_namespaces(snapshot, random)
       rows = snapshot.fetch("namespaces")
       names = snapshot.fetch("namespace_names")
       order = (0...rows.length).to_a.shuffle(random: random)
-      index = Array.new(order.length)
-      order.each_with_index { |old_index, new_index| index[old_index] = new_index }
-
       Namespaces.new(
         order: order,
-        index: index,
         rows: order.map { |old_index| [random.rand(0..0xffff_ffff), *rows.fetch(old_index)] },
         names: order.map { |old_index| names.fetch(old_index) },
         reference_rows: valid_constant_reference_rows(snapshot),
       )
     end
 
+    #: (Hash[String, untyped], Random) -> Packages
     def build_packages(snapshot, random)
       snapshot_packages = snapshot.fetch("packages")
       order = (0...snapshot_packages.length).to_a.shuffle(random: random)
-      index = order.each_with_index.to_h
-      systems, system_index = build_dependency_systems(snapshot, index)
+      systems, system_index = build_dependency_systems(snapshot, order.each_with_index.to_h)
       morphologies = []
 
       rows = order.map do |old_index|
@@ -106,7 +134,6 @@ module RubyLens
 
       Packages.new(
         order: order,
-        index: index,
         rows: rows,
         names: order.map { |old_index| snapshot_packages.fetch(old_index).fetch("name") },
         morphologies: morphologies,
@@ -118,21 +145,23 @@ module RubyLens
     # snapshot ordinal is only recoverable for the rows travel actually targets.
     # Those rows are identified before the shuffle and tracked by object
     # identity, since equal declaration rows are common and interchangeable.
+    #: (Hash[String, untyped], Packages, Namespaces, Random) -> Dependencies
     def build_dependencies(snapshot, packages, namespaces, random)
       targeted = travel_target_rows(snapshot, namespaces.referenced_dependency_ordinals)
       rows = []
       index = {}
-      packages.order.each do |old_index|
+      packages.order.each_with_index do |old_index, new_index|
         package = snapshot.fetch("packages").fetch(old_index)
         package.fetch("declarations").sort.shuffle(random: random).each do |declaration|
           original_ordinal = targeted[declaration]
           index[original_ordinal] = rows.length if original_ordinal
-          rows << [random.rand(0..0xffff_ffff), packages.index.fetch(old_index), *declaration.drop(1)]
+          rows << [random.rand(0..0xffff_ffff), new_index, *declaration.drop(1)]
         end
       end
       Dependencies.new(rows: rows, index: index)
     end
 
+    #: (Hash[String, untyped], Array[Integer]) -> Hash[Array[Integer], Integer]
     def travel_target_rows(snapshot, dependency_ordinals)
       offsets = []
       total = 0
@@ -153,12 +182,14 @@ module RubyLens
       targeted
     end
 
+    #: (Hash[String, untyped]) -> Array[Integer]
     def morphology_row(morphology)
       [morphology.fetch("family"), *morphology.fetch("knobs")]
     end
 
     # Warnings reach the artifact only if they match the closed vocabulary, so a
     # tampered snapshot cannot smuggle arbitrary text into a shareable page.
+    #: (Hash[String, untyped]) -> Array[Hash[String, String]]
     def allowed_dependency_warnings(snapshot)
       snapshot.fetch("dependency_warnings", []).filter_map do |warning|
         name = warning.fetch("name")
@@ -170,6 +201,7 @@ module RubyLens
       end
     end
 
+    #: (Hash[String, untyped]) -> Array[[Integer, Integer]]
     def valid_constant_reference_rows(snapshot)
       rows = snapshot.fetch("constant_reference_links", [])
       return [] unless rows.is_a?(Array)
@@ -179,6 +211,7 @@ module RubyLens
       end
     end
 
+    #: (Array[[Integer, Integer]], Array[Integer], Hash[Integer, Integer]) -> Array[[Integer, Integer]]
     def build_constant_reference_links(rows, namespace_index, dependency_index)
       snapshot_namespace_count = namespace_index.length
       candidates = rows.filter_map do |row|
@@ -198,6 +231,7 @@ module RubyLens
       candidates.shuffle(random: Random.new(@seed ^ 0xC057_A17E))
     end
 
+    #: (Hash[String, untyped], Hash[Integer, Integer]) -> [Array[Array[Integer]], Hash[Integer, Integer]]
     def build_dependency_systems(snapshot, package_index)
       system_random = Random.new(@seed ^ 0xD3E5_157E)
       package_system_index = {}
@@ -215,6 +249,7 @@ module RubyLens
 
     # Each signal is scaled against the larger of its workspace and dependency
     # maxima, so the two populations stay comparable in the same scene.
+    #: (Array[Array[Integer]], Array[Integer]) -> Hash[String, Integer]
     def signal_domains(namespace_rows, dependency_maxima)
       namespace_domains = NAMESPACE_SIGNAL_COLUMNS.map do |column|
         namespace_rows.map { |row| row[column].to_i }.max || 0
