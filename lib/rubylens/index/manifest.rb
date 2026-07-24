@@ -2,7 +2,6 @@
 
 require "bundler"
 require "bundler/lockfile_parser"
-require "find"
 require "pathname"
 require "set"
 require_relative "../dependency_warning"
@@ -49,6 +48,7 @@ module RubyLens
         @package_index_by_file = {}
         @package_index_cache = {}
         @relative_workspace_path_cache = {}
+        @workspace_path_cache = {}
         @git_spec_indexes = {}.compare_by_identity
       end
 
@@ -80,7 +80,10 @@ module RubyLens
       end
 
       def workspace_path?(path)
-        Paths.inside?(path, @root)
+        path = path.to_s
+        @workspace_path_cache.fetch(path) do
+          @workspace_path_cache[path] = Paths.inside?(path, @root)
+        end
       end
 
       def relative_workspace_path(path)
@@ -429,20 +432,48 @@ module RubyLens
         end.flat_map { |path| enumerate(path, root) }.uniq.sort
       end
 
+      # Walks an already-canonical directory (the caller resolved and containment-checked
+      # it) without re-resolving every entry: descending only non-symlink directories
+      # keeps each joined path canonical, so regular files join the list with a cheap
+      # prefix containment check and only symlinked entries pay for a realpath. Symlinked
+      # directories are never descended, matching Find.find's lstat-based traversal.
       def enumerate(path, root)
         return [path.to_s] if path.file? && indexable?(path) && Paths.inside?(path.realpath, root)
         return [] unless path.directory?
+        return [] if path.symlink?
 
         files = []
-        Find.find(path) do |candidate|
-          candidate = Pathname(candidate)
-          next if candidate.directory?
-          next unless indexable?(candidate)
+        root_prefix = "#{root}#{File::SEPARATOR}"
+        pending = [path.to_s]
+        while (directory = pending.pop)
+          entries = begin
+            Dir.children(directory)
+          rescue Errno::ENOENT, Errno::EACCES, Errno::ENOTDIR, Errno::ELOOP, Errno::ENAMETOOLONG, Errno::EINVAL
+            next
+          end
+          entries.each do |entry|
+            candidate = File.join(directory, entry)
+            stat = begin
+              File.lstat(candidate)
+            rescue Errno::ENOENT, Errno::EACCES, Errno::ENOTDIR, Errno::ELOOP, Errno::ENAMETOOLONG, Errno::EINVAL
+              next
+            end
+            if stat.symlink?
+              next if File.directory?(candidate)
+              next unless INDEXABLE_EXTENSIONS.include?(File.extname(entry))
 
-          resolved = candidate.realpath
-          files << resolved.to_s if Paths.inside?(resolved, root)
-        rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP
-          next
+              begin
+                resolved = File.realpath(candidate)
+                files << resolved if Paths.inside?(resolved, root)
+              rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP
+                next
+              end
+            elsif stat.directory?
+              pending << candidate
+            elsif INDEXABLE_EXTENSIONS.include?(File.extname(entry))
+              files << candidate if candidate.start_with?(root_prefix)
+            end
+          end
         end
         files
       end
