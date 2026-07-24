@@ -444,10 +444,16 @@ module RubyLens
 
         files = []
         root_prefix = "#{root}#{File::SEPARATOR}"
-        pending = [path.to_s]
+        start = path.to_s
+        # Child names must come back in the starting path's encoding. A package
+        # root that is not valid UTF-8 otherwise yields UTF-8 entry names that
+        # cannot be joined to it, and the whole build aborts on a tree the
+        # Find-based walk indexed fine.
+        encoding = start.encoding == Encoding::US_ASCII ? Encoding.find("filesystem") : start.encoding
+        pending = [start]
         while (directory = pending.pop)
           entries = begin
-            Dir.children(directory)
+            Dir.children(directory, encoding: encoding)
           rescue Errno::ENOENT, Errno::EACCES, Errno::ENOTDIR, Errno::ELOOP, Errno::ENAMETOOLONG, Errno::EINVAL
             next
           end
