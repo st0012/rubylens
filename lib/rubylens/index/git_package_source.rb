@@ -18,21 +18,17 @@ module RubyLens
       UnsafeRequirePath = Class.new(StandardError)
       UnsafePackageFile = Class.new(StandardError)
 
-      # @rbs!
-      #   class PackagePaths
-      #     attr_reader logical_root: Pathname
-      #     attr_reader canonical_root: Pathname
-      #     attr_reader logical_canonical_root: Pathname
-      #   end
-      #   class Resolution
-      #     attr_reader root: Pathname
-      #     attr_reader files: Array[String]
-      #   end
-
       # Logical roots come from the gemspec and may be symlinked; the canonical
       # root is the resolved directory every indexable file must sit inside.
-      PackagePaths = Data.define(:logical_root, :canonical_root, :logical_canonical_root)
-      Resolution = Data.define(:root, :files)
+      PackagePaths = Data.define(
+        :logical_root, #: Pathname
+        :canonical_root, #: Pathname
+        :logical_canonical_root, #: Pathname
+      )
+      Resolution = Data.define(
+        :root, #: Pathname
+        :files, #: Array[String]
+      )
 
       # Nix stores gems in immutable, content-addressed store objects, so a
       # checkout symlinked into one is trustworthy even though it resolves
@@ -47,7 +43,9 @@ module RubyLens
           return false unless Paths.inside?(path, STORE_ROOT)
 
           first_component = path.relative_path_from(STORE_ROOT).each_filename.first
-          first_component && STORE_OBJECT_PATTERN.match?(first_component)
+          return false unless first_component
+
+          STORE_OBJECT_PATTERN.match?(first_component)
         end
       end
 
