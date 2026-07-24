@@ -96,6 +96,13 @@ concerns. Keep new indexing work inside whichever one already owns the concern.
   privacy boundary: rows leave as integers, and the only strings that survive
   are namespace, package, and project names.
 
+Newly introduced classes here carry inline RBS signatures (`#:` above each
+method, `# @rbs!` blocks for `Data` shapes), matching the style Rubydex itself
+ships. No type checker runs yet, so the signatures are documentation and
+nothing enforces them; treat a wrong one as a doc bug and fix it in place.
+Existing untyped classes are being annotated as they are otherwise touched
+rather than in one sweep.
+
 ## Rubydex 0.2.9 integration notes
 
 Constraints observed against pinned Rubydex 0.2.9 that shape `lib/rubylens/index/`. Re-verify each one when upgrading the pin; the upstream [API reference](https://shopify.github.io/rubydex/) is the source of truth for the evolving pre-1.0 interface.
