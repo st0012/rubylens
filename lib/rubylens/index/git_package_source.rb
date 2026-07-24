@@ -18,6 +18,17 @@ module RubyLens
       UnsafeRequirePath = Class.new(StandardError)
       UnsafePackageFile = Class.new(StandardError)
 
+      # @rbs!
+      #   class PackagePaths
+      #     attr_reader logical_root: Pathname
+      #     attr_reader canonical_root: Pathname
+      #     attr_reader logical_canonical_root: Pathname
+      #   end
+      #   class Resolution
+      #     attr_reader root: Pathname
+      #     attr_reader files: Array[String]
+      #   end
+
       # Logical roots come from the gemspec and may be symlinked; the canonical
       # root is the resolved directory every indexable file must sit inside.
       PackagePaths = Data.define(:logical_root, :canonical_root, :logical_canonical_root)
@@ -30,6 +41,7 @@ module RubyLens
         STORE_ROOT = Pathname("/nix/store").freeze
         STORE_OBJECT_PATTERN = /\A[0123456789abcdfghijklmnpqrsvwxyz]{32}-.+\z/
 
+        #: (Pathname | String) -> bool
         def trusted?(path)
           path = Pathname(path).expand_path
           return false unless Paths.inside?(path, STORE_ROOT)
@@ -39,6 +51,7 @@ module RubyLens
         end
       end
 
+      #: (lockfile: Pathname) -> void
       def initialize(lockfile:)
         @lockfile = lockfile
         @nix_store_provider = NixStoreProvider.new
@@ -48,6 +61,8 @@ module RubyLens
       # Returns a Resolution, or a Symbol naming why the package was skipped.
       # Callers own how a skip is reported, so every reason surfaces through the
       # same warning vocabulary as the other package sources.
+      #
+      #: (Bundler::LazySpecification) -> (Resolution | Symbol)
       def resolve(locked)
         source = locked.source
         return :local_only_required if source.allow_git_ops?
@@ -78,6 +93,7 @@ module RubyLens
 
       private
 
+      #: (Bundler::Source::Git) -> Pathname
       def checkout_path(source)
         bundle_root = @lockfile.dirname
         app_config = ENV["BUNDLE_APP_CONFIG"]
@@ -90,11 +106,13 @@ module RubyLens
         bundle_path.join("bundler/gems", source.extension_dir_name)
       end
 
+      #: (Bundler::Source::Git, Pathname) -> Bundler::Index
       def specification_index(source, checkout)
         source.__send__(:set_install_path!, checkout)
         source.specs
       end
 
+      #: (Gem::Specification, Pathname) -> PackagePaths?
       def package_paths(specification, checkout)
         logical_root = Pathname(specification.full_gem_path).expand_path
         logical_gemspec = Pathname(specification.loaded_from).expand_path
@@ -121,6 +139,7 @@ module RubyLens
         nil
       end
 
+      #: (PackagePaths, Array[String]) -> Array[String]
       def indexable_files(paths, require_paths)
         logical_require_paths = require_paths.map do |relative_path|
           raise UnsafeRequirePath unless relative_path.is_a?(String)
@@ -150,6 +169,8 @@ module RubyLens
       # branch so a symlink cycle raises instead of recursing forever, while
       # `visited_directories` spans the whole walk so a diamond of symlinks is
       # merely skipped.
+      #
+      #: (Pathname, PackagePaths, Array[String], Set[Pathname], Set[Pathname]) -> void
       def traverse(path, paths, files, visited_directories, active_directories)
         resolved = path.realpath
         if resolved.file?
