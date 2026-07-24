@@ -814,6 +814,29 @@ class IndexManifestTest < Minitest::Test
     end
   end
 
+  # A gem root that is not valid UTF-8 must still enumerate. Entry names have to
+  # come back in the root's own encoding, or joining them raises and the whole
+  # manifest build fails on that package.
+  def test_enumerates_package_trees_whose_paths_are_not_valid_utf8
+    Dir.mktmpdir("rubylens-manifest-encoding-") do |directory|
+      gem_root = "#{directory.b}/gem-\xC3".b
+      begin
+        Dir.mkdir(gem_root)
+      rescue SystemCallError
+        skip("filesystem rejects names that are not valid UTF-8")
+      end
+      lib = gem_root + "/lib".b
+      Dir.mkdir(lib)
+      File.write(lib + "/caf\xC3\xA9.rb".b, "Cafe = 1\n")
+      File.write(lib + "/plain.rb".b, "Plain = 1\n")
+      manifest = RubyLens::Index::Manifest.new(root: FIXTURE)
+
+      files = manifest.send(:enumerate, Pathname(lib), Pathname(gem_root))
+
+      assert_equal(["caf\xC3\xA9.rb".b, "plain.rb"], files.map { |path| File.basename(path) }.sort)
+    end
+  end
+
   private
 
   def write_git_gem(root, name:, version:, require_paths:, files:)
