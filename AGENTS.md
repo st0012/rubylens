@@ -71,6 +71,27 @@ produced a visual regression that unit tests missed.
   and Ruby-side constants only. Classifier knob changes still need
   `REGENERATE_FIXTURES=1 bundle exec rake` and the pinned knob rows updated.
 
+## Indexing pipeline
+
+`lib/rubylens/index/` splits one Rubydex run into collaborators with separate
+concerns. Keep new indexing work inside whichever one already owns the concern
+rather than growing the adapter back into a single pass over everything.
+
+- `Manifest` decides *what* is indexed: the Git-selected workspace plus the
+  packages resolved from `Gemfile.lock`. `GitPackageSource` owns git checkouts
+  specifically, because their gemspecs and symlinks are attacker-shaped input
+  and every path needs resolving and re-checking against the canonical root.
+- `LocationIndex` answers per-URI questions (path, workspace membership,
+  test/core scope, owning package) and memoizes them. Every other collaborator
+  asks it instead of re-deriving paths, which is what makes per-definition
+  questions affordable.
+- `DeclarationCollector` streams `graph.declarations` once into workspace
+  namespaces, category tallies, and dependency rows. `ConstantReferenceCollector`
+  owns inbound counts and the bounded travel-link sample.
+- `RubydexAdapter` orchestrates those and assembles the snapshot. It is the
+  privacy boundary: rows leave as integers, and the only strings that survive
+  are namespace, package, and project names.
+
 ## Rubydex 0.2.9 integration notes
 
 Constraints observed against pinned Rubydex 0.2.9 that shape `lib/rubylens/index/`. Re-verify each one when upgrading the pin; the upstream [API reference](https://shopify.github.io/rubydex/) is the source of truth for the evolving pre-1.0 interface.
