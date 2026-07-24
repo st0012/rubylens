@@ -22,7 +22,10 @@ const BODY = SHELL.match(/<body>([\s\S]*)<\/body>/)[1]
 // Script-scope bindings the tests consume. Mutable `let` state is exposed
 // through accessors so tests can position the camera before projecting.
 const EXPORTS = `;return ({
-  decodeMorphology, fallbackMorphology, morphology, packageMorphologies,
+  decodeMorphology, fallbackMorphology, morphology, packageMorphologies, layoutScale,
+  irregularClumpCenters, coreDiscUsesArm,
+  sceneModel, galaxyModels, collectionMode, projectLabels, galaxyGroups, rawGalaxies,
+  COLLECTION_LAYOUT, cameraDistance, cameraFocalLength,
   layoutMetricsForCoreCount, normalizedSignals, weightedSignal, explorerExposureForZoom,
   corePosition, testPosition, dependencyCloudOffset, dependencyPosition,
   systemMembers, systemAggregates, dependencyAnchor, systemAnchors, packageAnchors,
@@ -45,7 +48,9 @@ const EXPORTS = `;return ({
   advanceExplorerDrift, explorerTravelElapsedAt, zoomBetween,
   screenRotationYawSign, drawTravelOverlay,
   DRIFT_RADIANS_PER_SECOND, MAX_DRIFT_DELTA_MS,
-  DEPENDENCY_EXPANSION, DEPENDENCY_STAR_ALPHA_SCALE: 0.85,
+  projectGalaxyCenter, rotateUniverse,
+  DEPENDENCY_EXPANSION,
+  DEPENDENCY_STAR_ALPHA_SCALE: 0.85,
   state: {
     get yaw() { return yaw; }, set yaw(v) { yaw = v; },
     get pitch() { return pitch; }, set pitch(v) { pitch = v; },

@@ -139,7 +139,8 @@ describe("showcase contract", () => {
   });
 
   it("renders every scene point plus the milk pass", () => {
-    expect(RUNTIME_SOURCE).toContain("const { sceneData, scenePointCount, interactivePoints, dependencyHubs, packageHubs, systemHubs } = buildPoints()");
+    expect(RUNTIME_SOURCE).toContain("const rawGalaxies = galaxyModels.map");
+    expect(RUNTIME_SOURCE).toContain("...buildPoints()");
     expect(RUNTIME_SOURCE).toContain("renderPointData.set(sceneData, 0)");
     expect(RUNTIME_SOURCE).toContain("renderPointData.set(hazeData, sceneData.length)");
     const renderer = runtimeFunction("createShowcaseRenderer");

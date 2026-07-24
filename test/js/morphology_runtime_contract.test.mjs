@@ -1,60 +1,43 @@
 import { describe, expect, it } from "vitest";
+import { loadRuntime, minimalModel } from "./helpers/runtime.mjs";
 import { RUNTIME_SOURCE, runtimeFunction } from "./helpers/runtime_source.mjs";
 
-// Mirrors the retired Ruby test's technique: extract the load-time morphology
-// and geometry source verbatim from the shipped runtime and evaluate it
-// in-process (the Ruby version shelled out to a `node -e` subprocess because
-// Ruby cannot run JS itself; here we can just build and call a Function).
-function runtimeGeometrySource() {
-  const family = RUNTIME_SOURCE.match(/^ {4}const MORPHOLOGY_FAMILY = .*;$/m)[0].trim();
-  const fallbackRow = RUNTIME_SOURCE.match(/^ {4}const FALLBACK_MORPHOLOGY_ROW = .*;$/m)[0].trim();
-  const primitives = RUNTIME_SOURCE.match(
-    /^ {4}const hash = [\s\S]*?^ {4}const spiralMorphology = morphology\.family === MORPHOLOGY_FAMILY\.spiral \|\| morphology\.family === MORPHOLOGY_FAMILY\.barredSpiral;$/m,
-  )[0];
-  const layout = runtimeFunction("layoutMetricsForCoreCount");
-  const positions = RUNTIME_SOURCE.match(/^ {4}const coreCount = [\s\S]*?^ {4}\}\n\n {4}const dependencySystems =/m)[0].replace(
-    /\n\n {4}const dependencySystems =$/,
-    "",
-  );
-
-  for (const [name, source] of [["family", family], ["fallbackRow", fallbackRow], ["primitives", primitives], ["layout", layout], ["positions", positions]]) {
-    if (!source) throw new Error(`morphology runtime source not found: ${name}`);
-  }
-
-  return [family, fallbackRow, primitives, layout, positions].join("\n");
-}
-
 function runtimeStats(rawMorphology) {
-  const source = runtimeGeometrySource();
-  const script = `
-    const model = { morphology: ${JSON.stringify(rawMorphology)}, namespaces: Array.from({length: 3000}, (_, index) => [index, 0, index % 4 === 0 ? 1 : 0]) };
-    const CORE_SCALE_BASELINE = 3000;
-    ${source}
-    const seeds = Array.from({length: 4096}, (_, index) => index + 1);
-    const core = seeds.map(corePosition);
-    const tests = seeds.map(testPosition);
-    const all = core.concat(tests);
-    const radius = point => Math.hypot(point[0], point[2]);
-    const equalPoint = (left, right) => left.every((value, index) => Object.is(value, right[index]));
-    const discSeeds = seeds.filter(seed => unit(seed, 2) >= morphology.bulgeShare);
-    const discRadial = seed => Math.min(42, -10 * Math.log(Math.max(1e-5, 1 - unit(seed, 3))));
-    const armSeeds = discSeeds.filter(seed => coreDiscUsesArm(seed, false, discRadial(seed)));
-    return {
-      morphology,
-      layout: layoutScale,
-      clumpCenters: irregularClumpCenters.length,
-      finite: all.every(point => point.every(Number.isFinite)),
-      deterministic: seeds.every(seed => equalPoint(corePosition(seed), corePosition(seed)) && equalPoint(testPosition(seed), testPosition(seed))),
-      maxCoreRadius: Math.max(...core.map(radius)),
-      maxTestRadius: Math.max(...tests.map(radius)),
-      meanHorizontal: core.reduce((sum, point) => sum + Math.hypot(point[0], point[2]), 0) / core.length,
-      meanVertical: core.reduce((sum, point) => sum + Math.abs(point[1]), 0) / core.length,
-      coreArmShare: discSeeds.length ? armSeeds.length / discSeeds.length : 0,
-    };
-  `;
-  return new Function(script)();
+  const namespaces = Array.from({ length: 3000 }, (_, index) => [
+    index + 1, 0, index % 4 === 0 ? 1 : 0,
+    0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0,
+  ]);
+  const model = minimalModel({
+    morphology: rawMorphology,
+    totals: { namespaces: namespaces.length, packages: 0, dependencyStars: 0 },
+    namespaceNames: namespaces.map((_row, index) => `Node${index}`),
+    namespaces,
+  });
+  const runtime = loadRuntime(model);
+  const seeds = Array.from({ length: 4096 }, (_, index) => index + 1);
+  const core = seeds.map(runtime.corePosition);
+  const tests = seeds.map(runtime.testPosition);
+  const all = core.concat(tests);
+  const radius = point => Math.hypot(point[0], point[2]);
+  const equalPoint = (left, right) => left.every((value, index) => Object.is(value, right[index]));
+  const discSeeds = seeds.filter(seed => runtime.unit(seed, 2) >= runtime.morphology.bulgeShare);
+  const discRadial = seed => Math.min(42, -10 * Math.log(Math.max(1e-5, 1 - runtime.unit(seed, 3))));
+  const armSeeds = discSeeds.filter(seed => runtime.coreDiscUsesArm(seed, false, discRadial(seed)));
+  return {
+    morphology: runtime.morphology,
+    layout: runtime.layoutScale,
+    clumpCenters: runtime.irregularClumpCenters.length,
+    finite: all.every(point => point.every(Number.isFinite)),
+    deterministic: seeds.every(seed =>
+      equalPoint(runtime.corePosition(seed), runtime.corePosition(seed)) &&
+      equalPoint(runtime.testPosition(seed), runtime.testPosition(seed))),
+    maxCoreRadius: Math.max(...core.map(radius)),
+    maxTestRadius: Math.max(...tests.map(radius)),
+    meanHorizontal: core.reduce((sum, point) => sum + Math.hypot(point[0], point[2]), 0) / core.length,
+    meanVertical: core.reduce((sum, point) => sum + Math.abs(point[1]), 0) / core.length,
+    coreArmShare: discSeeds.length ? armSeeds.length / discSeeds.length : 0,
+  };
 }
-
 describe("morphology runtime contract", () => {
   it("absent and classifier default render the same default spiral", () => {
     const absent = runtimeStats(null);
@@ -106,8 +89,8 @@ describe("morphology runtime contract", () => {
     // rendered share sits near armFraction times the outer-disc probability.
     expect(Math.abs(spiral.coreArmShare - 0.225)).toBeLessThan(0.025);
     expect(Math.abs(barred.coreArmShare - 0.5)).toBeLessThan(0.025);
-    expect(RUNTIME_SOURCE.split("const morphology = decodeMorphology(model.morphology);").length - 1).toBe(1);
-    expect(RUNTIME_SOURCE.split("const irregularClumpCenters =").length - 1).toBe(1);
+    expect(RUNTIME_SOURCE.split("morphology = decodeMorphology(model.morphology);").length - 1).toBe(1);
+    expect(RUNTIME_SOURCE.split("irregularClumpCenters = morphology.family").length - 1).toBe(1);
   });
 
   it("irregular recipe precomputes the requested bounded clumps", () => {
@@ -123,8 +106,8 @@ describe("morphology runtime contract", () => {
     expect(JSON.parse(labels)).toEqual(["Elliptical galaxy", "Lenticular galaxy", "Spiral galaxy", "Barred spiral galaxy", "Irregular galaxy"]);
     expect(RUNTIME_SOURCE).toContain("function updateGalaxySummary()");
     expect(RUNTIME_SOURCE.split("updateGalaxySummary();").length - 1).toBe(3);
-    expect(RUNTIME_SOURCE).toContain(
-      '`${MORPHOLOGY_FAMILY_LABELS[morphology.family]} · ${scenePointCount.toLocaleString("en-US")} ${scenePointCount === 1 ? "star" : "stars"}`',
+    expect(runtimeFunction("updateGalaxySummary")).toContain(
+      '`${description} · ${scenePointCount.toLocaleString("en-US")} ${scenePointCount === 1 ? "star" : "stars"}`',
     );
   });
 });

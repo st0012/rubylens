@@ -4,7 +4,7 @@ Your Ruby codebase, as a galaxy.
 
 [![Five galaxy families rendered by RubyLens: elliptical, lenticular, spiral, barred spiral, irregular.](docs/images/galaxy-morphology-families.jpg)](docs/images/galaxy-morphology-families.jpg)
 
-RubyLens reads a Ruby project and writes one self-contained HTML file: classes and modules as magenta stars, tests as a cyan halo, gems as orbiting gold clouds. The galaxy's shape is derived from the code: spiral, elliptical, barred, lenticular, or irregular.
+RubyLens reads a Ruby project and writes one self-contained HTML file: classes and modules as magenta stars, tests as a cyan halo, gems as orbiting gold clouds. The galaxy's shape is derived from the code: spiral, elliptical, barred, lenticular, or irregular. It can also place independently indexed projects as galaxy clusters in one Collection universe.
 
 ```ruby
 # Gemfile
@@ -17,11 +17,12 @@ bundle exec rubylens report
 
 Open `rubylens-report.html` in your browser. No server needed.
 
-Three levels of disclosure:
+Four disclosure profiles:
 
 | For | Command | Reveals |
 | --- | --- | --- |
 | Yourself | `rubylens report` | Real class, module, and gem names, sparse reference topology, and full interaction |
+| Yourself, across bundles | `rubylens explorer --output json`, then `rubylens stitch` | Separately indexed galaxies and sparse reference topology in one Explorer |
 | Your team or a talk | `rubylens clip --details` | Project name, shape, scale, sparse reference topology, stats, and selected names |
 | Anyone | `rubylens clip` | Project name, galaxy shape and scale, and sparse anonymous reference topology |
 
@@ -50,24 +51,64 @@ bundle exec rubylens report components/payments --lockfile Gemfile.lock
 
 For complete gem clouds, generate from a project with a readable `Gemfile.lock` after `bundle install`. Without a lockfile, RubyLens still shows Core and Tests but omits Gems and reports a warning. It never fetches missing dependencies during generation.
 
+## Combining projects from separate bundles
+
+Generate one JSON artifact inside each project's bundle, then stitch the artifacts. This keeps each project's installed dependencies visible to RubyLens.
+
+First, install the same RubyLens version in both projects. If neither project has RubyLens, run these commands in project A:
+
+```sh
+cd /path/to/project-a
+bundle add rubylens --require=false
+bundle exec rubylens explorer \
+  --output json \
+  --output-path /tmp/project-a.rubylens.json
+```
+
+Repeat in project B:
+
+```sh
+cd /path/to/project-b
+bundle add rubylens --require=false
+bundle exec rubylens explorer \
+  --output json \
+  --output-path /tmp/project-b.rubylens.json
+```
+
+Finally, stitch the artifacts from any directory. Install the same RubyLens version with `gem install rubylens` if the `rubylens` executable is unavailable outside either bundle.
+
+```sh
+cd /where/you/want/the/html
+rubylens stitch \
+  /tmp/project-a.rubylens.json \
+  /tmp/project-b.rubylens.json
+```
+
+This writes `rubylens-collection.html`. Pass `--output-path FILE` to choose another path. Artifact order determines galaxy order. Stitching reads no source files, lockfiles, or installed project gems; the JSON artifacts already contain the complete Explorer models and generation warnings.
+
+Use one RubyLens version for generation and stitching. The stitcher rejects unknown envelope or art-model schemas instead of guessing how to decode them.
+
+`rubylens collection TARGET TARGET...` remains a same-bundle convenience. Use it only when one active bundle contains the dependencies for every target. It indexes each target separately, but dependencies unavailable to the active bundle cannot appear in the result.
+
 ## Privacy and sharing
 
-RubyLens indexes and renders locally. Generated HTML files contain their scripts, styles, fonts, and data, make no network requests, and open without Node or an HTTP server. Clip rendering also stays local: it drives your own Chrome and ffmpeg over loopback and never uploads anything.
+RubyLens indexes and renders locally. Generated HTML files contain their scripts, styles, fonts, and data, make no network requests, and open without Node or an HTTP server. JSON artifacts also stay local. Clip rendering drives your own Chrome and ffmpeg over loopback and never uploads anything.
 
 But the outputs still describe your project:
 
 - Explorer embeds fully qualified class, module, and gem names. It omits source text, comments, paths, and names for individual dependency stars.
+- Explorer JSON artifacts and Collections embed the full Explorer disclosure of every included project, including sparse reference topology, but no target paths. Every stitched galaxy is visible in the shared scene at the same time.
 - Minimal Showcase omits code and gem names, but still reveals the project name, the galaxy's shape and scale, and a sparse anonymous sample of constant-reference topology.
 - Details Showcase adds aggregate statistics and selected code/dependency names to the same topology.
 - Clip shows on screen exactly what the recorded Showcase shows, in a format anyone can replay.
 
 Galaxy shape is also information: a package's rendered shape can make the rough makeup of that gem easier to see, even though it reveals no source text. Relationship topology is information too: a travel line means that one rendered namespace contains a resolved reference to another rendered declaration.
 
-Default outputs are written atomically with owner-only `0600` permissions. RubyLens also adds the exact default output and its temporary-file pattern to the repository's local `.git/info/exclude`, so it does not change the shared `.gitignore`.
+Default outputs are written atomically with owner-only `0600` permissions. For outputs inside an indexed project, RubyLens also adds the exact default path and its temporary-file pattern to the repository's local `.git/info/exclude`, so it does not change the shared `.gitignore`. The default stitched output belongs to the current directory and is not added to a project's Git excludes.
 
 RubyLens updates its own existing default output, but refuses to overwrite a tracked file or an unrelated file at that path.
 
-Custom output paths are written exactly where requested, may replace an existing file there, and are not added to Git's local excludes. Choose the path carefully and review the HTML before sharing it.
+Custom output paths are written exactly where requested, may replace an existing file there, and are not added to Git's local excludes. Choose the path carefully and review the artifact before sharing it.
 
 ## Using Explorer
 
@@ -85,6 +126,12 @@ While drift runs, RubyLens scales traffic with the rendered project population: 
 - Use Reset to restore the default camera without changing your drift choice.
 
 Explorer requires WebGL2 to render the complete galaxy. If WebGL2 is missing or the browser loses the context, RubyLens shows a warning rather than quietly drawing a partial galaxy.
+
+## Using Collection
+
+Collection embeds independently indexed art data as galaxy clusters in one scene model. The renderer normalizes each cluster, bakes every point and anchor into one world coordinate system, and uploads the complete universe as one scene buffer. One camera controls every galaxy: dragging, drift, reset, and selection flights move the whole universe together. Search spans all projects and labels every result with project provenance. Namespaces, dependencies, references, warnings, and morphology never cross project boundaries.
+
+`rubylens stitch` reads artifacts produced in separate bundles and writes `rubylens-collection.html` in the current directory. `rubylens collection` indexes multiple targets in the active bundle and writes its default output inside the first target. Both commands require at least two inputs.
 
 ## Using Showcase
 
@@ -149,18 +196,29 @@ Read the [accepted morphology design](docs/specs/2026-07-14-galaxy-morphology-de
 ## CLI reference
 
 ```text
+rubylens explorer [OPTIONS] [TARGET]
 rubylens report [OPTIONS] [TARGET]
+rubylens stitch [OPTIONS] ARTIFACT ARTIFACT...
+rubylens collection [OPTIONS] TARGET TARGET...
 rubylens clip [OPTIONS] [TARGET]
 rubylens showcase [OPTIONS] [TARGET]
 ```
 
-All commands accept:
+`rubylens explorer` accepts:
+
+- `--output html|json` to choose a self-contained Explorer or a stitchable artifact
+- `-o FILE` / `--output-path FILE` to choose its path
+- `--lockfile FILE` to use a specific `Gemfile.lock`
+
+`rubylens stitch` accepts `-o FILE` / `--output-path FILE` for the combined HTML. With no output path, it writes `rubylens-collection.html` in the current directory.
+
+The older generating commands accept:
 
 - `-o FILE` / `--output FILE` to choose an output path
 - `--lockfile FILE` to use a specific `Gemfile.lock`
 - `-h` / `--help` to show command help
 
-`rubylens clip` and `rubylens showcase` also accept `--details`. A custom `rubylens clip --output movie.mp4` writes the recorded showcase to `movie.html` next to it.
+For direct Collection, `--lockfile FILE` applies to every target; without it, each target uses its own default lockfile. `rubylens clip` and `rubylens showcase` also accept `--details`. A custom `rubylens clip --output movie.mp4` writes the recorded showcase to `movie.html` next to it.
 
 ## Ruby API
 
@@ -178,6 +236,13 @@ puts showcase.output_path
 clip = RubyLens.generate_clip(path: ".", progress: ->(done, total) { puts "#{done}/#{total}" })
 puts clip.output_path    # the MP4
 puts clip.showcase_path  # the showcase HTML it recorded
+
+collection = RubyLens::CollectionGenerator.new(paths: ["../app", "../gem"]).call
+puts collection.output_path
+
+artifact = RubyLens::Generator.new(path: ".", output_format: "json").call
+universe = RubyLens::StitchGenerator.new(artifacts: [artifact.output_path, "../gem.rubylens.json"]).call
+puts universe.output_path
 ```
 
 Passing `output:` selects a custom path. The caller is responsible for keeping custom outputs private.

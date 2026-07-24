@@ -1,10 +1,10 @@
 # Payload schemas
 
-RubyLens moves data through three schemas. One is an in-memory handoff; two are persisted inside generated HTML artifacts. This document is the contract for their shapes and for when the version strings must change.
+RubyLens moves data through five schemas. One is an in-memory handoff; four are persisted in JSON or generated HTML artifacts. This document defines their shapes and when their version strings must change.
 
 ## Why the `schema` field exists
 
-Generated artifacts are self-contained: one gem run bakes the model JSON and the runtime JavaScript into the same HTML file, so the runtime never receives data from a different RubyLens version and never checks the field at load. The version string exists for everything outside that moment:
+HTML artifacts are self-contained: one gem run bakes the model JSON and runtime JavaScript into the same file. The stitch command, however, reads standalone Explorer artifacts from earlier runs. Schema strings let it reject incompatible data before writing an HTML file.
 
 - Artifacts outlive the gem. The string identifies the format of a report months later, in a bug ticket or an archive.
 - The payload is mostly positional integer rows, which cannot describe themselves. The string is the only format identifier in the file, so external tooling that parses the embedded JSON can fail loudly on a format change instead of silently reading shifted columns.
@@ -55,7 +55,7 @@ Dependency declaration row (7 integers):
 
 ## `rubylens.art.v13` — Explorer model (persisted)
 
-Built by `ArtModelBuilder#build`; embedded base64-encoded in `rubylens-report.html`. Scene rows are deterministically shuffled and prefixed with render seeds.
+Built by `ArtModelBuilder#build`; embedded base64-encoded in `rubylens-report.html` or stored under `galaxy` in a `rubylens.explorer.v1` artifact. Scene rows are deterministically shuffled and prefixed with render seeds.
 
 | Field | Shape |
 | --- | --- |
@@ -85,6 +85,18 @@ Morphology row (10 integers), decoded once at load by the runtime's `decodeMorph
 
 The art builder trusts the adapter's semantic filtering and cap, remaps both endpoints into the global render address space, and seeded-shuffles the retained rows. Package and system hubs are outside this address space. The runtime derives each route's animation seed from its endpoint indexes. It preserves the stored referrer-to-referenced semantics but presents each flight in reverse, from the referenced declaration star to its referrer.
 
+## `rubylens.explorer.v1` — stitchable Explorer artifact (persisted)
+
+Written by `rubylens explorer --output json`; read by `rubylens stitch`. The owner-only JSON file carries one complete project model generated inside that project's bundle.
+
+| Field | Shape |
+| --- | --- |
+| `schema` | Exact string `rubylens.explorer.v1` |
+| `galaxy` | One `rubylens.art.v13` object |
+| `warnings` | Array of generation warning strings |
+
+The top-level envelope contains no duplicate project name, totals, or paths. Consumers derive the project name and totals from `galaxy`; this keeps the art model authoritative. The `schema` marker identifies RubyLens JSON at a default output path and lets the stitcher reject unknown envelope versions. The stitcher also requires the current art-model schema because its embedded renderer must match every galaxy it receives.
+
 ## `rubylens.showcase.v7` — Showcase projection (persisted)
 
 Built by `ShowcaseModel#call` from the art model; embedded in `rubylens-showcase.html`. It is the privacy-filtered projection: numeric rows are re-validated and truncated to their exact lengths, and no name fields are carried except in Details annotations.
@@ -101,3 +113,16 @@ Details mode (`--details`) adds:
 | `categoryStats` | As in the art model |
 | `pinnedNamespaceAnchors` | Indexes of `Object`/`Kernel`/`BasicObject` rows kept anchorable without annotation |
 | `annotations` | Up to 200 safety-filtered `{"category", "name", "kind", "anchor"}` entries, category-interleaved |
+
+## `rubylens.collection.v2` — Explorer collection scene (persisted)
+
+Built by `CollectionGenerator` or `StitchGenerator`; base64-encoded into the ordinary Explorer model slot in `rubylens-collection.html`. The artifact uses the same shell, styles, and runtime as a standalone report.
+
+| Field | Shape |
+| --- | --- |
+| `schema` | Exact string `rubylens.collection.v2` |
+| `galaxies` | Ordered array of `rubylens.art.v13` objects used as galaxy groups. At least two are present. Project names, counts, paths, and an aggregate total are not duplicated at collection level. |
+
+Each project is indexed through a separate Rubydex graph and retains its own morphology, domains, names, rows, dependency indexes, and warnings. The collection payload is one scene model: the browser builds each `galaxies` entry independently, rebases its runtime-only package and system indexes, and bakes every point and anchor into one world-space scene buffer before applying the shared camera. Collection order is the command-line target order; repeated names receive derived ordinal labels for accessibility.
+
+Version 2 replaces the v1 envelope of nested base64 report payloads with direct galaxy-group objects so the persisted shape matches the single scene rendered in the browser.

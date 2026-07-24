@@ -44,6 +44,9 @@ module RubyLens
       command = arguments.shift
       return print_version if %w[-v --version version].include?(command)
       return print_help(0) if command.nil? || %w[-h --help help].include?(command)
+      return generate_explorer(arguments) if command == "explorer"
+      return stitch(arguments) if command == "stitch"
+      return generate_collection(arguments) if command == "collection"
       return generate(command, arguments) if COMMANDS.key?(command)
 
       $stderr.puts "Unknown command: #{command}"
@@ -54,6 +57,113 @@ module RubyLens
     end
 
     private
+
+    def generate_explorer(arguments)
+      options = { output_format: "html" }
+      help = false
+      parser = OptionParser.new do |option|
+        option.banner = "Usage: rubylens explorer [OPTIONS] [TARGET]"
+        option.separator ""
+        option.separator "TARGET defaults to the current working directory."
+        option.separator "JSON output can be stitched later without re-indexing this project."
+        option.separator ""
+        option.on("--output FORMAT", %w[html json], "Output format: html or json (default: html)") do |value|
+          options[:output_format] = value
+        end
+        option.on("-o", "--output-path FILE", "Output path (default depends on FORMAT)") do |value|
+          options[:output_path] = value
+        end
+        option.on("--lockfile FILE", "Gemfile.lock used to select exact dependency versions") do |value|
+          options[:lockfile] = value
+        end
+        option.on_tail("-h", "--help", "Show this help") do
+          help = true
+        end
+      end
+      parser.parse!(arguments)
+      if help
+        $stdout.puts parser
+        return 0
+      end
+
+      target = arguments.shift || Dir.pwd
+      raise OptionParser::InvalidArgument, "unexpected argument: #{arguments.first}" unless arguments.empty?
+
+      result = Generator.new(
+        path: target,
+        output: options[:output_path],
+        lockfile: options[:lockfile],
+        output_format: options.fetch(:output_format),
+      ).call
+      print_result(result)
+      $stderr.puts "RubyLens Explorer outputs contain private codebase structure. Keep the output local unless you intend to share it."
+      0
+    end
+
+    def stitch(arguments)
+      options = {}
+      help = false
+      parser = OptionParser.new do |option|
+        option.banner = "Usage: rubylens stitch [OPTIONS] ARTIFACT ARTIFACT..."
+        option.separator ""
+        option.separator "Build one Explorer universe from projects indexed separately in their own bundles."
+        option.separator "Artifact order determines galaxy order."
+        option.separator ""
+        option.on("-o", "--output-path FILE", "Output HTML (default: ./#{CollectionGenerator::DEFAULT_COLLECTION_NAME})") do |value|
+          options[:output] = value
+        end
+        option.on_tail("-h", "--help", "Show this help") do
+          help = true
+        end
+      end
+      parser.parse!(arguments)
+      if help
+        $stdout.puts parser
+        return 0
+      end
+      raise OptionParser::InvalidArgument, "stitch requires at least two Explorer artifacts" if arguments.length < 2
+
+      result = StitchGenerator.new(artifacts: arguments, output: options[:output]).call
+      print_result(result)
+      $stderr.puts "RubyLens collections contain private codebase structure from every included project. Keep the output local unless you intend to share it."
+      0
+    end
+
+    def generate_collection(arguments)
+      options = {}
+      help = false
+      parser = OptionParser.new do |option|
+        option.banner = "Usage: rubylens collection [OPTIONS] TARGET TARGET..."
+        option.separator ""
+        option.separator "Same-bundle convenience: index every target now and show all galaxies in one Explorer."
+        option.separator "Use `rubylens stitch` when projects need separate dependency bundles."
+        option.separator ""
+        option.on("-o", "--output FILE", "Output HTML (default: first TARGET/rubylens-collection.html)") do |value|
+          options[:output] = value
+        end
+        option.on("--lockfile FILE", "Gemfile.lock used for every target instead of each target's default") do |value|
+          options[:lockfile] = value
+        end
+        option.on_tail("-h", "--help", "Show this help") do
+          help = true
+        end
+      end
+      parser.parse!(arguments)
+      if help
+        $stdout.puts parser
+        return 0
+      end
+      raise OptionParser::InvalidArgument, "collection requires at least two targets" if arguments.length < 2
+
+      result = CollectionGenerator.new(
+        paths: arguments,
+        output: options[:output],
+        lockfile: options[:lockfile],
+      ).call
+      print_result(result)
+      $stderr.puts "RubyLens collections contain private codebase structure from every included project. Keep the output local unless you intend to share it."
+      0
+    end
 
     def generate(command, arguments)
       specification = COMMANDS.fetch(command)
@@ -125,12 +235,15 @@ module RubyLens
         TARGET defaults to the current working directory.
 
         Commands:
+          explorer [OPTIONS] [TARGET]   Generate a private Explorer as HTML or a stitchable JSON artifact
           report [OPTIONS] [TARGET]     Generate a private, interactive galaxy report
+          stitch [OPTIONS] ARTIFACT...  Combine separately generated Explorer artifacts into one universe
+          collection [OPTIONS] TARGET... Generate one private Explorer containing separate project galaxies
           clip [OPTIONS] [TARGET]       Generate a shareable galaxy video (MP4, needs Chrome + ffmpeg)
           showcase [OPTIONS] [TARGET]   Generate a shareable, cinematic galaxy showcase page
           version                       Print the RubyLens version
 
-        Run `rubylens report --help`, `rubylens clip --help`, or `rubylens showcase --help` for options.
+        Run `rubylens COMMAND --help` for command-specific options.
       HELP
       status
     end
