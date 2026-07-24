@@ -71,6 +71,28 @@ produced a visual regression that unit tests missed.
   and Ruby-side constants only. Classifier knob changes still need
   `REGENERATE_FIXTURES=1 bundle exec rake` and the pinned knob rows updated.
 
+## Indexing pipeline
+
+`lib/rubylens/index/` splits one Rubydex run into collaborators with separate
+concerns. Keep new indexing work inside whichever one already owns the concern.
+
+- `Manifest` decides *what* is indexed: the Git-selected workspace plus the
+  packages resolved from `Gemfile.lock`.
+- `GitPackageSource` owns git checkouts specifically, because their gemspecs
+  name their own require paths and their trees may symlink anywhere, so every
+  path needs resolving and re-checking against the canonical package root. It
+  reports a skip reason and lets `Manifest` keep one warning vocabulary across
+  every package source. Its `NixStoreProvider` is the only reason a checkout
+  resolving outside the bundle is ever trusted; widening that pattern widens
+  what RubyLens will read, so `test/index/git_package_source_test.rb` pins it.
+
+Newly introduced classes here carry inline RBS signatures (`#:` above each
+method, `# @rbs!` blocks for `Data` shapes), matching the style Rubydex itself
+ships. No type checker runs yet, so the signatures are documentation and
+nothing enforces them; treat a wrong one as a doc bug and fix it in place.
+Existing untyped classes are being annotated as they are otherwise touched
+rather than in one sweep.
+
 ## Rubydex 0.2.9 integration notes
 
 Constraints observed against pinned Rubydex 0.2.9 that shape `lib/rubylens/index/`. Re-verify each one when upgrading the pin; the upstream [API reference](https://shopify.github.io/rubydex/) is the source of truth for the evolving pre-1.0 interface.

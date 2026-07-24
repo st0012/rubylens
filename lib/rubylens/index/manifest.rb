@@ -5,29 +5,14 @@ require "bundler/lockfile_parser"
 require "pathname"
 require "set"
 require_relative "../dependency_warning"
+require_relative "git_package_source"
 
 module RubyLens
   module Index
     class Manifest
       Package = Data.define(:name, :version, :role, :location, :root, :files)
       DependencySystem = Data.define(:id, :package_indexes, :label_package_index)
-      GitPackagePaths = Data.define(:logical_root, :canonical_root, :logical_canonical_root)
 
-      class NixStoreProvider
-        STORE_ROOT = Pathname("/nix/store").freeze
-        STORE_OBJECT_PATTERN = /\A[0123456789abcdfghijklmnpqrsvwxyz]{32}-.+\z/
-
-        def trusted?(path)
-          path = Pathname(path).expand_path
-          return false unless Paths.inside?(path, STORE_ROOT)
-
-          first_component = path.relative_path_from(STORE_ROOT).each_filename.first
-          first_component && STORE_OBJECT_PATTERN.match?(first_component)
-        end
-      end
-
-      UnsafeGitRequirePath = Class.new(StandardError)
-      UnsafeGitPackageFile = Class.new(StandardError)
       GIT_SKIP_REASONS = DependencyWarning::REASONS
 
       attr_reader :root, :files, :workspace_files, :packages, :dependency_systems, :warnings, :dependency_warnings
@@ -39,7 +24,7 @@ module RubyLens
       def initialize(root:, lockfile: nil)
         @root = Pathname(root).expand_path.realpath
         @lockfile = Pathname(lockfile || @root.join("Gemfile.lock")).expand_path
-        @nix_store_provider = NixStoreProvider.new
+        @git_package_source = GitPackageSource.new(lockfile: @lockfile)
         @warnings = []
         @dependency_warnings = []
         @packages = []
@@ -49,7 +34,6 @@ module RubyLens
         @package_index_cache = {}
         @relative_workspace_path_cache = {}
         @workspace_path_cache = {}
-        @git_spec_indexes = {}.compare_by_identity
       end
 
       def build
@@ -192,134 +176,17 @@ module RubyLens
       end
 
       def git_package(locked, role)
-        source = locked.source
-        return skip_git_dependency(locked, :local_only_required) if source.allow_git_ops?
-
-        checkout = git_checkout_path(source)
-        return skip_git_dependency(locked, :checkout_unavailable) unless checkout.directory?
-
-        specification = (@git_spec_indexes[source] ||= git_specifications(source, checkout)).search(locked).first
-        return skip_git_dependency(locked, :specification_unavailable) unless specification
-
-        paths = git_package_paths(specification, checkout)
-        return skip_git_dependency(locked, :unsafe_specification_root) unless paths
-
-        files = git_indexable_files(paths, specification.require_paths)
+        resolution = @git_package_source.resolve(locked)
+        return skip_git_dependency(locked, resolution) if resolution.is_a?(Symbol)
 
         Package.new(
           name: locked.name,
           version: locked.version.to_s,
           role: role,
           location: "external",
-          root: paths.canonical_root,
-          files: files.freeze,
+          root: resolution.root,
+          files: resolution.files,
         )
-      rescue UnsafeGitRequirePath
-        skip_git_dependency(locked, :unsafe_require_paths)
-      rescue UnsafeGitPackageFile
-        skip_git_dependency(locked, :unsafe_package_files)
-      rescue Bundler::BundlerError, Gem::Exception
-        skip_git_dependency(locked, :specification_unreadable)
-      rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP
-        skip_git_dependency(locked, :checkout_unavailable)
-      end
-
-      def git_checkout_path(source)
-        bundle_root = @lockfile.dirname
-        app_config = ENV["BUNDLE_APP_CONFIG"]
-        app_config_path = if app_config
-          Pathname(app_config).expand_path(bundle_root)
-        else
-          bundle_root.join(".bundle")
-        end
-        bundle_path = Pathname(Bundler::Settings.new(app_config_path).path.path).expand_path(bundle_root)
-        bundle_path.join("bundler/gems", source.extension_dir_name)
-      end
-
-      def git_specifications(source, checkout)
-        source.__send__(:set_install_path!, checkout)
-        source.specs
-      end
-
-      def git_package_paths(specification, checkout)
-        logical_root = Pathname(specification.full_gem_path).expand_path
-        logical_gemspec = Pathname(specification.loaded_from).expand_path
-        return unless Paths.inside?(logical_root, checkout)
-        return unless logical_gemspec.dirname == logical_root
-        return unless logical_gemspec.file? && logical_root.directory?
-
-        canonical_checkout = checkout.realpath
-        resolved_gemspec_root = logical_gemspec.realpath.dirname
-        logical_canonical_root = logical_root.realpath
-        return unless resolved_gemspec_root.directory?
-        normal_checkout = !checkout.symlink? &&
-          Paths.inside?(resolved_gemspec_root, canonical_checkout) &&
-          Paths.inside?(logical_canonical_root, canonical_checkout)
-        return unless normal_checkout || @nix_store_provider.trusted?(resolved_gemspec_root)
-
-        canonical_root = normal_checkout ? logical_canonical_root : resolved_gemspec_root
-
-        GitPackagePaths.new(
-          logical_root: logical_root,
-          canonical_root: canonical_root,
-          logical_canonical_root: logical_canonical_root,
-        )
-      rescue TypeError, ArgumentError
-        nil
-      end
-
-      def git_indexable_files(paths, require_paths)
-        logical_require_paths = require_paths.map do |relative_path|
-          raise UnsafeGitRequirePath unless relative_path.is_a?(String)
-
-          relative = Pathname(relative_path)
-          raise UnsafeGitRequirePath if relative.absolute? || relative.each_filename.include?("..")
-
-          candidate = paths.logical_root.join(relative).cleanpath
-          raise UnsafeGitRequirePath unless Paths.inside?(candidate, paths.logical_root)
-
-          candidate
-        rescue ArgumentError, EncodingError
-          raise UnsafeGitRequirePath
-        end
-
-        files = []
-        visited_directories = Set.new
-        logical_require_paths.each do |path|
-          next unless path.exist? || path.symlink?
-
-          traverse_git_package_path(path, paths, files, visited_directories, Set.new)
-        end
-        files.uniq.sort
-      end
-
-      def traverse_git_package_path(path, paths, files, visited_directories, active_directories)
-        resolved = path.realpath
-        if resolved.file?
-          raise UnsafeGitPackageFile unless Paths.inside?(resolved, paths.canonical_root)
-
-          files << resolved.to_s if indexable?(path)
-          return
-        end
-        return unless resolved.directory?
-
-        unless Paths.inside?(resolved, paths.logical_canonical_root) || Paths.inside?(resolved, paths.canonical_root)
-          raise UnsafeGitPackageFile
-        end
-        raise UnsafeGitPackageFile if active_directories.include?(resolved)
-        return if visited_directories.include?(resolved)
-
-        active_directories.add(resolved)
-        begin
-          path.children.sort_by(&:to_s).each do |child|
-            traverse_git_package_path(child, paths, files, visited_directories, active_directories)
-          end
-          visited_directories.add(resolved)
-        ensure
-          active_directories.delete(resolved)
-        end
-      rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP
-        raise UnsafeGitPackageFile
       end
 
       def skip_git_dependency(locked, reason_code)

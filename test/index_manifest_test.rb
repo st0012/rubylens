@@ -321,7 +321,7 @@ class IndexManifestTest < Minitest::Test
   end
 
   def test_default_store_policy_rejects_arbitrary_external_roots_without_leaking_details
-    provider = RubyLens::Index::Manifest::NixStoreProvider.new
+    provider = RubyLens::Index::GitPackageSource::NixStoreProvider.new
     refute(provider.trusted?(Pathname(File::SEPARATOR)))
     refute(provider.trusted?(Pathname("/tmp/nix/store/00000000000000000000000000000000-example")))
     assert(provider.trusted?(Pathname("/nix/store/00000000000000000000000000000000-example/lib")))
@@ -901,7 +901,7 @@ class IndexManifestTest < Minitest::Test
       provider = mock("immutable Git store provider")
       provider.stubs(:trusted?).returns(false)
       provider.stubs(:trusted?).with { |path| RubyLens::Paths.inside?(path, immutable_store_root) }.returns(true)
-      RubyLens::Index::Manifest::NixStoreProvider.stubs(:new).returns(provider)
+      RubyLens::Index::GitPackageSource::NixStoreProvider.stubs(:new).returns(provider)
     end
     begin
       manifest = RubyLens::Index::Manifest.new(root: root, lockfile: lockfile)
@@ -916,7 +916,7 @@ class IndexManifestTest < Minitest::Test
         Bundler::LockfileParser.unstub(:new)
       end
     ensure
-      RubyLens::Index::Manifest::NixStoreProvider.unstub(:new) if immutable_store_root
+      RubyLens::Index::GitPackageSource::NixStoreProvider.unstub(:new) if immutable_store_root
     end
   end
 
