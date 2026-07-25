@@ -28,11 +28,11 @@ Three levels of disclosure:
 > [!IMPORTANT]
 > Nothing is uploaded and no source code is embedded. Outputs still describe your project: they name it, can name classes and gems, and reveal some relationship topology. See [Privacy and sharing](#privacy-and-sharing).
 
-https://github.com/user-attachments/assets/43570623-6d98-46c9-9303-7faa4035b2a7
+https://github.com/user-attachments/assets/ec8d9357-c726-463b-bbde-0fd6eca25d2c
 
 *The Explorer on Discourse: search, fly to a class, expand a gem cloud.*
 
-https://github.com/user-attachments/assets/bb266de5-bbd7-4ccd-814b-15961b45bd39
+https://github.com/user-attachments/assets/972a15b9-d863-4a52-85e1-af7bc92c0459
 
 *A `--details` clip: what your team sees.*
 
