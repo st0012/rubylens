@@ -30,7 +30,7 @@ Three levels of disclosure:
 
 https://github.com/user-attachments/assets/43570623-6d98-46c9-9303-7faa4035b2a7
 
-*The Explorer on Rails: search, fly to a class, expand a gem cloud.*
+*The Explorer on Discourse: search, fly to a class, expand a gem cloud.*
 
 https://github.com/user-attachments/assets/bb266de5-bbd7-4ccd-814b-15961b45bd39
 
