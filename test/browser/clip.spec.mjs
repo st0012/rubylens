@@ -10,9 +10,16 @@ const FIXTURE = pathToFileURL(join(process.cwd(), "test/browser/.fixtures/showca
 test.use({ viewport: { width: 1920, height: 1080 } });
 
 // Readiness comes from the runtime's own dataset signals, never from timeouts.
+// Clip mode is entered from the page's own DOMContentLoaded, before the live
+// rotation loop paints. Freezing from the test side instead means waiting on
+// `showcaseReady`, which only a completed live frame publishes, and every call
+// then queues behind full-stage frames — minutes of them on a loaded software
+// renderer, which is what timed every clip spec out. `goto` resolves on load,
+// so the freeze is already taken by then; asking again returns the same status
+// the clip driver reads.
 async function openShowcaseClip(page) {
+  await page.addInitScript(() => addEventListener("DOMContentLoaded", () => beginShowcaseClip(), { once: true }));
   await page.goto(FIXTURE);
-  await page.waitForFunction(() => document.documentElement.dataset.showcaseReady === "true");
   return page.evaluate(() => beginShowcaseClip());
 }
 
