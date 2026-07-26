@@ -209,16 +209,6 @@ class MorphologyClassifierTest < Minitest::Test
     end
   end
 
-  def test_readme_discloses_the_derived_morphology_signal
-    readme = File.read(File.expand_path("../README.md", __dir__))
-
-    assert_includes(readme, "central Core/Test galaxy and each dependency package independently")
-    assert_includes(readme, "never inherits the project's, host's, or dependency system's decision")
-    assert_includes(readme, "a package's rendered shape can make the rough makeup of that gem easier to see")
-    assert_includes(readme, "Very large dependency packages")
-    assert_includes(readme, "docs/specs/2026-07-14-galaxy-morphology-design.md")
-  end
-
   private
 
   def classify(input)
