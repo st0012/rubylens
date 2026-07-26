@@ -42,7 +42,7 @@ class PackageTest < Minitest::Test
     specification = Gem::Specification.load(File.expand_path("../rubylens.gemspec", __dir__))
 
     assert_equal("MIT", specification.license)
-    assert_equal("https://st0012.dev/rails-galaxy/", specification.homepage)
+    assert_equal("https://st0012.dev/ruby-galaxies/", specification.homepage)
     assert_equal("https://rubygems.org", specification.metadata["allowed_push_host"])
     assert_equal("true", specification.metadata["rubygems_mfa_required"])
   end

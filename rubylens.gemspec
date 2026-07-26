@@ -11,7 +11,7 @@ Gem::Specification.new do |specification|
     RubyLens uses Rubydex to map Ruby code and generate private, local-first
     data for local interactive reports and cinematic visual showcases.
   DESCRIPTION
-  specification.homepage = "https://st0012.dev/rails-galaxy/"
+  specification.homepage = "https://st0012.dev/ruby-galaxies/"
   specification.license = "MIT"
   specification.required_ruby_version = ">= 3.2.0", "< 4.1.dev"
   specification.metadata["allowed_push_host"] = "https://rubygems.org"
