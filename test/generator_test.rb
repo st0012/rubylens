@@ -50,6 +50,53 @@ class GeneratorTest < Minitest::Test
     end
   end
 
+  def test_json_output_is_a_stitchable_explorer_artifact
+    Dir.mktmpdir("rubylens-generator-json-") do |directory|
+      output = File.join(directory, "tiny.rubylens.json")
+
+      result = generate(path: SnapshotHelpers::FIXTURE, output: output, output_format: "json")
+      artifact = RubyLens::ExplorerArtifact.read(output)
+
+      assert_equal(File.expand_path(output), result.output_path)
+      assert_equal("Tiny Repo", artifact.galaxy.fetch("projectName"))
+      assert_equal("rubylens.art.v13", artifact.galaxy.fetch("schema"))
+      assert_equal(result.counts, artifact.galaxy.fetch("totals"))
+      assert_equal(result.warnings, artifact.warnings)
+    end
+  end
+
+  def test_default_json_output_is_root_level_and_locally_excluded
+    with_repository do |directory|
+      result = generate(path: directory, output_format: "json")
+
+      assert_equal(File.join(File.realpath(directory), RubyLens::ExplorerArtifact::DEFAULT_NAME), result.output_path)
+      assert(RubyLens::ExplorerArtifact.owned?(result.output_path))
+      assert(system("git", "-C", directory, "check-ignore", "--quiet", result.output_path))
+    end
+  end
+
+  def test_default_json_output_refuses_an_unrelated_existing_file
+    with_repository do |directory|
+      output = File.join(directory, RubyLens::ExplorerArtifact::DEFAULT_NAME)
+      File.binwrite(output, "unrelated private file")
+
+      error = assert_raises(RubyLens::Error) do
+        generate(path: directory, output_format: "json")
+      end
+
+      assert_equal("default explorer artifact path already exists and is not a RubyLens explorer artifact", error.message)
+      assert_equal("unrelated private file", File.binread(output))
+    end
+  end
+
+  def test_rejects_unknown_explorer_output_formats_before_indexing
+    error = assert_raises(RubyLens::Error) do
+      generate(path: SnapshotHelpers::FIXTURE, output_format: "yaml")
+    end
+
+    assert_equal("unsupported Explorer output format: yaml", error.message)
+  end
+
   private
 
   def with_repository

@@ -14,6 +14,9 @@
     body.is-ui-hidden .hint,
     body.is-ui-hidden .tooltip,
     body.is-ui-hidden .help-overlay { display: none; }
+    .project-labels { position: fixed; inset: 0; z-index: 1; overflow: hidden; pointer-events: none; }
+    .project-labels[hidden] { display: none; }
+    .project-label { position: absolute; transform: translate(-50%, -50%); border: 1px solid rgba(255,255,255,.1); border-radius: 999px; padding: 5px 9px; background: rgba(7,8,16,.62); box-shadow: 0 8px 30px rgba(0,0,0,.28); color: #b9b0c4; font-size: 10px; font-weight: 680; letter-spacing: .035em; white-space: nowrap; }
     .masthead { position: fixed; top: 28px; left: 32px; z-index: 2; pointer-events: none; max-width: 760px; }
     .eyebrow { margin: 0 0 10px; color: #b6a9c9; font-size: 11px; font-weight: 750; letter-spacing: .18em; text-transform: uppercase; }
     h1 { margin: 0; font: 500 clamp(28px, 4vw, 54px)/.95 ui-serif, Georgia, serif; letter-spacing: -.045em; }

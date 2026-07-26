@@ -13,16 +13,15 @@ describe("layout density contract", () => {
       'function contextualSelectionCameraTarget(point, preferredZoom = point.hub ? 4 : point.category === "dependencies" ? 5 : 7) {',
     );
     expect(RUNTIME_SOURCE).toContain(
-      "const coreFitZoom = Math.min(sceneRight, sceneBottom) * .28 * cameraDistance / (layoutScale.coreOuterRadius * cameraFocalLength);",
+      "const coreFitZoom = Math.min(sceneRight, sceneBottom) * .28 * coreDepth /",
     );
   });
 
   it("adaptive layout work is confined to load time setup", () => {
     expect(RUNTIME_SOURCE.split("layoutMetricsForCoreCount(").length - 1).toBe(2);
     expect(RUNTIME_SOURCE.split("model.namespaces.reduce").length - 1).toBe(1);
-    expect(orderedIndex(RUNTIME_SOURCE, "model.namespaces.reduce")).toBeLessThan(orderedIndex(RUNTIME_SOURCE, "function corePosition"));
-    expect(orderedIndex(RUNTIME_SOURCE, "const layoutScale = layoutMetricsForCoreCount(coreCount, morphology);")).toBeLessThan(
-      orderedIndex(RUNTIME_SOURCE, "function buildPoints"),
+    expect(orderedIndex(RUNTIME_SOURCE, "activateProjectModel(projectModel)")).toBeLessThan(
+      orderedIndex(RUNTIME_SOURCE, "...buildPoints()"),
     );
 
     for (const name of ["createShowcaseRenderer", "project", "render", "applyShowcaseCamera", "renderShowcase"]) {

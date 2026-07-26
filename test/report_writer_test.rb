@@ -88,7 +88,7 @@ class ReportWriterTest < Minitest::Test
       RubyLens::ReportWriter.new.write(model, output: output)
 
       html = File.read(output)
-      encoded = html.match(/atob\("([A-Za-z0-9+\/=]+)"\)/).captures.first
+      encoded = html.match(/decodeBase64Json\("([A-Za-z0-9+\/=]+)"\)/).captures.first
       assert_equal(model, JSON.parse(Base64.strict_decode64(encoded)))
       assert(RubyLens::ArtifactMarker.present?(output, RubyLens::ReportWriter::MARKER))
 

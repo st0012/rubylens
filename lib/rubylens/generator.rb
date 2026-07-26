@@ -2,6 +2,7 @@
 
 require_relative "artifact_marker"
 require_relative "default_output"
+require_relative "explorer_artifact"
 
 module RubyLens
   Result = Data.define(:output_path, :counts, :warnings) do
@@ -29,19 +30,33 @@ module RubyLens
   class Generator
     DEFAULT_REPORT_NAME = "rubylens-report.html"
 
-    def initialize(path: Dir.pwd, output: nil, lockfile: nil)
+    def initialize(path: Dir.pwd, output: nil, lockfile: nil, output_format: "html")
       @path = path
       @output = output
       @lockfile = lockfile
+      @output_format = output_format.to_s
     end
 
     def call
       root = File.realpath(@path)
-      output = @output || DefaultOutput.resolve(root: root, name: DEFAULT_REPORT_NAME, description: "report") do |existing|
-        ArtifactMarker.present?(existing, ReportWriter::MARKER)
+      case @output_format
+      when "html"
+        output = @output || DefaultOutput.resolve(root: root, name: DEFAULT_REPORT_NAME, description: "report") do |existing|
+          ArtifactMarker.present?(existing, ReportWriter::MARKER)
+        end
+      when "json"
+        output = @output || DefaultOutput.resolve(root: root, name: ExplorerArtifact::DEFAULT_NAME, description: "explorer artifact") do |existing|
+          ExplorerArtifact.owned?(existing)
+        end
+      else
+        raise Error, "unsupported Explorer output format: #{@output_format}"
       end
       model, warnings = GenerationPipeline.new(root:, lockfile: @lockfile).call
-      output_path = ReportWriter.new.write(model, output: output)
+      output_path = if @output_format == "json"
+        ExplorerArtifact.new(galaxy: model, warnings: warnings).write(output: output)
+      else
+        ReportWriter.new.write(model, output: output)
+      end
 
       RubyLens::Result.new(output_path: output_path, counts: model.fetch("totals").freeze, warnings:)
     rescue Errno::ENOENT, Errno::EACCES, Errno::ELOOP => error
