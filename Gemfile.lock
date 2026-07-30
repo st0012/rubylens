@@ -3,7 +3,7 @@ PATH
   specs:
     rubylens (0.2.1)
       base64 (>= 0.2)
-      rubydex (= 0.2.9)
+      rubydex (= 0.3.0)
 
 GEM
   remote: https://rubygems.org/
@@ -18,11 +18,11 @@ GEM
     prism (1.9.0)
     rake (13.4.2)
     ruby2_keywords (0.0.5)
-    rubydex (0.2.9)
-    rubydex (0.2.9-aarch64-linux)
-    rubydex (0.2.9-arm64-darwin)
-    rubydex (0.2.9-x86_64-darwin)
-    rubydex (0.2.9-x86_64-linux)
+    rubydex (0.3.0)
+    rubydex (0.3.0-aarch64-linux)
+    rubydex (0.3.0-arm64-darwin)
+    rubydex (0.3.0-x86_64-darwin)
+    rubydex (0.3.0-x86_64-linux)
 
 PLATFORMS
   aarch64-linux
@@ -45,11 +45,11 @@ CHECKSUMS
   prism (1.9.0) sha256=7b530c6a9f92c24300014919c9dcbc055bf4cdf51ec30aed099b06cd6674ef85
   rake (13.4.2) sha256=cb825b2bd5f1f8e91ca37bddb4b9aaf345551b4731da62949be002fa89283701
   ruby2_keywords (0.0.5) sha256=ffd13740c573b7301cf7a2e61fc857b2a8e3d3aff32545d6f8300d8bae10e3ef
-  rubydex (0.2.9) sha256=c4c0f707586c01e59926b62a8193df38b5d00b7c35d35677dab1fb059903e289
-  rubydex (0.2.9-aarch64-linux) sha256=74391fd22c4b4ccca1b695d634daad13326e7cc81567e96549da17c5031265bb
-  rubydex (0.2.9-arm64-darwin) sha256=1c014e3c244102739914d528202b1d0f54bdc3d1f85667b81b65ea22aabfa560
-  rubydex (0.2.9-x86_64-darwin) sha256=000df1723b090d9176dbceb8e291b72f93931cc3c7782f32287e0db6c20c1dd7
-  rubydex (0.2.9-x86_64-linux) sha256=f500e843d285def8fc799e0f9a989b9ba2b01b9372bde6ab0a6831738b3f6956
+  rubydex (0.3.0) sha256=902ba4546c548de6a1908acee54cf3f5b998f01c87e2ad6fbd708011774df4e5
+  rubydex (0.3.0-aarch64-linux) sha256=a7221b71b21c5a1cdda1fbac0946ee0411a2efd94c8115cf37e4e69461d88e73
+  rubydex (0.3.0-arm64-darwin) sha256=19f685610216e4e7f488722ac90dfbc33113a384dd16db309cf939606f4c32dd
+  rubydex (0.3.0-x86_64-darwin) sha256=59d20c98b0bf2226f5db5bee14cf57075aa93aa0c3fa0176f496a217691ff7b6
+  rubydex (0.3.0-x86_64-linux) sha256=dfe4026591f226b4a1b53f82f86dc14fad2e7c221ee8a5be99a0a46bf2d58b04
   rubylens (0.2.1)
 
 BUNDLED WITH
