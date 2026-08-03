@@ -33,6 +33,6 @@ Gem::Specification.new do |specification|
   specification.executables = ["rubylens"]
   specification.require_paths = ["lib"]
 
-  specification.add_dependency "rubydex", "= 0.2.9"
+  specification.add_dependency "rubydex", "= 0.3.0"
   specification.add_dependency "base64", ">= 0.2"
 end

@@ -133,9 +133,11 @@ module RubyLens
 
       private
 
-      # One pass over a declaration's definitions, so each definition's location
-      # and its per-URI workspace, scope, and package answers are read once.
-      # Returns [workspace_count, tests_only, canonical_site_keys,
+      # One pass over a declaration's definitions, so each definition's URI and
+      # its per-URI workspace, scope, and package answers are read once. The URI
+      # comes from the definition's document, which is cheaper than a Location,
+      # so a Location is materialized only for the definitions that contribute a
+      # site key. Returns [workspace_count, tests_only, canonical_site_keys,
       # canonical_scope, package_site_keys]; the site-key collections stay nil
       # until a definition contributes one, since most declarations contribute
       # neither a canonical namespace site nor a package site.
@@ -151,18 +153,18 @@ module RubyLens
         package_site_keys = nil
 
         declaration.definitions.each do |definition|
-          location = definition.location
+          uri = definition.document.uri
           site_key = nil
-          if @locations.workspace?(location)
+          if @locations.workspace?(uri)
             workspace_count += 1
-            scope = @locations.scope_for(location.uri)
+            scope = @locations.scope_for(uri)
             if scope == LocationIndex::TEST
               tests_seen = true
             elsif scope
               core_seen = true
             end
             if namespace && canonical_definition?(declaration, definition)
-              (canonical_site_keys ||= []) << (site_key = location.comparable_values)
+              (canonical_site_keys ||= []) << (site_key = definition.location.comparable_values)
               if scope == LocationIndex::TEST
                 canonical_tests_seen = true
               elsif scope
@@ -170,9 +172,9 @@ module RubyLens
               end
             end
           end
-          package_index = @locations.package_index_for(location)
+          package_index = @locations.package_index_for(uri)
           if package_index
-            ((package_site_keys ||= {})[package_index] ||= []) << (site_key || location.comparable_values)
+            ((package_site_keys ||= {})[package_index] ||= []) << (site_key || definition.location.comparable_values)
           end
         end
 

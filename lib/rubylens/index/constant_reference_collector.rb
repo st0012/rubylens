@@ -50,12 +50,12 @@ module RubyLens
         counts = Hash.new(0)
         namespaces.each_with_index do |namespace, index|
           namespace.declaration.references.each do |reference|
-            location = begin
-              reference.location
+            uri = begin
+              reference.document.uri
             rescue StandardError
               next
             end
-            counts[index] += 1 if @locations.workspace?(location)
+            counts[index] += 1 if @locations.workspace?(uri)
           end
         end
         counts.freeze
@@ -78,18 +78,18 @@ module RubyLens
           dependency_ordinal = dependency_ordinal_by_name[name] unless namespace_ordinal
           next unless namespace_ordinal || dependency_ordinal
 
-          location = begin
-            reference.location
+          uri = begin
+            reference.document.uri
           rescue StandardError
             next
           end
-          next unless @locations.workspace?(location)
+          next unless @locations.workspace?(uri)
 
           attributions += 1
           endpoint = namespace_ordinal || namespace_count + dependency_ordinal
 
           values = begin
-            location.comparable_values
+            reference.location.comparable_values
           rescue StandardError
             next
           end

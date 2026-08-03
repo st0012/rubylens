@@ -9,13 +9,15 @@ class DeclarationCollectorTest < Minitest::Test
     location_class = Data.define(:uri) do
       def comparable_values = [uri, 0, 0, 0, 1]
     end
-    definition_class = Data.define(:location)
+    document_class = Data.define(:uri)
+    definition_class = Data.define(:location, :document)
     declaration_class = Data.define(:name, :definitions, :references)
     paths = ["/deps/alpha/lib/alpha.rb", "/deps/beta/lib/beta.rb"]
     declarations = 30.times.map do |index|
+      uri = "file://#{paths.fetch(index % 2)}"
       declaration_class.new(
         "Dependency#{index}",
-        [definition_class.new(location_class.new("file://#{paths.fetch(index % 2)}"))],
+        [definition_class.new(location_class.new(uri), document_class.new(uri))],
         Array.new(index % 7),
       )
     end

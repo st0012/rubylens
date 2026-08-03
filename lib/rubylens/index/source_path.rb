@@ -13,8 +13,9 @@ module RubyLens
 
       module_function
 
-      # Rubydex 0.2.9 percent-encodes file URIs and Location#to_file_path
-      # returns the path still encoded, so decode the URI ourselves.
+      # Rubydex percent-encodes file URIs and Location#to_file_path returns
+      # the path still encoded (re-verified on 0.3.0), so decode the URI
+      # ourselves.
       def from_file_uri(uri_string)
         match = ENCODED_FILE_URI.match(uri_string)
         if match

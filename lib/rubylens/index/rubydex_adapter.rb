@@ -144,7 +144,7 @@ module RubyLens
         groups.each do |group, direct|
           group.each do |member|
             next unless seen.add?(member.name)
-            next unless member.definitions.any? { |definition| @locations.workspace?(definition.location) }
+            next unless member.definitions.any? { |definition| @locations.workspace?(definition.document.uri) }
 
             members += 1
             construct = case member

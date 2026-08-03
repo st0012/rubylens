@@ -5,14 +5,17 @@ require_relative "source_path"
 
 module RubyLens
   module Index
-    # Answers the questions the collectors ask about a Rubydex location: which
-    # file it names, whether that file is in the workspace, whether it is test
-    # or core code, and which package owns it.
+    # Answers the questions the collectors ask about a Rubydex document URI:
+    # which file it names, whether that file is in the workspace, whether it is
+    # test or core code, and which package owns it.
     #
-    # Rubydex hands out a fresh wrapper and a fresh URI string on every call and
-    # a codebase has far more definitions than files, so each answer is memoized
-    # by URI. That memoization is why the collectors can afford to ask per
-    # definition instead of hoisting the questions themselves.
+    # Every question takes the URI string itself. Since Rubydex 0.3.0,
+    # `#document` on definitions and references reaches the URI without
+    # materializing a Location wrapper, so collectors only pay for a Location
+    # when they need coordinates. A codebase has far more definitions than
+    # files, so each answer is memoized by URI; that memoization is why the
+    # collectors can afford to ask per definition instead of hoisting the
+    # questions themselves.
     class LocationIndex
       # 1 for a file under a test directory, 0 for any other workspace file.
       TEST = 1
@@ -60,15 +63,12 @@ module RubyLens
         end
       end
 
-      #: (Rubydex::Location) -> bool
-      def workspace?(location)
-        uri = location.uri
+      #: (String) -> bool
+      def workspace?(uri)
         @workspace_by_uri.fetch(uri) do
           path = path_for(uri)
           @workspace_by_uri[uri] = path ? @manifest.workspace_path?(path) : false
         end
-      rescue StandardError
-        false
       end
 
       # TEST, CORE, or nil when the URI has no workspace-relative path.
@@ -87,9 +87,8 @@ module RubyLens
       # Package attribution is deliberately limited to documents Rubydex actually
       # indexed, so a path that merely sits inside a package root cannot claim it.
       #
-      #: (Rubydex::Location) -> Integer?
-      def package_index_for(location)
-        uri = location.uri
+      #: (String) -> Integer?
+      def package_index_for(uri)
         @package_index_by_uri.fetch(uri) do
           path = path_for(uri)
           @package_index_by_uri[uri] =

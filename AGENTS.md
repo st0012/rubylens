@@ -103,16 +103,18 @@ nothing enforces them; treat a wrong one as a doc bug and fix it in place.
 Existing untyped classes are being annotated as they are otherwise touched
 rather than in one sweep.
 
-## Rubydex 0.2.9 integration notes
+## Rubydex 0.3.0 integration notes
 
-Constraints observed against pinned Rubydex 0.2.9 that shape `lib/rubylens/index/`. Re-verify each one when upgrading the pin; the upstream [API reference](https://shopify.github.io/rubydex/) is the source of truth for the evolving pre-1.0 interface.
+Constraints observed against pinned Rubydex 0.3.0 that shape `lib/rubylens/index/`. Re-verify each one when upgrading the pin; the upstream [API reference](https://shopify.github.io/rubydex/) is the source of truth for the evolving pre-1.0 interface.
 
-- `Graph#index_workspace` and the upstream MCP indexer read ignored and untracked Ruby files. Private-safe indexing passes an explicit Git-selected manifest to `Graph#index_all`; `RubyLens::GitRepository` and `RubyLens::Index::Manifest` exist to build that manifest.
+- `Graph#index_workspace` and the upstream MCP indexer read ignored and untracked Ruby files, and since 0.3.0 also index the workspace's entire locked bundle (through Bundler) plus core RBS signatures, raising `Bundler::GemfileNotFound` outside a bundle. Private-safe indexing passes an explicit Git-selected manifest to `Graph#index_all`; `RubyLens::GitRepository` and `RubyLens::Index::Manifest` exist to build that manifest.
 - `index_workspace` also discards package provenance and dependency depth. The manifest parses `Gemfile.lock` itself and joins packages to indexed documents by path.
 - `Location#to_file_path` returns paths still percent-encoded, so `RubyLens::Index::SourcePath` decodes file URIs itself.
-- Calling a declaration's method `visibility` can abort in native code (observed with `module_function`). Nothing in the adapter may invoke visibility predicates.
+- Definitions and references expose `#document` since 0.3.0, and `document.uri` is measurably cheaper than going through a `Location`. `LocationIndex` therefore answers workspace, scope, and package questions by URI string, and collectors materialize a `Location` only for the definitions and references that contribute coordinates. `document.uri` always equals `location.uri` (verified across 144k definitions and 324k references).
+- The 0.2.9 rule against visibility predicates is lifted: 0.3.0 resolves `module_function` visibility, and `visibility` no longer aborts in native code (verified over every method declaration in this repository, which uses `module_function`). Nothing in the adapter consumes visibility yet; treat it as an available signal, not a dependency.
 - Method references are text occurrences with optional receiver information, not a call graph. Never present them as call edges.
 - When an `rbs` gem is visible to the ambient `Gem.path`, Rubydex can add core and stdlib signature documents whose definitions merge into workspace declaration identities. RBS policy must stay a deliberate choice, not inherited from the environment.
+- Since 0.3.0, a constant whose value could name a namespace (`Data.define` results, frozen collection constants, RBS-declared constants) no longer also surfaces as a spurious `Rubydex::Module` declaration; it becomes a `Todo` namespace, which `DeclarationCollector#eligible?` already filters, and RBS-declared dependency constants surface as constant declarations. On the 0.3.0 upgrade this dropped module tallies in `category_stats` and package `ruby_counts` while drawn namespaces, links, and method/constant counts were proven identical.
 - `Namespace#ancestors` and `#descendants` include the declaration itself; the adapter subtracts self from both counts.
 - Graph and declaration accessors (`declarations`, `definitions`, `location`, `name`, …) return fresh enumerators, wrapper objects, and strings on every call, so the adapter fetches each value once and keys its caches by URI. Iteration order is stable within a process but differs between processes, so behavior-preservation proofs must run both adapter versions against one shared graph in a single process rather than comparing artifacts from separate runs.
 - The adapter deliberately never calls `Graph#load_config`: report generation must not silently honor a target repository's Rubydex exclusion configuration.

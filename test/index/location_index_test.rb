@@ -6,11 +6,10 @@ class LocationIndexTest < Minitest::Test
   include SnapshotHelpers
 
   def test_non_file_definitions_are_intentionally_ineligible_for_packages
-    location = Struct.new(:uri).new("https://example.test/builtin.rbs")
     manifest = stub
     manifest.expects(:package_index_for).never
 
-    assert_nil(RubyLens::Index::LocationIndex.new(manifest).package_index_for(location))
+    assert_nil(RubyLens::Index::LocationIndex.new(manifest).package_index_for("https://example.test/builtin.rbs"))
   end
 
   def test_package_attribution_requires_a_document_rubydex_actually_indexed
@@ -22,8 +21,8 @@ class LocationIndexTest < Minitest::Test
       locations = RubyLens::Index::LocationIndex.new(stub(package_index_for: 3))
       locations.package_document_paths << indexed
 
-      assert_equal(3, locations.package_index_for(Struct.new(:uri).new("file://#{indexed}")))
-      assert_nil(locations.package_index_for(Struct.new(:uri).new("file://#{absent}")))
+      assert_equal(3, locations.package_index_for("file://#{indexed}"))
+      assert_nil(locations.package_index_for("file://#{absent}"))
     end
   end
 
@@ -43,10 +42,4 @@ class LocationIndexTest < Minitest::Test
     assert_equal(RubyLens::Index::LocationIndex::CORE, locations.scope_for("file:///workspace/lib/core.rb"))
   end
 
-  def test_unreadable_locations_are_not_workspace_members
-    location = stub
-    location.stubs(:uri).raises("uri unavailable")
-
-    refute(RubyLens::Index::LocationIndex.new(stub).workspace?(location))
-  end
 end

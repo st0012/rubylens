@@ -183,6 +183,25 @@ class ConstantReferenceCollectorTest < Minitest::Test
     assert_equal("broken range selection", error.message)
   end
 
+  def test_skips_references_whose_document_is_unreadable
+    reference = Rubydex::ResolvedConstantReference.allocate
+    reference.stubs(:document).raises("document unavailable")
+    reference.stubs(:declaration).returns(stub(name: "Target"))
+    locations = RubyLens::Index::LocationIndex.new(stub(workspace_path?: true))
+
+    summary = RubyLens::Index::ConstantReferenceCollector.new(locations: locations).call(
+      graph: stub(constant_references: [reference]),
+      namespaces: [namespace("Target", references: [reference])],
+      definition_ranges: {},
+      ordinal_by_name: { "Target" => 0 },
+      dependency_ordinal_by_name: {},
+      namespace_count: 1,
+    )
+
+    assert_empty(summary.inbound_counts)
+    assert_empty(summary.links)
+  end
+
   def test_keeps_inbound_count_when_range_coordinates_are_unavailable
     location = stub(uri: "file:///workspace/source.rb")
     location.stubs(:comparable_values).raises("location unavailable")
@@ -293,11 +312,14 @@ class ConstantReferenceCollectorTest < Minitest::Test
     location_class = Data.define(:uri, :line) do
       def comparable_values = [uri, line, 0, line, 1]
     end
+    document_class = Data.define(:uri)
     references = (0..LINK_LIMIT).map do |index|
       location = location_class.new("file:///workspace/source.rb", index)
+      document = document_class.new(location.uri)
       Rubydex::ResolvedConstantReference.allocate.tap do |reference|
         reference.define_singleton_method(:declaration) { declaration }
         reference.define_singleton_method(:location) { location }
+        reference.define_singleton_method(:document) { document }
       end
     end
     subject = RubyLens::Index::ConstantReferenceCollector.new(
@@ -348,6 +370,7 @@ class ConstantReferenceCollectorTest < Minitest::Test
   def resolved_reference(location:, name:)
     Rubydex::ResolvedConstantReference.allocate.tap do |reference|
       reference.stubs(:location).returns(location)
+      reference.stubs(:document).returns(stub(uri: location.uri))
       reference.stubs(:declaration).returns(stub(name: name))
     end
   end
