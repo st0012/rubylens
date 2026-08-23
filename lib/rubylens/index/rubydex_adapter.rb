@@ -30,7 +30,9 @@ module RubyLens
 
       #: () -> Hash[String, untyped]
       def index
-        graph = Rubydex::Graph.new(workspace_path: @manifest.root.to_s)
+        # RubyLens owns file selection through its absolute manifest. A plain
+        # graph keeps the target's rubydex.toml from changing that selection.
+        graph = Rubydex::Graph.new
         index_errors = graph.index_all(@manifest.files)
         # Documents resolve before `resolve` so package attribution sees exactly
         # the documents Rubydex accepted, not the paths the manifest offered.

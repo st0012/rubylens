@@ -58,7 +58,7 @@ class DeclarationCollectorTest < Minitest::Test
       system("git", "-C", directory, "init", "--quiet", exception: true)
       system("git", "-C", directory, "add", "shapes.rb", exception: true)
 
-      graph = Rubydex::Graph.new(workspace_path: directory)
+      graph = Rubydex::Graph.new
       assert_empty(graph.index_all([source_path]))
       graph.resolve
       declarations = graph.declarations.to_a
