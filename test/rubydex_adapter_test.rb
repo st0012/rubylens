@@ -82,11 +82,32 @@ class RubydexAdapterTest < Minitest::Test
       Pathname("/tmp/example"), ["/tmp/a.rb", "/tmp/b.rb"].freeze, [], [], []
     )
 
-    Rubydex::Graph.expects(:new).with(workspace_path: manifest.root.to_s).returns(graph)
+    Rubydex::Graph.expects(:new).with().returns(graph)
     graph.expects(:index_all).with(manifest.files).returns([])
     RubyLens::Index::RubydexAdapter.new(manifest).index
 
     assert_equal(manifest.files.uniq, manifest.files)
+  end
+
+  def test_ignores_target_rubydex_configuration_from_an_unrelated_working_directory
+    Dir.mktmpdir("rubylens-config-free-graph-") do |directory|
+      base = Pathname(directory)
+      root = base.join("target")
+      caller = base.join("caller")
+      source = root.join("lib/kept.rb")
+      source.dirname.mkpath
+      caller.mkpath
+      source.write("class Kept\nend\n")
+      # Malformed syntax makes any accidental target-config load fail loudly.
+      root.join("rubydex.toml").write("[graph\n")
+      system("git", "-C", root.to_s, "init", "--quiet", exception: true)
+      system("git", "-C", root.to_s, "add", "lib/kept.rb", exception: true)
+      manifest = RubyLens::Index::Manifest.build(root: root)
+
+      snapshot = Dir.chdir(caller) { RubyLens::Index::RubydexAdapter.new(manifest).index }
+
+      assert_includes(snapshot.fetch("namespace_names"), "Kept")
+    end
   end
 
   def test_reuses_indexed_documents_for_package_audit_and_workspace_rspec_projection

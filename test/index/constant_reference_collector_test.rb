@@ -84,7 +84,7 @@ class ConstantReferenceCollectorTest < Minitest::Test
       locations.package_document_paths.merge(
         [dependency_source.realpath.to_s, second_dependency_source.realpath.to_s],
       )
-      graph = Rubydex::Graph.new(workspace_path: workspace.to_s)
+      graph = Rubydex::Graph.new
       assert_empty(graph.index_all(
         [workspace_source.to_s, test_source.to_s, dependency_source.to_s, second_dependency_source.to_s],
       ))
@@ -140,7 +140,7 @@ class ConstantReferenceCollectorTest < Minitest::Test
 
       manifest = workspace_manifest(root) { |stub_manifest| stub_manifest.define_singleton_method(:packages) { [] } }
       locations = RubyLens::Index::LocationIndex.new(manifest)
-      graph = Rubydex::Graph.new(workspace_path: root.to_s)
+      graph = Rubydex::Graph.new
       assert_empty(graph.index_all([core_source.to_s, test_source.to_s]))
       graph.resolve
 
@@ -169,7 +169,7 @@ class ConstantReferenceCollectorTest < Minitest::Test
   def test_does_not_swallow_internal_selection_errors
     manifest = RubyLens::Index::Manifest.build(root: FIXTURE)
     locations = RubyLens::Index::LocationIndex.new(manifest)
-    graph = Rubydex::Graph.new(workspace_path: manifest.root.to_s)
+    graph = Rubydex::Graph.new
     assert_empty(graph.index_all(manifest.files))
     locations.resolve_documents(graph)
     graph.resolve

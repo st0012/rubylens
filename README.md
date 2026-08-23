@@ -70,6 +70,9 @@ Everything runs locally. Generated HTML files inline the scripts, styles, and
 data they need, make no network requests, and include no source text, comments,
 or local paths from your project. Inside the target project, RubyLens indexes
 Git-tracked Ruby files plus untracked Ruby files that are not ignored by Git.
+RubyLens does not read Rubydex's
+[`rubydex.toml` configuration](https://shopify.github.io/rubydex/Rubydex/Config.html).
+The `TARGET` argument and Git determine which project files RubyLens indexes.
 
 Outputs still reveal project structure. Explorer includes class, module, and gem
 names. Minimal Showcase and its matching Clip omit those names but still reveal
